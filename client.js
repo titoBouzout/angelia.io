@@ -1,24 +1,26 @@
 export default class WebSocketClient {
-
 	constructor(url) {
 		console.log('ws instantiated');
 
-		this.url = url;
+		Object.assign(this, {
+			url: url,
 
-		this.listeners = {};
-		this.messages = [];
+			listeners: {},
+			messages: [],
 
-		this.reconnect = true;
-		this.isReconnect = false;
+			reconnect: true,
+			isReconnect: false,
 
-		this.nextTick = this.nextTick.bind(this)
+			nextTick: this.nextTick.bind(this),
+			disconnect: this.disconnect.bind(this),
 
-		this.onopen = this.onopen.bind(this)
-		this.onclose = this.onclose.bind(this)
-		this.onerror = this.onerror.bind(this)
-		this.onmessage = this.onmessage.bind(this)
-
+			onopen: this.onopen.bind(this),
+			onclose: this.onclose.bind(this),
+			onerror: this.onerror.bind(this),
+			onmessage: this.onmessage.bind(this),
+		});
 		this.connect();
+		window.addEventListener('unload', this.disconnect, true);
 	}
 	// public API
 	connect() {
@@ -28,18 +30,23 @@ export default class WebSocketClient {
 			(!this.io || this.io.readyState === WebSocket.CLOSED)
 		) {
 			this.io = new WebSocket(this.url);
-			this.io.onopen = this.onopen;
-			this.io.onclose = this.onclose;
-			this.io.onerror = this.onerror;
-			this.io.onmessage = this.onmessage;
+			Object.assign(this.io, {
+				onopen: this.onopen,
+				onclose: this.onclose,
+				onerror: this.onerror,
+				onmessage: this.onmessage,
+			});
 		}
 	}
 	get connected() {
 		return this.io && this.io.readyState === WebSocket.OPEN;
 	}
+	banned() {
+		this.reconnect = false;
+		this.disconnect();
+	}
 	disconnect() {
 		console.log('ws manual disconnect');
-		this.reconnect = false;
 		if (this.io.readyState !== WebSocket.CLOSING && this.io.readyState !== WebSocket.CLOSED) {
 			this.io.close();
 		}
@@ -90,7 +97,7 @@ export default class WebSocketClient {
 			console.log('ws connected');
 			this.dispatch('connect');
 		}
-	};
+	}
 	onclose(a, b) {
 		switch (a.code) {
 			// normal close
@@ -113,11 +120,11 @@ export default class WebSocketClient {
 		}
 		this.dispatch('disconnect');
 		this.connect();
-	};
+	}
 	onerror(a, b) {
 		this.dispatch('disconnect');
 		this.connect();
-	};
+	}
 	onmessage(e) {
 		if (e.data === '') {
 			this.pong();
@@ -127,7 +134,7 @@ export default class WebSocketClient {
 				this.dispatch(m.k, m.v);
 			}
 		}
-	};
+	}
 	dispatch(k, v) {
 		if (this.listeners[k]) {
 			for (let event of this.listeners[k]) {
@@ -140,11 +147,10 @@ export default class WebSocketClient {
 			this.io.send(JSON.stringify(this.messages));
 			this.messages = [];
 		}
-	};
+	}
 	pong() {
 		if (this.io.readyState === WebSocket.OPEN) {
 			this.io.send('');
 		}
 	}
 }
-

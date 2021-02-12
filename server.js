@@ -2,91 +2,129 @@ const ws = require('ws');
 
 const inspect = Symbol.for('nodejs.util.inspect.custom');
 
-// TODO the listeners are globals for all connections
-// so if you create two socket servers
-// both socket servers have the same listeners D:
 class WebSocketListeners {
-	static add(aClass) {
-		aClass = new aClass();
-		for (let method of Object.getOwnPropertyNames(aClass.__proto__)) {
-			if (method !== 'constructor') {
-				WebSocketListeners.prototype[method] = aClass[method];
+	static add(aOriginClass) {
+		let aClass = new aOriginClass();
+		for (let member of Object.getOwnPropertyNames(aClass.__proto__)) {
+			if (member !== '_constructor') {
+				WebSocketListeners.prototype[member] = aClass[member];
+				WebSocketListeners.prototype[member].WebSocketListenersClassName = aOriginClass.name;
 			}
 		}
 		for (let member in aClass) {
-			WebSocketListeners.prototype[member] = aClass[member];
+			if (member !== '_constructor') {
+				WebSocketListeners.prototype[member] = aClass[member];
+				WebSocketListeners.prototype[member].WebSocketListenersClassName = aOriginClass.name;
+			}
 		}
+	}
+	[inspect]() {
+		for (let member of Object.getOwnPropertyNames(this)) {
+			if (this[member].WebSocketListenersClassName)
+				console.log(
+					'WebSocketListeners.' +
+						member +
+						' = ' +
+						this[member].WebSocketListenersClassName +
+						'.' +
+						member,
+				);
+		}
+		for (let member in this) {
+			if (this[member].WebSocketListenersClassName)
+				console.log(
+					'WebSocketListeners.' +
+						member +
+						' = ' +
+						this[member].WebSocketListenersClassName +
+						'.' +
+						member,
+				);
+		}
+		return '';
 	}
 }
 
 class WebSocketServer {
-	constructor(port, https) {
-		this.timeout = 30 * 1000;
-		this.now = WebSocketServer.now = Date.now();
+	constructor(options) {
+		Object.assign(this, {
+			port: +options.port > 0 ? +options.port : 3001,
+			maxMessageSize: +options.maxMessageSize > 0 ? +options.maxMessageSize : 5,
 
-		this.started = Date.now();
+			since: Date.now(),
+			now: Date.now(),
 
-		this.pong = this.pong.bind(this);
-		this.ping = this.ping.bind(this);
-		this.updateNow = this.updateNow.bind(this);
+			socketsServed: 0,
+			bytesReceived: 0,
+			messagesSent: 0,
+			messagesReceived: 0,
+			messagesFail: 0,
 
-		this.onconnect = this.onconnect.bind(this);
-		this.onerror = this.onerror.bind(this);
+			timeout: 30 * 1000,
+			pong: this.pong.bind(this),
+			ping: this.ping.bind(this),
+			updateNow: this.updateNow.bind(this),
+			onconnect: this.onconnect.bind(this),
+			onerror: this.onerror.bind(this),
+			inspect: this.inspect.bind(this),
 
-		this.Listeners = WebSocketServer.Listeners = new WebSocketListeners();
-		this.Listeners.io = this;
-		this.Listeners.pong = this.pong;
+			Listeners: new WebSocketListeners(),
+
+			sockets: new Set(),
+		});
+
+		this[inspect] = this.toJSON = this.inspect;
+
+		Object.assign(this.Listeners, {
+			server: this,
+			pong: this.pong,
+		});
 		delete this.Listeners.add;
-
-		// TODO setInterval(this.ping, this.timeout / 2);
+		// ping
+		setInterval(this.ping, this.timeout / 2);
 		setInterval(this.updateNow, 500);
 
+		// fire the server
 		let server;
-		if (https) {
+		if (options.cert && options.key) {
 			let fs = require('fs');
 			server = require('https').createServer({
-				cert: fs.readFileSync(https.cert),
-				key: fs.readFileSync(https.key),
+				cert: fs.readFileSync(options.cert),
+				key: fs.readFileSync(options.key),
 			});
 		} else {
 			server = require('http').createServer();
 		}
 
-		this.io = new ws.Server({
+		let io = new ws.Server({
 			server: server,
 			perMessageDeflate: false,
-			maxPayload: 5 * 1024 * 1024, // 5mb TODO
+			maxPayload: this.maxMessageSize * 1024 * 1024,
+			clientTracking: false,
+			backlog: 1024, // queue of pending connections
 		});
 
-		this.io.on('connection', this.onconnect);
-		this.io.on('error', this.onerror);
+		io.on('connection', this.onconnect);
+		io.on('error', this.onerror);
 
-		server.listen(port);
+		server.listen(this.port);
 
-		console.log((https ? 'wss' : 'ws') + ' Server started listening on port ' + port);
+		console.log('-'.repeat(80));
+		console.log(
+			(options.cert && options.key ? 'wss' : 'ws') + ' Server since listening on port ' + this.port,
+		);
+		console.log(this.Listeners);
 	}
-	// returns all socket.io connected to the server
-	sockets() {
-		return this.io.clients;
-	}
-	// returns count of sockets connected to the server
-	count() {
-		return this.io.clients.size;
-	}
+
 	// emits to everyone connected to the server
 	emit(k, v) {
-		let d = JSON.stringify([
-			{
-				k,
-				v,
-			},
-		]);
-		for (let socket of this.io.clients) {
-			if (socket.readyState === 1) {
-				socket.send(d);
-			} else {
-				console.warn('socket not ready to emit on WebSocketServer.emit', socket, d);
-			}
+		let d = {
+			k,
+			v,
+		};
+
+		for (let socket of this.sockets) {
+			socket.emit(d);
 		}
 	}
 
@@ -95,7 +133,7 @@ class WebSocketServer {
 	onconnect(socket, request) {
 		this.updateNow();
 
-		socket = new WebSocket(socket);
+		socket = new WebSocket(socket, this);
 
 		// set the ip and userAgent
 		Object.assign(socket, {
@@ -107,61 +145,49 @@ class WebSocketServer {
 			userAgent: request.headers['user-agent'] || '',
 		});
 
-		// set now time
-		Object.assign(socket.io, {
-			started: this.now,
-			now: this.now,
-			contacted: this.now,
-			ping: 0,
-		});
+		this.socketsServed++;
 
-		// send first ping
-		this.pingSocket(socket.io);
+		socket.listen();
+
+		this.sockets.add(socket);
 
 		// dispatch connect
-		if (this.Listeners.connect) {
-			this.Listeners.connect(socket);
-		}
+		this.Listeners.connect && this.Listeners.connect(socket, request);
 	}
 	onerror(a, b) {
 		console.error('WebSocketServer.onerror', a, b);
 	}
 
-	// ping stuff
+	// ping
 	updateNow() {
-		this.now = WebSocketServer.now = Date.now();
+		this.now = Date.now();
 	}
 	ping() {
 		this.updateNow();
-		for (let socket of this.io.clients) {
-			if (this.now - socket.now > this.timeout) {
+		for (let socket of this.sockets) {
+			let delay = this.now - socket.seen;
+			if (delay > this.timeout) {
 				// timedout
-				if (this.Listeners.timeout) {
-					this.Listeners.timeout(socket);
-				}
-				socket.terminate();
+				socket.timedout = true;
+				this.Listeners.timeout && this.Listeners.timeout(socket, delay);
+				socket.io.terminate();
 			} else {
 				// ping
-				// TODO maybe dont ping if they are sending messages
 				this.pingSocket(socket);
 			}
 		}
 	}
 	pingSocket(socket) {
 		socket.contacted = this.now;
-		if (socket.readyState === 1) {
-			socket.send('');
-		} else {
-			console.warn('socket not ready to emit ping on WebSocketServer.pingSocket', socket);
+		if (socket.io.readyState === 1) {
+			socket.io.send('');
 		}
 	}
 	pong(socket) {
 		this.updateNow();
-		socket.io.now = this.now;
-		socket.io.ping = this.now - socket.io.contacted;
-		if (this.Listeners.ping) {
-			this.Listeners.ping(socket);
-		}
+		socket.seen = this.now;
+		socket.ping = this.now - socket.contacted;
+		this.Listeners.ping && this.Listeners.ping(socket);
 	}
 	// returns false if the ip is a private ip like 127.0.0.1
 	ip(i) {
@@ -194,18 +220,23 @@ class WebSocketServer {
 		}
 	}
 	// console.log and toJSON
-	[inspect]() {
-		return this.inspect();
-	}
-	toJSON() {
-		return this.inspect();
-	}
 	inspect() {
 		return {
-			started: this.started,
+			// started
+			since: this.since,
+			// settings
+			port: this.port,
+			maxMessageSize: this.maxMessageSize,
 			timeout: this.timeout,
-			count: this.io.clients.size,
-			sockets: this.io.clients, // todo may return the WebSocket class
+			// stats
+			socketsServed: this.socketsServed,
+			bytesReceived: this.bytesReceived,
+			messagesSent: this.messagesSent,
+			messagesReceived: this.messagesReceived,
+			messagesFail: this.messagesFail,
+			// data
+			emit: this.emit,
+			sockets: this.sockets,
 		};
 	}
 }
@@ -213,34 +244,37 @@ class WebSocketServer {
 WebSocketServer.Listeners = WebSocketListeners;
 
 class WebSocket {
-	constructor(socket) {
-		this.Listeners = WebSocketServer.Listeners;
-		this.messages = [];
+	constructor(socket, server) {
+		Object.assign(this, {
+			server: server,
 
-		this.onclose = this.onclose.bind(this);
-		this.onerror = this.onerror.bind(this);
-		this.onmessage = this.onmessage.bind(this);
+			Listeners: server.Listeners,
 
-		this.nextTick = this.nextTick.bind(this);
-		this.inspectIO = this.inspectIO.bind(this);
+			messages: [],
+			messagesSent: 0,
+			messagesReceived: 0,
+			bytesReceived: 0,
 
-		this.io = socket;
-		this.io.on('close', this.onclose);
-		this.io.on('error', this.onerror);
-		this.io.on('message', this.onmessage);
-		this.io[inspect] = this.io.toJSON = this.inspectIO;
-	}
-	// time this socket was first seen
-	get started() {
-		return this.io.started;
-	}
-	// last seen
-	get now() {
-		return this.io.now;
-	}
-	// ping in miliseconds
-	get ping() {
-		return this.io.ping;
+			since: server.now,
+			seen: server.now,
+			contacted: server.now,
+			ping: 0,
+
+			onclose: this.onclose.bind(this),
+			onerror: this.onerror.bind(this),
+			onmessage: this.onmessage.bind(this),
+
+			nextTick: this.nextTick.bind(this),
+			inspect: this.inspect.bind(this),
+
+			io: socket,
+		});
+		this.toJSON = this.inspect;
+
+		Object.assign(socket, {
+			[inspect]: this.inspect,
+			toJSON: this.inspect,
+		});
 	}
 
 	emit(k, v) {
@@ -284,10 +318,15 @@ class WebSocket {
 		this.io.close();
 	}
 	// private API
-	onclose(a, b) {
-		if (this.Listeners.disconnect) {
-			this.Listeners.disconnect(this, a, b);
-		}
+	listen() {
+		this.io.on('close', this.onclose);
+		this.io.on('error', this.onerror);
+		this.io.on('message', this.onmessage);
+	}
+	onclose(code, message) {
+		this.server.sockets.delete(this);
+
+		this.Listeners.disconnect && this.Listeners.disconnect(this, code, message);
 	}
 	onerror(a, b) {
 		console.error('WebSocket.onerror', a, b, 'readyState is', this.io.readyState);
@@ -296,42 +335,68 @@ class WebSocket {
 		if (e === '') {
 			this.Listeners.pong(this);
 		} else {
+			this.seen = this.server.now;
+
+			let length = e.length;
+			this.bytesReceived += length;
+			this.server.bytesReceived += length;
+
 			let messages = JSON.parse(e);
-			for (let m of messages) {
-				if (this.Listeners[m.k]) {
-					this.Listeners[m.k](this, m.v);
-				} else {
-					console.warn(m.k, 'is not on WebSocketListeners class', m.v, this);
+			if (Array.isArray(messages)) {
+				let length = messages.length;
+				this.messagesReceived += length;
+				this.server.messagesReceived += length;
+
+				this.Listeners.message && this.Listeners.message(this, messages);
+
+				for (let m of messages) {
+					if (this.Listeners[m.k]) {
+						this.Listeners[m.k](this, m.v);
+					} else {
+						console.warn(m.k, 'is not on WebSocketListeners class', m.v, this);
+						this.Listeners.garbage && this.Listeners.garbage(this, m);
+					}
 				}
 			}
-			this.io.now = WebSocketServer.now;
 		}
 	}
-
 	nextTick() {
+		let length = this.messages.length;
 		if (this.io.readyState === 1) {
 			this.io.send(JSON.stringify(this.messages));
+			this.server.messagesSent += length;
+			this.messagesSent += length;
 		} else {
 			console.warn('socket not ready to emit on WebSocket.emit', this);
+			this.server.messagesFail += length;
 		}
 		this.messages = [];
 	}
 
 	[inspect]() {
-		return Object.assign(
-			{
-				started: this.started,
-				now: this.now,
-				ping: this.ping,
-				ip: this.ip,
-				userAgent: this.userAgent,
-			},
-			this.toJSON ? this.toJSON() : {},
-		);
+		return Object.assign(this.inspect(), this.toJSON ? this.toJSON() : {});
 	}
-	inspectIO() {
+	inspect() {
 		return {
+			// data
 			readyState: this.io.readyState,
+
+			since: this.since,
+			seen: this.seen,
+			contacted: this.contacted,
+			ping: this.ping,
+			timedout: this.timedout || null,
+
+			ip: this.ip,
+			userAgent: this.userAgent,
+
+			messagesSent: this.messagesSent,
+			messagesReceived: this.messagesReceived,
+			bytesReceived: this.bytesReceived,
+			// functions
+			emit: this.emit,
+			once: this.once,
+			disconnect: this.disconnect,
 		};
 	}
 }

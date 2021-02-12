@@ -1,7 +1,7 @@
 module.exports = {
 	'printWidth': 100,
 	'useTabs': true,
-	'semi': false,
+	'semi': true,
 
 	'singleQuote': true,
 	'jsxSingleQuote': false,
@@ -12,4 +12,4 @@ module.exports = {
 	'quoteProps': 'preserve',
 
 	'proseWrap': 'preserve',
-}
+};

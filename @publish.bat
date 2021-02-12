@@ -2,4 +2,6 @@ git add --all
 git commit -m "update"
 
 git push --all --prune
-exit
+
+npm version minor
+npm publish

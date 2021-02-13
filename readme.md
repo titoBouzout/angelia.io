@@ -161,7 +161,7 @@ const server = new WebSocketServer();
 
 Has the following properties
 
-| name               | kind     | description                                                     |
+| signature          | kind     | description                                                     |
 | ------------------ | -------- | --------------------------------------------------------------- |
 | `since`            | number   | timestamp of initialization                                     |
 | `port`             | number   | port used by this server                                        |
@@ -190,21 +190,21 @@ WebSocketServer.Listeners.add(className);
 
 Has the following properties
 
-| name               | kind     | description                                                                      |
-| ------------------ | -------- | -------------------------------------------------------------------------------- |
-| `server`           | Object   | reference to the server                                                          |
-| `ip`               | string   | ip of the socket                                                                 |
-| `userAgent`        | string   | user agent of the socket                                                         |
-| `since`            | number   | timestamp of first seen                                                          |
-| `seen`             | number   | timestamp of last received message                                               |
-| `ping`             | number   | delay with the socket in milliseconds (full round trip)                          |
-| `timedout`         | boolean  | whether we lost connection with this socket                                      |
-| `messagesReceived` | number   | count of messages received from this socket                                      |
-| `messagesSent`     | number   | count of messages sent to this socket                                            |
-| `bytesReceived`    | number   | sum of bytes received from this socket                                           |
-| `emit(key, value)` | Function | emits to this socket                                                             |
-| `once(key, value)` | Function | emits to this socket and replace if exists a pending message with the same `key` |
-| `disconnect()`     | Function | disconnects the socket from the server                                           |
+| signature                 | kind     | description                                                                      |
+| ------------------------- | -------- | -------------------------------------------------------------------------------- |
+| `server`                  | Object   | reference to the server                                                          |
+| `ip`                      | string   | ip of the socket                                                                 |
+| `userAgent`               | string   | user agent of the socket                                                         |
+| `since`                   | number   | timestamp of first seen                                                          |
+| `seen`                    | number   | timestamp of last received message                                               |
+| `ping`                    | number   | delay with the socket in milliseconds (full round trip)                          |
+| `timedout`                | boolean  | whether we lost connection with this socket                                      |
+| `messagesReceived`        | number   | count of messages received from this socket                                      |
+| `messagesSent`            | number   | count of messages sent to this socket                                            |
+| `bytesReceived`           | number   | sum of bytes received from this socket                                           |
+| `emit(key, value)`        | Function | emits to this socket                                                             |
+| `once(key, value)`        | Function | emits to this socket and replace if exists a pending message with the same `key` |
+| `disconnect([reconnect])` | Function | disconnects the socket from the server, pass true to prevent re-connections      |
 
 ### Predefined Listeners
 
@@ -241,7 +241,34 @@ All of the predefined listeners
 
 ## Client (Browser)
 
-TODO !
+### Client (Browser) Options
+
+Configurable options used by the constructor
+
+```javascript
+const socket = new WebSocketClient({
+	url: '',
+	debug: true,
+});
+```
+
+| name    | kind    | default   | description                                             |
+| ------- | ------- | --------- | ------------------------------------------------------- |
+| `url`   | string  | undefined | url of the socket server, example 'ws://localhost:3001' |
+| `debug` | boolean | false     | to console.log some messages                            |
+
+### Client (Browser) API
+
+The client API is similar to regular event handling
+
+| signature                 | kind     | description                                                          |
+| ------------------------- | -------- | -------------------------------------------------------------------- |
+| `connect()`               | Function | to connect to the server, it auto-connects on disconnection          |
+| `connected`               | boolean  | `true` when the socket is connected else `false`                     |
+| `disconnect([reconnect])` | Function | to disconnect from the server, pass `true` to prevent re-connections |
+| `on(key, callback)`       | Function | to listen for an event, returns a function to stop listening         |
+| `off(key, [callback])`    | Function | to turn off listening for an event                                   |
+| `emit(key, value)`        | Function | to emit data to the server                                           |
 
 ## Authors
 

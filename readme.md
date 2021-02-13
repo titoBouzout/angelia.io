@@ -62,7 +62,9 @@ socket.on('chatMessage', (message) => {
 socket.emit('chatMessage', 'Hi there server, Im client')
 ```
 
-## Server Listeners
+## Server
+
+### Listeners
 
 To listen for a message you just create a class with any name, and give to a method the name of the thing you want to listen to. You then add your class to the listeners as `WebSocketServer.Listeners.add(MyClass);` and you are done.
 
@@ -122,7 +124,7 @@ socket.on('gotIt', (message) => {
 
 ```
 
-## Server Options
+### Server Options
 
 Configurable options used by the constructor
 
@@ -142,7 +144,7 @@ const server = new WebSocketServer({
 | `cert`           | string | undefined | path to the cert file for using https |
 | `key`            | string | undefined | path to the key file for using https  |
 
-## Server Object
+### Server Object
 
 The server Object can be accessed from everywhere
 
@@ -173,7 +175,7 @@ Has the following properties
 | `emit(key, value)` | Function | function to emit to all connected sockets                       |
 | `sockets`          | Set      | a Set() with all the current connected sockets                  |
 
-## Socket Object
+### Socket Object
 
 The socket Object is given to you by a listener
 
@@ -204,7 +206,7 @@ Has the following properties
 | `once(key, value)` | Function | emits to this socket and replace if exists a pending message with the same `key` |
 | `disconnect()`     | Function | disconnects the socket from the server                                           |
 
-## Predefined Listeners
+### Predefined Listeners
 
 There's a bunch of handy predefined listeners for some socket events that you may add to any class
 
@@ -236,6 +238,10 @@ All of the predefined listeners
 | `timeout(socket, delay)`            | when we are about to disconnect the socket, gives the delay in milliseconds           |
 | `garbage(socket, data)`             | if the client sends a message that the server has no listener this will be dispatched |
 | `messages(socket, messages)`        | for debugging: array of messages received before dispatching to listeners             |
+
+## Client (Browser)
+
+TODO !
 
 ## Authors
 

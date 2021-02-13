@@ -1,6 +1,6 @@
 # angelia.io
 
-Simple WebSockets Server and Client for node.js. The goal of this project is to provide a simple API that just works™.
+Simple WebSockets Server and WebSockets Client for node.js. The goal of this project is to provide a simple API that just works™.
 
 ## Installation
 
@@ -10,11 +10,11 @@ If you fancy for Client side a regular JavaScript file, then use https://github.
 
 ## Simple Example
 
-### Socket Server (Node.js)
+### Server (Node.js)
 
 ```JavaScript
 // server.js
-import WebSocketServer, { Listeners } from 'angelia.io/server';
+import Server, { Listeners } from 'angelia.io/server';
 
 class Connection {
 	async listen() {
@@ -39,18 +39,18 @@ class FancyChat {
 }
 Listeners.add(FancyChat);
 
-new WebSocketServer({
+new Server({
 	port: 3001
 });
 ```
 
-### Socket Client (Browser)
+### Client (Browser)
 
 ```JavaScript
 // index.js
-import WebSocketClient from 'angelia.io/client';
+import Client from 'angelia.io/client';
 
-const socket = new WebSocketClient({
+const socket = new Client({
 	url: 'ws://localhost:3001',
 	debug: true,
 });
@@ -66,12 +66,14 @@ socket.emit('chatMessage', 'Hi there server, Im client')
 
 ### Listeners
 
-To listen for a message you just create a class with any name, and give to a method the name of the thing you want to listen to. You then add your class to the listeners as `WebSocketServer.Listeners.add(MyClass);` and you are done.
+To listen for a message you just create a class with any name, and give to a method the name of the thing you want to listen to. You then add your class to the listeners as `Server.Listeners.add(MyClass);` and you are done.
+
+On user defined listeners the listener receives two things, the `socket` object and the `data` sent by the client, as in `class FancyChat { async typing(socket, data) {}}`.
 
 If you are building a chat you may write something like this
 
 ```JavaScript
-import WebSocketServer, { Listeners } from 'angelia.io/server';
+import Server, { Listeners } from 'angelia.io/server';
 
 class FancyChat {
 	async typing(socket, data) {
@@ -95,7 +97,7 @@ class Connection {
 }
 Listeners.add(Connection);
 
-new WebSocketServer({
+new Server({
 	port: 3001
 });
 ```
@@ -103,9 +105,9 @@ new WebSocketServer({
 Then, on client you may write something like
 
 ```JavaScript
-import WebSocketClient from 'angelia.io/client';
+import Client from 'angelia.io/client';
 
-const socket = new WebSocketClient({
+const socket = new Client({
 	url: 'ws://localhost:3001',
 	debug: true,
 });
@@ -129,7 +131,7 @@ socket.on('gotIt', (message) => {
 Configurable options used by the constructor
 
 ```javascript
-const server = new WebSocketServer({
+const server = new Server({
 	port: 3001,
 	maxMessageSize: 5,
 	cert: '/path/to/cert',
@@ -149,14 +151,18 @@ const server = new WebSocketServer({
 The server Object can be accessed from everywhere
 
 ```javascript
+import Server, { Listeners } from 'angelia.io/server';
+
 class className {
 	methodName(socket) {
 		console.log(this.server, 'also', socket.server);
 	}
 }
-WebSocketServer.Listeners.add(className);
+Listeners.add(className);
 
-const server = new WebSocketServer();
+const server = new Server({
+	port: 3001,
+});
 ```
 
 Has the following properties
@@ -181,12 +187,14 @@ Has the following properties
 The socket Object is given to you by a listener
 
 ```javascript
-class className {
+import { Listeners } from 'angelia.io/server';
+
+class _ {
 	methodName(socket, data) {
 		console.log(socket, data);
 	}
 }
-WebSocketServer.Listeners.add(className);
+Listeners.add(_);
 ```
 
 Has the following properties
@@ -212,7 +220,7 @@ Has the following properties
 There's a bunch of handy predefined listeners for some socket events that you may add to any class
 
 ```JavaScript
-import WebSocketServer, { Listeners } from 'angelia.io/server';
+import Server, { Listeners } from 'angelia.io/server';
 
 class _ {
 	async listen() {
@@ -225,7 +233,9 @@ class _ {
 
 Listeners.add(_);
 
-new WebSocketServer();
+new Server({
+	port: 3001
+});
 ```
 
 All of the predefined listeners
@@ -247,10 +257,16 @@ All of the predefined listeners
 Configurable options used by the constructor
 
 ```javascript
-const socket = new WebSocketClient({
-	url: '',
+const socket = new Client({
+	url: 'ws://localhost:3001',
 	debug: true,
 });
+```
+
+You may also do like this if you don't need any option
+
+```javascript
+const socket = new Client('ws://localhost:3001');
 ```
 
 | name    | kind    | default   | description                                             |
@@ -267,8 +283,8 @@ The client API is similar to regular event handling
 | `connect()`               | Function | to connect to the server, it auto-connects on disconnection          |
 | `connected`               | boolean  | `true` when the socket is connected else `false`                     |
 | `disconnect([reconnect])` | Function | to disconnect from the server, pass `true` to prevent re-connections |
-| `on(key, callback)`       | Function | to listen for an event, returns a function to stop listening         |
-| `off(key, [callback])`    | Function | to turn off listening for an event                                   |
+| `on(key, callback)`       | Function | to listen for an event, returns an `off` function to stop listening  |
+| `off(key, callback)`      | Function | to turn off listening for an event                                   |
 | `emit(key, value)`        | Function | to emit data to the server                                           |
 
 ## Authors

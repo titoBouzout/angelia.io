@@ -1,4 +1,4 @@
-export default class WebSocketClient {
+export default class Client {
 	constructor(options) {
 		Object.assign(this, {
 			debug: typeof options == 'string' ? false : options.debug,
@@ -57,23 +57,19 @@ export default class WebSocketClient {
 		return () => this.off(k, v);
 	}
 	off(k, v) {
-		if (v) {
-			if (!this.listeners[k]) {
-				console.warn(k + ' doesnt exists on socket.listeners');
-			} else {
-				let index = this.listeners[k].indexOf(v);
-				if (index === -1) {
-					console.warn(
-						'socket.off("' + k + '", not found)',
-						v,
-						'not found on socket.listeners[' + k + ']',
-					);
-				} else {
-					this.listeners[k].splice(index, 1);
-				}
-			}
+		if (!this.listeners[k]) {
+			console.warn('socket.off("' + k + '", v)', k, 'not found on socket.listeners');
 		} else {
-			delete this.listeners[k];
+			let index = this.listeners[k].indexOf(v);
+			if (index === -1) {
+				console.warn(
+					'socket.off("' + k + '", not found)',
+					v,
+					'not found on socket.listeners[' + k + ']',
+				);
+			} else {
+				this.listeners[k].splice(index, 1);
+			}
 		}
 	}
 	emit(k, v) {

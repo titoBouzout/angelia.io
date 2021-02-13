@@ -243,6 +243,7 @@ class WebSocket {
 			seen: server.now,
 			contacted: server.now,
 			ping: 0,
+			timedout: false,
 
 			onclose: this.onclose.bind(this),
 			onerror: this.onerror.bind(this),
@@ -331,7 +332,7 @@ class WebSocket {
 				this.messagesReceived += length;
 				this.server.messagesReceived += length;
 
-				this.Listeners.message && this.Listeners.message(this, messages);
+				this.Listeners.messages && this.Listeners.messages(this, messages);
 
 				for (let m of messages) {
 					if (this.Listeners[m.k]) {
@@ -370,7 +371,7 @@ class WebSocket {
 			seen: this.seen,
 			contacted: this.contacted,
 			ping: this.ping,
-			timedout: this.timedout || null,
+			timedout: this.timedout,
 
 			ip: this.ip,
 			userAgent: this.userAgent,

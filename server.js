@@ -154,8 +154,8 @@ class WebSocketServer {
 		// dispatch connect
 		this.Listeners.connect && this.Listeners.connect(socket, request);
 	}
-	onerror(a, b) {
-		console.error('WebSocketServer.onerror', a, b);
+	onerror(err) {
+		console.error('WebSocketServer.onerror', err);
 	}
 
 	// ping
@@ -328,8 +328,8 @@ class WebSocket {
 
 		this.Listeners.disconnect && this.Listeners.disconnect(this, code, message);
 	}
-	onerror(a, b) {
-		console.error('WebSocket.onerror', a, b, 'readyState is', this.io.readyState);
+	onerror(err) {
+		console.error('WebSocket.onerror', err, 'readyState is', this.io.readyState);
 	}
 	onmessage(e) {
 		if (e === '') {

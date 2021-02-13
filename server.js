@@ -109,6 +109,16 @@ class WebSocketServer {
 			socket.emit(d);
 		}
 	}
+	once(k, v) {
+		let d = {
+			k,
+			v,
+		};
+
+		for (let socket of this.sockets) {
+			socket.once(d);
+		}
+	}
 
 	// PRIVATE API
 

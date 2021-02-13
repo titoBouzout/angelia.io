@@ -1,6 +1,6 @@
 # angelia.io
 
-Simple WebSockets Server and Client for node.js. The goal of this project is to provide a simple API that just works™
+Simple WebSockets Server and Client for node.js. The goal of this project is to provide a simple API that just works™.
 
 ## Installation
 
@@ -161,19 +161,20 @@ const server = new WebSocketServer();
 
 Has the following properties
 
-| signature          | kind     | description                                                     |
-| ------------------ | -------- | --------------------------------------------------------------- |
-| `since`            | number   | timestamp of initialization                                     |
-| `port`             | number   | port used by this server                                        |
-| `maxMessageSize`   | number   | maximum message size in mb                                      |
-| `timeout`          | number   | after how long the socket is considered gone, in ms             |
-| `socketsServed`    | number   | total count of sockets ever connected                           |
-| `messagesReceived` | number   | total count of messages ever received                           |
-| `messagesSent`     | number   | total count of messages ever sent                               |
-| `bytesReceived`    | number   | sum of bytes the server has ever received                       |
-| `Listeners`        | Object   | console.log(server.Listeners) will pretty list them as an array |
-| `emit(key, value)` | Function | function to emit to all connected sockets                       |
-| `sockets`          | Set      | a Set() with all the current connected sockets                  |
+| signature          | kind     | description                                                                     |
+| ------------------ | -------- | ------------------------------------------------------------------------------- |
+| `since`            | number   | timestamp of initialization                                                     |
+| `port`             | number   | port used by this server                                                        |
+| `maxMessageSize`   | number   | maximum message size in mb                                                      |
+| `timeout`          | number   | after how long the socket is considered gone, in ms                             |
+| `socketsServed`    | number   | total count of sockets ever connected                                           |
+| `messagesReceived` | number   | total count of messages ever received                                           |
+| `messagesSent`     | number   | total count of messages ever sent                                               |
+| `bytesReceived`    | number   | sum of bytes the server has ever received                                       |
+| `Listeners`        | Object   | console.log(server.Listeners) will pretty list them as an array                 |
+| `emit(key, value)` | Function | function to emit to all connected sockets                                       |
+| `once(key, value)` | Function | emits to the socket and replace if exists a pending message with the same `key` |
+| `sockets`          | Set      | a Set() with all the current connected sockets                                  |
 
 ### Socket Object
 

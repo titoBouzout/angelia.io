@@ -6,42 +6,29 @@ class WebSocketListeners {
 	static add(aOriginClass) {
 		let aClass = new aOriginClass();
 		for (let member of Object.getOwnPropertyNames(aClass.__proto__)) {
-			if (member !== '_constructor') {
+			if (member !== 'constructor') {
 				WebSocketListeners.prototype[member] = aClass[member];
 				WebSocketListeners.prototype[member].WebSocketListenersClassName = aOriginClass.name;
 			}
 		}
 		for (let member in aClass) {
-			if (member !== '_constructor') {
+			if (member !== 'constructor') {
 				WebSocketListeners.prototype[member] = aClass[member];
 				WebSocketListeners.prototype[member].WebSocketListenersClassName = aOriginClass.name;
 			}
 		}
 	}
 	[inspect]() {
+		let listeners = [];
 		for (let member of Object.getOwnPropertyNames(this)) {
 			if (this[member].WebSocketListenersClassName)
-				console.log(
-					'WebSocketListeners.' +
-						member +
-						' = ' +
-						this[member].WebSocketListenersClassName +
-						'.' +
-						member,
-				);
+				listeners.push(this[member].WebSocketListenersClassName + '.' + member);
 		}
 		for (let member in this) {
 			if (this[member].WebSocketListenersClassName)
-				console.log(
-					'WebSocketListeners.' +
-						member +
-						' = ' +
-						this[member].WebSocketListenersClassName +
-						'.' +
-						member,
-				);
+				listeners.push(this[member].WebSocketListenersClassName + '.' + member);
 		}
-		return '';
+		return listeners;
 	}
 }
 
@@ -108,12 +95,7 @@ class WebSocketServer {
 		io.on('error', this.onerror);
 
 		server.listen(this.port);
-
-		console.log('-'.repeat(80));
-		console.log(
-			(options.cert && options.key ? 'wss' : 'ws') + ' Server since listening on port ' + this.port,
-		);
-		console.log(this.Listeners);
+		this.Listeners.serverStarted && this.Listeners.serverStarted();
 	}
 
 	// emits to everyone connected to the server
@@ -234,6 +216,8 @@ class WebSocketServer {
 			messagesSent: this.messagesSent,
 			messagesReceived: this.messagesReceived,
 			messagesFail: this.messagesFail,
+			// listeners
+			Listeners: this.Listeners,
 			// data
 			emit: this.emit,
 			sockets: this.sockets,
@@ -353,10 +337,11 @@ class WebSocket {
 					if (this.Listeners[m.k]) {
 						this.Listeners[m.k](this, m.v);
 					} else {
-						console.warn(m.k, 'is not on WebSocketListeners class', m.v, this);
 						this.Listeners.garbage && this.Listeners.garbage(this, m);
 					}
 				}
+			} else {
+				this.Listeners.garbage && this.Listeners.garbage(this, messages);
 			}
 		}
 	}
@@ -374,7 +359,7 @@ class WebSocket {
 	}
 
 	[inspect]() {
-		return Object.assign(this.inspect(), this.toJSON ? this.toJSON() : {});
+		return Object.assign(this.toJSON ? this.toJSON() : {}, this.inspect());
 	}
 	inspect() {
 		return {

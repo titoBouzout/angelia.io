@@ -17,26 +17,31 @@ import WebSocketServer from 'angelia.io/server';
 
 // all the predefined listeners you may want to use
 class Listeners {
+    async serverStarted() {
+        console.log('-'.repeat(60));
+        console.log('Server started listening on port ' + this.server.port);
+        console.log(this.server);
+    }
 	async connect(socket, request) {
     	console.log('socket connected', socket)
     	console.log('server info', this.server);
     }
 	async ping(socket) {
-    	console.log('socket sent a ping request', socket)
+    	console.log('socket sent ping', socket)
     	console.log('ping is ', socket.ping);
     }
 	async message(socket, data) {
     	console.log('socket sent a message', socket, data)
     }
     async garbage(socket, data) {
-    	console.log('socket hacked into the connection and sent weird stuff', socket, data);
+    	console.log('socket sent weird stuff', socket, data);
     }
     async timeout(socket, delay) {
-    	console.log('socket timedout', socket)
-    	console.log('client has not been seen for at least', delay, 'ms');
+    	console.log('socket timedout', socket.timedout, socket)
+    	console.log('socket has not been seen for at least', delay, 'ms');
     }
     async disconnect(socket, code, message) {
-    	console.log('socket disconnected', socket, code, message);
+    	console.log('socket disconnected', code, message, socket);
     }
 }
 
@@ -45,8 +50,8 @@ WebSocketServer.Listeners.add(Listeners);
 new WebSocketServer({
 	port: process.env.PORT , // defaults to 3001
 	// maxMessageSize: 5, // in mb defaults to 5
-	// cert: '/path/to/cert', // for https defaults to empty
-	// key: '/path/to/key', // for https defaultss to empty
+	// cert: '/path/to/cert', // for https
+	// key: '/path/to/key', // for https
 });
 ```
 

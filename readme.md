@@ -6,7 +6,7 @@ Simple WebSockets Server and Client for node.js. The goal of this project is to 
 
 Install on node.js/browser `npm install angelia.io`
 
-If you fancy for Client side a regular JavaScript file, then use https://github.com/titoBouzout/angelia.io/blob/master/client.js and include it as a regular script tag. For es5 remove `export default`
+If you fancy for Client side a regular JavaScript file, then use https://github.com/titoBouzout/angelia.io/blob/master/client/index.js and include it as a regular script tag. For es5 remove `export default`
 
 ## Simple Example
 
@@ -14,10 +14,10 @@ If you fancy for Client side a regular JavaScript file, then use https://github.
 
 ```JavaScript
 // server.js
-import WebSocketServer from 'angelia.io/server';
+import WebSocketServer, { Listeners } from 'angelia.io/server';
 
 class Connection {
-	async serverStarted() {
+	async listen() {
 		console.log('-'.repeat(60));
 		console.log('Server started listening on port ' + this.server.port);
 		console.log(this.server);
@@ -29,7 +29,7 @@ class Connection {
 		console.log('socket disconnected', code, message, socket);
 	}
 }
-WebSocketServer.Listeners.add(Connection);
+Listeners.add(Connection);
 
 class FancyChat {
 	async chatMessage(socket, message) {
@@ -37,7 +37,7 @@ class FancyChat {
 		socket.emit('chatMessage', 'Hi client nice to meet you')
 	}
 }
-WebSocketServer.Listeners.add(FancyChat);
+Listeners.add(FancyChat);
 
 new WebSocketServer({
 	port: 3001
@@ -71,7 +71,7 @@ To listen for a message you just create a class with any name, and give to a met
 If you are building a chat you may write something like this
 
 ```JavaScript
-import WebSocketServer from 'angelia.io/server';
+import WebSocketServer, { Listeners } from 'angelia.io/server';
 
 class FancyChat {
 	async typing(socket, data) {
@@ -83,7 +83,7 @@ class FancyChat {
 	}
 }
 
-WebSocketServer.Listeners.add(FancyChat);
+Listeners.add(FancyChat);
 
 class Connection {
 	async connect(socket, request) {
@@ -93,7 +93,7 @@ class Connection {
 		console.log('socket disconnected', code, message, socket);
 	}
 }
-WebSocketServer.Listeners.add(Connection);
+Listeners.add(Connection);
 
 new WebSocketServer({
 	port: 3001
@@ -212,10 +212,10 @@ Has the following properties
 There's a bunch of handy predefined listeners for some socket events that you may add to any class
 
 ```JavaScript
-import WebSocketServer from 'angelia.io/server';
+import WebSocketServer, { Listeners } from 'angelia.io/server';
 
 class _ {
-	async serverStarted() {
+	async listen() {
 		console.log('Server started listening on port ' + this.server.port);
 	}
 	async connect(socket) {
@@ -223,7 +223,7 @@ class _ {
 	}
 }
 
-WebSocketServer.Listeners.add(_);
+Listeners.add(_);
 
 new WebSocketServer();
 ```
@@ -232,7 +232,7 @@ All of the predefined listeners
 
 | signature                           | description                                                                           |
 | ----------------------------------- | ------------------------------------------------------------------------------------- |
-| `serverStarted()`                   | when the server is about to listen                                                    |
+| `listen()`                          | when the server is about to listen                                                    |
 | `connect(socket, request)`          | when a socket connects                                                                |
 | `disconnect(socket, code, message)` | when a socket gets disconnected                                                       |
 | `ping(socket)`                      | when we got an update of the ping for a socket                                        |

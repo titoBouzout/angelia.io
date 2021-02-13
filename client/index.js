@@ -4,19 +4,19 @@ export default class WebSocketClient {
 			debug: typeof options == 'string' ? false : options.debug,
 			url: typeof options == 'string' ? options : options.url,
 
-			listeners: {},
-			messages: [],
-
 			reconnect: true,
 			isReconnect: false,
 
-			nextTick: this.nextTick.bind(this),
-			disconnect: this.disconnect.bind(this),
+			listeners: {},
+			messages: [],
 
 			onopen: this.onopen.bind(this),
 			onclose: this.onclose.bind(this),
 			onerror: this.onerror.bind(this),
 			onmessage: this.onmessage.bind(this),
+
+			nextTick: this.nextTick.bind(this),
+			disconnect: this.disconnect.bind(this),
 		});
 
 		if (this.debug) console.log('ws instantiated');

@@ -89,7 +89,7 @@ class Socket {
 		this.server.Listeners.disconnect && this.server.Listeners.disconnect(this, code, message);
 	}
 	onerror(err) {
-		console.error('Socket.onerror', err, 'readyState is', this.io.readyState);
+		console.error('Socket.onerror', err, this.inspect());
 	}
 	onmessage(e) {
 		if (e === '') {
@@ -128,7 +128,7 @@ class Socket {
 			this.server.messagesSent += length;
 			this.messagesSent += length;
 		} else {
-			console.warn('socket not ready to emit on Socket.emit', this);
+			console.warn('socket not ready to emit on Socket.emit', this.inspect());
 			this.server.messagesFail += length;
 		}
 		this.messages = [];

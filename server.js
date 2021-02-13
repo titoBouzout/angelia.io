@@ -299,8 +299,12 @@ class WebSocket {
 		}
 	}
 
-	disconnect() {
-		this.io.close();
+	disconnect(noReconnect) {
+		if (noReconnect) {
+			this.emit({ k: 'disconnect', v: true });
+		} else {
+			this.io.close();
+		}
 	}
 	// private API
 	listen() {

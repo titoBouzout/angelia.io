@@ -43,11 +43,9 @@ export default class WebSocketClient {
 	get connected() {
 		return this.io && this.io.readyState === WebSocket.OPEN;
 	}
-	banned() {
-		this.reconnect = false;
-		this.disconnect();
-	}
-	disconnect() {
+
+	disconnect(noReconnect) {
+		if (noReconnect) this.reconnect = false;
 		if (this.debug) console.log('ws manual disconnect');
 		if (this.io.readyState !== WebSocket.CLOSING && this.io.readyState !== WebSocket.CLOSED) {
 			this.io.close();

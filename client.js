@@ -1,9 +1,8 @@
 export default class WebSocketClient {
-	constructor(url) {
+	constructor(options) {
 		Object.assign(this, {
-			debug: false,
-
-			url: url,
+			debug: typeof options == 'string' ? false : options.debug,
+			url: typeof options == 'string' ? options : options.url,
 
 			listeners: {},
 			messages: [],
@@ -102,24 +101,27 @@ export default class WebSocketClient {
 			this.dispatch('connect');
 		}
 	}
-	onclose(a, b) {
-		switch (a.code) {
+	onclose(event) {
+		switch (event.code) {
 			// normal close
 			case 1000:
-				if (this.debug) console.log('ws normal close');
+				if (this.debug) console.log('ws normal close', event);
 				break;
 			// closed by client
 			case 1005:
-				if (this.debug) console.log('ws we called socket.disconnect()');
+				if (this.debug) console.log('ws we called socket.disconnect()', event);
 				break;
 			// closed by server
 			case 1006: {
 				if (this.debug)
-					console.log('ws, the server killed the connection, or we failed to connect to server');
+					console.log(
+						'ws, the server killed the connection, or we failed to connect to server',
+						event,
+					);
 				break;
 			}
 			default: {
-				if (this.debug) console.log('ws closed, code', a.code, a, b);
+				if (this.debug) console.log('ws closed, code', event.code, event);
 				break;
 			}
 		}

@@ -1,8 +1,8 @@
 export default class WebSocketClient {
 	constructor(url) {
-		console.log('ws instantiated');
-
 		Object.assign(this, {
+			debug: false,
+
 			url: url,
 
 			listeners: {},
@@ -19,6 +19,9 @@ export default class WebSocketClient {
 			onerror: this.onerror.bind(this),
 			onmessage: this.onmessage.bind(this),
 		});
+
+		if (this.debug) console.log('ws instantiated');
+
 		this.connect();
 		window.addEventListener('unload', this.disconnect, true);
 	}
@@ -46,7 +49,7 @@ export default class WebSocketClient {
 		this.disconnect();
 	}
 	disconnect() {
-		console.log('ws manual disconnect');
+		if (this.debug) console.log('ws manual disconnect');
 		if (this.io.readyState !== WebSocket.CLOSING && this.io.readyState !== WebSocket.CLOSED) {
 			this.io.close();
 		}
@@ -91,11 +94,11 @@ export default class WebSocketClient {
 	onopen() {
 		Promise.resolve().then(this.nextTick);
 		if (this.isReconnect) {
-			console.log('ws reconnected');
+			if (this.debug) console.log('ws reconnected');
 			this.dispatch('reconnect');
 		} else {
 			this.isReconnect = true;
-			console.log('ws connected');
+			if (this.debug) console.log('ws connected');
 			this.dispatch('connect');
 		}
 	}
@@ -103,19 +106,20 @@ export default class WebSocketClient {
 		switch (a.code) {
 			// normal close
 			case 1000:
-				console.log('ws normal close');
+				if (this.debug) console.log('ws normal close');
 				break;
 			// closed by client
 			case 1005:
-				console.log('ws we called socket.disconnect()');
+				if (this.debug) console.log('ws we called socket.disconnect()');
 				break;
 			// closed by server
 			case 1006: {
-				console.log('ws, the server killed the connection, or we failed to connect to server');
+				if (this.debug)
+					console.log('ws, the server killed the connection, or we failed to connect to server');
 				break;
 			}
 			default: {
-				console.log('ws closed, code', a.code, a, b);
+				if (this.debug) console.log('ws closed, code', a.code, a, b);
 				break;
 			}
 		}

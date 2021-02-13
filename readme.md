@@ -1,10 +1,10 @@
 # angelia.io
 
-Simple WebSockets Server and Client for node.js. The goal of this project is to provide a simple API.
+Simple WebSockets Server and Client for node.js. The goal of this project is to provide a simple API that just works™
 
 ## Installation
 
-You may install on a node.js Server and on the Client by running `npm install angelia.io`
+Install on node.js/browser `npm install angelia.io`
 
 If you fancy for Client side a regular JavaScript file, then use https://github.com/titoBouzout/angelia.io/blob/master/client.js and include it as a regular script tag. For es5 remove `export default`
 
@@ -13,6 +13,7 @@ If you fancy for Client side a regular JavaScript file, then use https://github.
 ### Socket Server (Node.js)
 
 ```JavaScript
+// server.js
 import WebSocketServer from 'angelia.io/server';
 
 class Connection {
@@ -38,7 +39,6 @@ class FancyChat {
 }
 WebSocketServer.Listeners.add(FancyChat);
 
-
 new WebSocketServer({
 	port: 3001
 });
@@ -47,6 +47,7 @@ new WebSocketServer({
 ### Socket Client (Browser)
 
 ```JavaScript
+// index.js
 import WebSocketClient from 'angelia.io/client';
 
 const socket = new WebSocketClient({
@@ -63,9 +64,9 @@ socket.emit('chatMessage', 'Hi there server, Im client')
 
 ## Server Listeners
 
-The listeners for client messages are defined by the names of the methods of classes. You can add as many classes as you want to the collection of listeners. The name of the classes doesn't matter, only the method names.
+To listen for a message you just create a class with any name, and give to a method the name of the thing you want to listen to. You then add your class to the listeners as `WebSocketServer.Listeners.add(MyClass);` and you are done.
 
-If you are building a chat you may write something like this:
+If you are building a chat you may write something like this
 
 ```JavaScript
 import WebSocketServer from 'angelia.io/server';
@@ -97,7 +98,7 @@ new WebSocketServer({
 });
 ```
 
-Then, on client you may write something like:
+Then, on client you may write something like
 
 ```JavaScript
 import WebSocketClient from 'angelia.io/client';
@@ -146,30 +147,31 @@ const server = new WebSocketServer({
 The server Object can be accessed from everywhere
 
 ```javascript
-const server = new WebSocketServer();
 class className {
 	methodName(socket) {
 		console.log(this.server, 'also', socket.server);
 	}
 }
 WebSocketServer.Listeners.add(className);
+
+const server = new WebSocketServer();
 ```
 
-Has the following properties:
+Has the following properties
 
-| name               | kind     | description                                                         |
-| ------------------ | -------- | ------------------------------------------------------------------- |
-| `since`            | number   | timestamp of initialization                                         |
-| `port`             | number   | port used by this server                                            |
-| `maxMessageSize`   | number   | max size in mb of a message received                                |
-| `timeout`          | number   | after how long the socket is considered gone, in ms                 |
-| `socketsServed`    | number   | total count of sockets ever connected                               |
-| `bytesReceived`    | number   | sum of bytes the server has ever received                           |
-| `messagesSent`     | number   | total count of messages ever sent                                   |
-| `messagesReceived` | number   | total count of messages ever received                               |
-| `Listeners`        | Object   | when doing console.log(server.Listeners) will list them as an array |
-| `emit(key, value)` | Function | function to emit to all connected sockets                           |
-| `sockets`          | Set      | a Set() with all the current connected sockets                      |
+| name               | kind     | description                                                     |
+| ------------------ | -------- | --------------------------------------------------------------- |
+| `since`            | number   | timestamp of initialization                                     |
+| `port`             | number   | port used by this server                                        |
+| `maxMessageSize`   | number   | maximum message size in mb                                      |
+| `timeout`          | number   | after how long the socket is considered gone, in ms             |
+| `socketsServed`    | number   | total count of sockets ever connected                           |
+| `messagesReceived` | number   | total count of messages ever received                           |
+| `messagesSent`     | number   | total count of messages ever sent                               |
+| `bytesReceived`    | number   | sum of bytes the server has ever received                       |
+| `Listeners`        | Object   | console.log(server.Listeners) will pretty list them as an array |
+| `emit(key, value)` | Function | function to emit to all connected sockets                       |
+| `sockets`          | Set      | a Set() with all the current connected sockets                  |
 
 ## Socket Object
 
@@ -184,27 +186,27 @@ class className {
 WebSocketServer.Listeners.add(className);
 ```
 
-Has the following properties:
+Has the following properties
 
-| name               | kind     | description                                                                    |
-| ------------------ | -------- | ------------------------------------------------------------------------------ |
-| `server`           | Object   | reference to the server                                                        |
-| `ip`               | string   | if of the socket                                                               |
-| `userAgent`        | string   | user agent of the socket                                                       |
-| `since`            | number   | timestamp of connection                                                        |
-| `seen`             | number   | timestamp of last received message                                             |
-| `ping`             | number   | delay with the socket in milliseconds (full round trip)                        |
-| `timedout`         | boolean  | delay with the socket in milliseconds (full round trip)                        |
-| `messagesReceived` | number   | count of messages received from this socket                                    |
-| `messagesSent`     | number   | count of messages sent to this socket                                          |
-| `bytesReceived`    | number   | sum of bytes received from this socket                                         |
-| `emit(key, value)` | Function | emits to this socket                                                           |
-| `once(key, value)` | Function | emits to this socket and replace if exists and pending message with same `key` |
-| `disconnect`       | Function | disconnects the socket from the server                                         |
+| name               | kind     | description                                                                      |
+| ------------------ | -------- | -------------------------------------------------------------------------------- |
+| `server`           | Object   | reference to the server                                                          |
+| `ip`               | string   | ip of the socket                                                                 |
+| `userAgent`        | string   | user agent of the socket                                                         |
+| `since`            | number   | timestamp of first seen                                                          |
+| `seen`             | number   | timestamp of last received message                                               |
+| `ping`             | number   | delay with the socket in milliseconds (full round trip)                          |
+| `timedout`         | boolean  | whether we lost connection with this socket                                      |
+| `messagesReceived` | number   | count of messages received from this socket                                      |
+| `messagesSent`     | number   | count of messages sent to this socket                                            |
+| `bytesReceived`    | number   | sum of bytes received from this socket                                           |
+| `emit(key, value)` | Function | emits to this socket                                                             |
+| `once(key, value)` | Function | emits to this socket and replace if exists a pending message with the same `key` |
+| `disconnect()`     | Function | disconnects the socket from the server                                           |
 
 ## Predefined Listeners
 
-There's a bunch of handy predefined listeners for some user events that you may add to any class. Example:
+There's a bunch of handy predefined listeners for some socket events that you may add to any class
 
 ```JavaScript
 import WebSocketServer from 'angelia.io/server';
@@ -220,12 +222,10 @@ class _ {
 
 WebSocketServer.Listeners.add(_);
 
-new WebSocketServer({
-	port: 3001
-});
+new WebSocketServer();
 ```
 
-All of the predefined listeners:
+All of the predefined listeners
 
 | signature                           | description                                                                           |
 | ----------------------------------- | ------------------------------------------------------------------------------------- |

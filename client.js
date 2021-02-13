@@ -54,6 +54,7 @@ export default class WebSocketClient {
 	on(k, v) {
 		this.listeners[k] = this.listeners[k] || [];
 		this.listeners[k].push(v);
+		return () => this.off(k, v);
 	}
 	off(k, v) {
 		if (v) {

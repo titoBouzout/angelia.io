@@ -69,9 +69,9 @@ socket.emit('chatMessage', 'Hi there server, Im client', (data) =>{
 
 ### Listeners
 
-To listen for a message you just create a class with any name, and give to a method the name of the thing you want to listen to. You then add your class to the listeners as `Server.Listeners.add(MyClass);` and you are done.
+To listen for a message you just create a class with any name, and give to a method the name of the thing you want to listen to. You then add your class to the listeners as `Listeners.add(MyClass);` and you are done.
 
-On user defined listeners the listener receives three things as sent by the client, the `socket` object, the `data` and a `callback` function if any; as in `class FancyChat { async typing(socket, data, callback) {callback('got it')}}`.
+On user defined listeners, the listener receives three things as sent by the client, the `socket` object, the `data` and a `callback` function if any; as in `class FancyChat { async typing(socket, data, callback) {callback('got it')}}`.
 
 If you are building a chat you may write something like this
 

@@ -77,12 +77,11 @@ export default class Client {
 		if (!this.messages.length) {
 			Promise.resolve().then(this.nextTick);
 		}
-		c = this.callback(c);
-		this.messages.push({
-			k,
-			v,
-			c,
-		});
+		if (!c) {
+			this.messages.push([k, v]);
+		} else {
+			this.messages.push([k, v, this.callback(c)]);
+		}
 	}
 
 	// private API
@@ -135,7 +134,7 @@ export default class Client {
 		} else {
 			let messages = JSON.parse(e.data);
 			for (let m of messages) {
-				this.dispatch(m.k, m.v);
+				this.dispatch(m[0], m[1]);
 			}
 		}
 	}
@@ -144,11 +143,9 @@ export default class Client {
 		this.callbacks[d[0]] = null;
 	}
 	callback(c) {
-		if (c) {
-			let i = this.callbacks.length;
-			this.callbacks[i] = c;
-			return i;
-		}
+		let i = this.callbacks.length;
+		this.callbacks[i] = c;
+		return i;
 	}
 	dispatch(k, v) {
 		if (this.listeners[k]) {

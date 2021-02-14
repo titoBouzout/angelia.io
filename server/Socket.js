@@ -39,14 +39,7 @@ class Socket {
 			process.nextTick(this.nextTick);
 		}
 
-		this.messages.push(
-			typeof k !== 'string'
-				? k
-				: {
-						k,
-						v,
-				  },
-		);
+		this.messages.push(typeof k !== 'string' ? k : [k, v]);
 	}
 	once(k, v) {
 		if (!this.messages.length) {
@@ -54,15 +47,15 @@ class Socket {
 		} else {
 			if (typeof k !== 'string') {
 				for (let m of this.messages) {
-					if (m.k === k.k) {
-						m.v = k.v;
+					if (m[0] === k[0]) {
+						m[1] = k[1];
 						return;
 					}
 				}
 			} else {
 				for (let m of this.messages) {
-					if (m.k === k) {
-						m.v = v;
+					if (m[0] === k) {
+						m[1] = v;
 						return;
 					}
 				}
@@ -73,7 +66,7 @@ class Socket {
 
 	disconnect(noReconnect) {
 		if (noReconnect) {
-			this.emit({ k: 'disconnect', v: true });
+			this.emit(['disconnect', true]);
 		} else {
 			this.io.close();
 		}
@@ -114,8 +107,8 @@ class Socket {
 				this.server.Listeners.messages && this.server.Listeners.messages(this, messages);
 
 				for (let m of messages) {
-					if (this.server.Listeners[m.k]) {
-						this.server.Listeners[m.k](this, m.v, m.c && this.oncallback.bind(null, m.c));
+					if (this.server.Listeners[m[0]]) {
+						this.server.Listeners[m[0]](this, m[1], m[2] && this.oncallback.bind(null, m[2]));
 					} else {
 						this.server.Listeners.garbage && this.server.Listeners.garbage(this, m);
 					}

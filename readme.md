@@ -32,9 +32,10 @@ class Connection {
 Listeners.add(Connection);
 
 class FancyChat {
-	async chatMessage(socket, message) {
+	async chatMessage(socket, message, callback) {
 		console.log('socket sent', message)
 		socket.emit('chatMessage', 'Hi client nice to meet you')
+		callback('yes, got it')
 	}
 }
 Listeners.add(FancyChat);
@@ -59,7 +60,9 @@ socket.on('chatMessage', (message) => {
 	console.log('Server sent', message)
 })
 
-socket.emit('chatMessage', 'Hi there server, Im client')
+socket.emit('chatMessage', 'Hi there server, Im client', (data) =>{
+	console.log('you got it?', data)
+})
 ```
 
 ## Server
@@ -68,7 +71,7 @@ socket.emit('chatMessage', 'Hi there server, Im client')
 
 To listen for a message you just create a class with any name, and give to a method the name of the thing you want to listen to. You then add your class to the listeners as `Server.Listeners.add(MyClass);` and you are done.
 
-On user defined listeners the listener receives two things, the `socket` object and the `data` sent by the client, as in `class FancyChat { async typing(socket, data) {}}`.
+On user defined listeners the listener receives three things as sent by the client, the `socket` object, the `data` and a `callback` function if any; as in `class FancyChat { async typing(socket, data, callback) {callback('got it')}}`.
 
 If you are building a chat you may write something like this
 
@@ -76,12 +79,13 @@ If you are building a chat you may write something like this
 import Server, { Listeners } from 'angelia.io/server';
 
 class FancyChat {
-	async typing(socket, data) {
+	async typing(socket, data, callback) {
 		console.log('Im', data ? ' typing' : ' not typing')
 	}
-	async theMessage(socket, data) {
+	async theMessage(socket, data, callback) {
 		console.log('the message is', data, socket)
 		socket.emit('gotIt', 'thanks')
+		callback('yes Im sure')
 	}
 }
 
@@ -116,7 +120,9 @@ socket.emit('typing', true)
 
 setTimeout(() => {
 	socket.emit('typing', false)
-	socket.emit('theMessage', 'hi there!')
+	socket.emit('theMessage', 'hi there!', (data) =>{
+		console.log('you sure?', data)
+	})
 }, 10000)
 
 socket.on('gotIt', (message) => {
@@ -167,20 +173,20 @@ const server = new Server({
 
 Has the following properties
 
-| signature          | kind     | description                                                                     |
-| ------------------ | -------- | ------------------------------------------------------------------------------- |
-| `since`            | number   | timestamp of initialization                                                     |
-| `port`             | number   | port used by this server                                                        |
-| `maxMessageSize`   | number   | maximum message size in mb                                                      |
-| `timeout`          | number   | after how long the socket is considered gone, in ms                             |
-| `socketsServed`    | number   | total count of sockets ever connected                                           |
-| `messagesReceived` | number   | total count of messages ever received                                           |
-| `messagesSent`     | number   | total count of messages ever sent                                               |
-| `bytesReceived`    | number   | sum of bytes the server has ever received                                       |
-| `Listeners`        | Object   | console.log(server.Listeners) will pretty list them as an array                 |
-| `emit(key, value)` | Function | function to emit to all connected sockets                                       |
-| `once(key, value)` | Function | emits to the socket and replace if exists a pending message with the same `key` |
-| `sockets`          | Set      | a Set() with all the current connected sockets                                  |
+| signature            | kind     | description                                                                      |
+| -------------------- | -------- | -------------------------------------------------------------------------------- |
+| `since`              | number   | timestamp of initialization                                                      |
+| `port`               | number   | port used by this server                                                         |
+| `maxMessageSize`     | number   | maximum message size in mb                                                       |
+| `timeout`            | number   | after how long the socket is considered gone, in ms                              |
+| `socketsServed`      | number   | total count of sockets ever connected                                            |
+| `messagesReceived`   | number   | total count of messages ever received                                            |
+| `messagesSent`       | number   | total count of messages ever sent                                                |
+| `bytesReceived`      | number   | sum of bytes the server has ever received                                        |
+| `Listeners`          | Object   | console.log(server.Listeners) will pretty list them as an array                  |
+| `emit(key, [value])` | Function | emits to all connected sockets                                                   |
+| `once(key, [value])` | Function | emits to the sockets and replace if exists a pending message with the same `key` |
+| `sockets`            | Set      | a Set() with all the current connected sockets                                   |
 
 ### Socket Object
 
@@ -211,8 +217,8 @@ Has the following properties
 | `messagesReceived`        | number   | count of messages received from this socket                                      |
 | `messagesSent`            | number   | count of messages sent to this socket                                            |
 | `bytesReceived`           | number   | sum of bytes received from this socket                                           |
-| `emit(key, value)`        | Function | emits to this socket                                                             |
-| `once(key, value)`        | Function | emits to this socket and replace if exists a pending message with the same `key` |
+| `emit(key, [value])`      | Function | emits to this socket                                                             |
+| `once(key, [value])`      | Function | emits to this socket and replace if exists a pending message with the same `key` |
 | `disconnect([reconnect])` | Function | disconnects the socket from the server, pass true to prevent re-connections      |
 
 ### Predefined Listeners
@@ -278,14 +284,14 @@ const socket = new Client('ws://localhost:3001');
 
 The client API is similar to regular event handling
 
-| signature                 | kind     | description                                                          |
-| ------------------------- | -------- | -------------------------------------------------------------------- |
-| `connect()`               | Function | to connect to the server, it auto-connects on disconnection          |
-| `connected`               | boolean  | `true` when the socket is connected else `false`                     |
-| `disconnect([reconnect])` | Function | to disconnect from the server, pass `true` to prevent re-connections |
-| `on(key, callback)`       | Function | to listen for an event, returns an `off` function to stop listening  |
-| `off(key, callback)`      | Function | to turn off listening for an event                                   |
-| `emit(key, value)`        | Function | to emit data to the server                                           |
+| signature                      | kind     | description                                                          |
+| ------------------------------ | -------- | -------------------------------------------------------------------- |
+| `connect()`                    | Function | to connect to the server, it auto-connects on disconnection          |
+| `connected`                    | boolean  | `true` when the socket is connected else `false`                     |
+| `disconnect([reconnect])`      | Function | to disconnect from the server, pass `true` to prevent re-connections |
+| `on(key, callback)`            | Function | to listen for an event, returns an `off` function to stop listening  |
+| `off(key, callback)`           | Function | to turn off listening for an event                                   |
+| `emit(key, [value, callback])` | Function | to emit data to the server with a key and optionally a callback      |
 
 ## Authors
 

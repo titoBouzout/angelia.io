@@ -19,6 +19,7 @@ class Socket {
 			onclose: this.onclose.bind(this),
 			onerror: this.onerror.bind(this),
 			onmessage: this.onmessage.bind(this),
+			oncallback: this.oncallback.bind(this),
 
 			nextTick: this.nextTick.bind(this),
 			inspect: this.inspect.bind(this),
@@ -91,6 +92,9 @@ class Socket {
 	onerror(err) {
 		console.error('Socket.onerror', err, this.inspect());
 	}
+	oncallback(k, v) {
+		this.emit('', [k, v]);
+	}
 	onmessage(e) {
 		if (e === '') {
 			this.server.Listeners.pong(this);
@@ -111,7 +115,7 @@ class Socket {
 
 				for (let m of messages) {
 					if (this.server.Listeners[m.k]) {
-						this.server.Listeners[m.k](this, m.v);
+						this.server.Listeners[m.k](this, m.v, m.c && this.oncallback.bind(null, m.c));
 					} else {
 						this.server.Listeners.garbage && this.server.Listeners.garbage(this, m);
 					}

@@ -7,7 +7,8 @@ export default class Client {
 			reconnect: true,
 			isReconnect: false,
 
-			listeners: {},
+			listeners: { '': [this.oncallback.bind(this)] },
+			callbacks: [() => {}],
 			messages: [],
 
 			onopen: this.onopen.bind(this),
@@ -52,38 +53,39 @@ export default class Client {
 		}
 	}
 	on(k, v) {
-		this.listeners[k] = this.listeners[k] || [];
-		this.listeners[k].push(v);
-		return () => this.off(k, v);
+		if (k != '' && typeof v === 'function') {
+			this.listeners[k] = this.listeners[k] || [];
+			this.listeners[k].push(v);
+			return () => this.off(k, v);
+		} else {
+			console.error('socket.on("' + k + '", callback) key and callback cannot be empty');
+		}
 	}
 	off(k, v) {
 		if (!this.listeners[k]) {
-			console.warn('socket.off("' + k + '", v)', k, 'not found on socket.listeners');
+			console.error('socket.off("' + k + '", callback)', k, 'key not found');
 		} else {
-			let index = this.listeners[k].indexOf(v);
-			if (index === -1) {
-				console.warn(
-					'socket.off("' + k + '", not found)',
-					v,
-					'not found on socket.listeners[' + k + ']',
-				);
+			let i = this.listeners[k].indexOf(v);
+			if (i === -1) {
+				console.error('socket.off("' + k + '", callback)', v, 'callback not found');
 			} else {
-				this.listeners[k].splice(index, 1);
+				this.listeners[k].splice(i, 1);
 			}
 		}
 	}
-	emit(k, v) {
+	emit(k, v, c) {
 		if (!this.messages.length) {
 			Promise.resolve().then(this.nextTick);
 		}
+		c = this.callback(c);
 		this.messages.push({
 			k,
 			v,
+			c,
 		});
 	}
 
 	// private API
-
 	onopen() {
 		Promise.resolve().then(this.nextTick);
 		if (this.isReconnect) {
@@ -122,7 +124,8 @@ export default class Client {
 		this.dispatch('disconnect');
 		this.connect();
 	}
-	onerror(a, b) {
+	// this happens when trying to connect while the server or the connection is down
+	onerror() {
 		this.dispatch('disconnect');
 		this.connect();
 	}
@@ -134,6 +137,17 @@ export default class Client {
 			for (let m of messages) {
 				this.dispatch(m.k, m.v);
 			}
+		}
+	}
+	oncallback(d) {
+		this.callbacks[d[0]](d[1]);
+		this.callbacks[d[0]] = null;
+	}
+	callback(c) {
+		if (c) {
+			let i = this.callbacks.length;
+			this.callbacks[i] = c;
+			return i;
 		}
 	}
 	dispatch(k, v) {

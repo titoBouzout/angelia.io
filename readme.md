@@ -210,6 +210,7 @@ Has the following properties
 | `server`                  | Object   | reference to the server                                                          |
 | `ip`                      | string   | ip of the socket                                                                 |
 | `userAgent`               | string   | user agent of the socket                                                         |
+| `query`                   | Object   | the query string of the socket url                                               |
 | `since`                   | number   | timestamp of first seen                                                          |
 | `seen`                    | number   | timestamp of last received message                                               |
 | `ping`                    | number   | delay with the socket in milliseconds (full round trip)                          |

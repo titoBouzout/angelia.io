@@ -1,5 +1,7 @@
 const inspect = Symbol.for('nodejs.util.inspect.custom');
 
+const URL = require('url');
+
 const Socket = require('./Socket.js');
 
 class Server {
@@ -98,6 +100,7 @@ class Server {
 				request.connection.remoteAddress ||
 				(request.headers['x-forwarded-for'] || '').split(/\s*,\s*/)[0],
 			userAgent: request.headers['user-agent'] || '',
+			query: URL.parse(request.url, true).query,
 		});
 
 		this.socketsServed++;

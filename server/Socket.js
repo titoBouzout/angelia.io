@@ -148,7 +148,7 @@ class Socket {
 
 			ip: this.ip,
 			userAgent: this.userAgent,
-			query: this.query,
+			params: this.params,
 
 			bytesSent: this.bytesSent,
 			bytesReceived: this.bytesReceived,

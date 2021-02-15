@@ -145,13 +145,13 @@ const server = new Server({
 });
 ```
 
-| name             | kind   | default   | description                                                 |
-| ---------------- | ------ | --------- | ----------------------------------------------------------- |
-| `port`           | Number | 3001      | the port to use for this server                             |
-| `maxMessageSize` | Number | 5         | max size in mb of a message received                        |
-| `cert`           | String | undefined | path to the cert file for using https fullchain.pem         |
-| `key`            | String | undefined | path to the key file for using https privkey.pem            |
-| `params`         | Object | undefined | to send data while connecting, accesible via `socket.query` |
+| name             | kind   | default   | description                                                  |
+| ---------------- | ------ | --------- | ------------------------------------------------------------ |
+| `port`           | Number | 3001      | the port to use for this server                              |
+| `maxMessageSize` | Number | 5         | max size in mb of a message received                         |
+| `cert`           | String | undefined | path to the cert file for using https fullchain.pem          |
+| `key`            | String | undefined | path to the key file for using https privkey.pem             |
+| `params`         | Object | undefined | to send data while connecting, accesible via `socket.params` |
 
 ### Server Object
 
@@ -213,7 +213,7 @@ Has the following properties
 | `server`                  | Object   | reference to the server                                                          |
 | `ip`                      | String   | ip of the socket                                                                 |
 | `userAgent`               | String   | user agent of the socket                                                         |
-| `query`                   | Object   | the query string of the socket url as an object                                  |
+| `params`                  | Object   | the params sent via the client constructor                                       |
 | `since`                   | Number   | timestamp of first seen                                                          |
 | `seen`                    | Number   | timestamp of last received message                                               |
 | `ping`                    | Number   | delay with the socket in milliseconds (full round trip)                          |

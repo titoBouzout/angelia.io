@@ -123,7 +123,7 @@ class Server {
 				(request.headers['x-forwarded-for'] || '').split(/\s*,\s*/)[0]
 			).replace(/'^::ffff:'/, ''),
 			userAgent: request.headers['user-agent'] || '',
-			query: URL.parse(request.url, true).query,
+			params: URL.parse(request.url, true).query,
 		});
 
 		this.served++;

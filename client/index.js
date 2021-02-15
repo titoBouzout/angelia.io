@@ -23,7 +23,7 @@ export default class Client {
 		if (this.debug) console.log('ws instantiated');
 
 		this.connect();
-		window.addEventListener('unload', this.disconnect, true);
+		window.addEventListener('unload', () => this.disconnect(true), true);
 	}
 	// public API
 	connect() {

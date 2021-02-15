@@ -1,5 +1,7 @@
 export default class Client {
 	constructor(options) {
+		let url = typeof options == 'string' ? options : options.url;
+		console.log(new URL(url));
 		Object.assign(this, {
 			debug: typeof options == 'string' ? false : options.debug,
 			url: typeof options == 'string' ? options : options.url,
@@ -142,7 +144,9 @@ export default class Client {
 		}
 	}
 	oncallback(d) {
-		this.callbacks[d[0]](...d[1]);
+		d[1] !== undefined && d[1] !== null
+			? this.callbacks[d[0]](...d[1])
+			: this.callbacks[d[0]](d[1]);
 		this.callbacks[d[0]] = null;
 	}
 	callback(c) {

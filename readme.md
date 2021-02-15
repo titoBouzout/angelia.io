@@ -247,15 +247,16 @@ new Server({
 
 All of the predefined listeners
 
-| signature                           | description                                                                           |
-| ----------------------------------- | ------------------------------------------------------------------------------------- |
-| `listen()`                          | when the server is about to listen                                                    |
-| `connect(socket, request)`          | when a socket connects                                                                |
-| `disconnect(socket, code, message)` | when a socket gets disconnected                                                       |
-| `ping(socket)`                      | when we got an update of the ping for a socket                                        |
-| `timeout(socket, delay)`            | when we are about to disconnect the socket, gives the delay in milliseconds           |
-| `garbage(socket, data)`             | if the client sends a message that the server has no listener this will be dispatched |
-| `messages(socket, messages)`        | for debugging: array of messages received before dispatching to listeners             |
+| signature                           | description                                                                               |
+| ----------------------------------- | ----------------------------------------------------------------------------------------- |
+| `listen()`                          | when the server is about to listen                                                        |
+| `connect(socket, request)`          | when a socket connects                                                                    |
+| `disconnect(socket, code, message)` | when a socket gets disconnected                                                           |
+| `ping(socket)`                      | when we got an update of the ping for a socket                                            |
+| `timeout(socket, delay)`            | when we are about to disconnect the socket, gives the delay in milliseconds               |
+| `garbage(socket, data)`             | if the client sends a message that the server has no listener this will be dispatched     |
+| `incoming(socket, messages)`        | for debugging: ref to array of incoming messages received before dispatching to listeners |
+| `outgoing(socket, messages)`        | for debugging: ref to array of outgoing messages before sending to socket                 |
 
 ## Client (Browser)
 

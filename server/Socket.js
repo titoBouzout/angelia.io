@@ -104,7 +104,7 @@ class Socket {
 				this.messagesReceived += length;
 				this.server.messagesReceived += length;
 
-				this.server.Listeners.messages && this.server.Listeners.messages(this, messages);
+				this.server.Listeners.incoming && this.server.Listeners.incoming(this, messages);
 
 				for (let m of messages) {
 					if (this.server.Listeners[m[0]]) {
@@ -121,6 +121,8 @@ class Socket {
 	nextTick() {
 		let length = this.messages.length;
 		if (this.io.readyState === 1) {
+			this.server.Listeners.outgoing && this.server.Listeners.outgoing(this, this.messages);
+
 			this.io.send(JSON.stringify(this.messages));
 			this.server.messagesSent += length;
 			this.messagesSent += length;

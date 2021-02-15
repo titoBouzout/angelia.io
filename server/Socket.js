@@ -85,7 +85,7 @@ class Socket {
 	onerror(err) {
 		console.error('Socket.onerror', err, this.inspect());
 	}
-	oncallback(k, v) {
+	oncallback(k, ...v) {
 		this.emit('', [k, v]);
 	}
 	onmessage(e) {

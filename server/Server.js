@@ -15,6 +15,7 @@ class Server {
 			now: Date.now(),
 
 			served: 0,
+			bytesSent: 0,
 			bytesReceived: 0,
 			messagesSent: 0,
 			messagesReceived: 0,
@@ -127,6 +128,8 @@ class Server {
 
 		// dispatch connect
 		this.Listeners.connect && this.Listeners.connect(socket, request);
+
+		this.pingSocket(socket);
 	}
 	onerror(err) {
 		console.error('Server.onerror', err);
@@ -147,12 +150,12 @@ class Server {
 				socket.io.terminate();
 			} else {
 				// ping
-				this.updateNow();
 				this.pingSocket(socket);
 			}
 		}
 	}
 	pingSocket(socket) {
+		this.updateNow();
 		socket.contacted = this.now;
 		if (socket.io.readyState === 1) {
 			socket.io.send('');
@@ -200,6 +203,7 @@ class Server {
 		return {
 			// started
 			since: this.since,
+			now: this.now,
 			// options
 			port: this.port,
 			maxMessageSize: this.maxMessageSize,
@@ -207,6 +211,7 @@ class Server {
 			// stats
 			connections: this.connections,
 			served: this.served,
+			bytesSent: this.bytesSent,
 			bytesReceived: this.bytesReceived,
 			messagesSent: this.messagesSent,
 			messagesReceived: this.messagesReceived,

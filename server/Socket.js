@@ -6,13 +6,15 @@ class Socket {
 			server: server,
 
 			messages: [],
+
+			bytesSent: 0,
+			bytesReceived: 0,
 			messagesSent: 0,
 			messagesReceived: 0,
-			bytesReceived: 0,
 
 			since: server.now,
 			seen: server.now,
-			contacted: server.now,
+			contacted: server.now, // for ping
 			ping: 0,
 			timedout: false,
 
@@ -94,15 +96,13 @@ class Socket {
 		} else {
 			this.seen = this.server.now;
 
-			let length = e.length;
-			this.bytesReceived += length;
-			this.server.bytesReceived += length;
+			this.server.bytesReceived += e.length;
+			this.bytesReceived += e.length;
 
 			let messages = JSON.parse(e);
 			if (Array.isArray(messages)) {
-				let length = messages.length;
-				this.messagesReceived += length;
-				this.server.messagesReceived += length;
+				this.server.messagesReceived += messages.length;
+				this.messagesReceived += messages.length;
 
 				this.server.Listeners.incoming && this.server.Listeners.incoming(this, messages);
 
@@ -119,13 +119,16 @@ class Socket {
 		}
 	}
 	nextTick() {
-		let length = this.messages.length;
 		if (this.io.readyState === 1) {
 			this.server.Listeners.outgoing && this.server.Listeners.outgoing(this, this.messages);
+			let messages = JSON.stringify(this.messages);
+			this.io.send(messages);
 
-			this.io.send(JSON.stringify(this.messages));
-			this.server.messagesSent += length;
-			this.messagesSent += length;
+			this.server.messagesSent += this.messages.length;
+			this.messagesSent += this.messages.length;
+
+			this.server.bytesSent += messages.length;
+			this.bytesSent += messages.length;
 		}
 		this.messages = [];
 	}
@@ -148,9 +151,10 @@ class Socket {
 			userAgent: this.userAgent,
 			query: this.query,
 
+			bytesSent: this.bytesSent,
+			bytesReceived: this.bytesReceived,
 			messagesSent: this.messagesSent,
 			messagesReceived: this.messagesReceived,
-			bytesReceived: this.bytesReceived,
 			// functions
 			emit: this.emit,
 			once: this.once,

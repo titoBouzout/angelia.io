@@ -147,10 +147,10 @@ const server = new Server({
 
 | name             | kind   | default   | description                                         |
 | ---------------- | ------ | --------- | --------------------------------------------------- |
-| `port`           | number | 3001      | the port to use for this server                     |
-| `maxMessageSize` | number | 5         | max size in mb of a message received                |
-| `cert`           | string | undefined | path to the cert file for using https fullchain.pem |
-| `key`            | string | undefined | path to the key file for using https privkey.pem    |
+| `port`           | Number | 3001      | the port to use for this server                     |
+| `maxMessageSize` | Number | 5         | max size in mb of a message received                |
+| `cert`           | String | undefined | path to the cert file for using https fullchain.pem |
+| `key`            | String | undefined | path to the key file for using https privkey.pem    |
 
 ### Server Object
 
@@ -175,14 +175,16 @@ Has the following properties
 
 | signature            | kind     | description                                                                      |
 | -------------------- | -------- | -------------------------------------------------------------------------------- |
-| `since`              | number   | timestamp of initialization                                                      |
-| `port`               | number   | port used by this server                                                         |
-| `maxMessageSize`     | number   | maximum message size in mb                                                       |
-| `timeout`            | number   | after how long the socket is considered gone, in ms                              |
-| `socketsServed`      | number   | total count of sockets ever connected                                            |
-| `messagesReceived`   | number   | total count of messages ever received                                            |
-| `messagesSent`       | number   | total count of messages ever sent                                                |
-| `bytesReceived`      | number   | sum of bytes the server has ever received                                        |
+| `since`              | Number   | timestamp of initialization                                                      |
+| `port`               | Number   | port used by this server                                                         |
+| `maxMessageSize`     | Number   | maximum message size in mb                                                       |
+| `timeout`            | Number   | after how long the socket is considered gone, in ms                              |
+| `connections`        | Number   | count of sockets connected                                                       |
+| `served`             | Number   | total count of sockets ever connected                                            |
+| `bytesSent`          | Number   | sum of bytes sent by the server                                                  |
+| `bytesReceived`      | Number   | sum of bytes the server has ever received                                        |
+| `messagesSent`       | Number   | total count of messages ever sent                                                |
+| `messagesReceived`   | Number   | total count of messages ever received                                            |
 | `Listeners`          | Object   | console.log(server.Listeners) will pretty list them as an array                  |
 | `emit(key, [value])` | Function | emits to all connected sockets                                                   |
 | `once(key, [value])` | Function | emits to the sockets and replace if exists a pending message with the same `key` |
@@ -208,16 +210,17 @@ Has the following properties
 | signature                 | kind     | description                                                                      |
 | ------------------------- | -------- | -------------------------------------------------------------------------------- |
 | `server`                  | Object   | reference to the server                                                          |
-| `ip`                      | string   | ip of the socket                                                                 |
-| `userAgent`               | string   | user agent of the socket                                                         |
-| `query`                   | Object   | the query string of the socket url                                               |
-| `since`                   | number   | timestamp of first seen                                                          |
-| `seen`                    | number   | timestamp of last received message                                               |
-| `ping`                    | number   | delay with the socket in milliseconds (full round trip)                          |
-| `timedout`                | boolean  | whether we lost connection with this socket                                      |
-| `messagesReceived`        | number   | count of messages received from this socket                                      |
-| `messagesSent`            | number   | count of messages sent to this socket                                            |
-| `bytesReceived`           | number   | sum of bytes received from this socket                                           |
+| `ip`                      | String   | ip of the socket                                                                 |
+| `userAgent`               | String   | user agent of the socket                                                         |
+| `query`                   | Object   | the query string of the socket url as an object                                  |
+| `since`                   | Number   | timestamp of first seen                                                          |
+| `seen`                    | Number   | timestamp of last received message                                               |
+| `ping`                    | Number   | delay with the socket in milliseconds (full round trip)                          |
+| `timedout`                | Boolean  | whether we lost connection with this socket                                      |
+| `bytesSent`               | Number   | sum of bytes sent to this socket                                                 |
+| `bytesReceived`           | Number   | sum of bytes received from this socket                                           |
+| `messagesSent`            | Number   | count of messages sent to this socket                                            |
+| `messagesReceived`        | Number   | count of messages received from this socket                                      |
 | `emit(key, [value])`      | Function | emits to this socket                                                             |
 | `once(key, [value])`      | Function | emits to this socket and replace if exists a pending message with the same `key` |
 | `disconnect([reconnect])` | Function | disconnects the socket from the server, pass true to prevent re-connections      |
@@ -245,7 +248,7 @@ new Server({
 });
 ```
 
-All of the predefined listeners
+Predefined listeners
 
 | signature                           | description                                                                               |
 | ----------------------------------- | ----------------------------------------------------------------------------------------- |
@@ -277,23 +280,23 @@ You may also do like this if you don't need any option
 const socket = new Client('ws://localhost:3001');
 ```
 
-| name    | kind    | default   | description                                             |
-| ------- | ------- | --------- | ------------------------------------------------------- |
-| `url`   | string  | undefined | url of the socket server, example 'ws://localhost:3001' |
-| `debug` | boolean | false     | to console.log some messages                            |
+| name    | kind    | default                                     | description                                             |
+| ------- | ------- | ------------------------------------------- | ------------------------------------------------------- |
+| `url`   | string  | 'ws(s)://\${window.location.hostname}:3001' | url of the socket server, example 'ws://localhost:3001' |
+| `debug` | boolean | false                                       | to console.log some messages                            |
 
 ### Client (Browser) API
 
 The client API is similar to regular event handling
 
-| signature                      | kind     | description                                                          |
-| ------------------------------ | -------- | -------------------------------------------------------------------- |
-| `connect()`                    | Function | to connect to the server, it auto-connects on disconnection          |
-| `connected`                    | boolean  | `true` when the socket is connected else `false`                     |
-| `disconnect([reconnect])`      | Function | to disconnect from the server, pass `true` to prevent re-connections |
-| `on(key, callback)`            | Function | to listen for an event, returns an `off` function to stop listening  |
-| `off(key, callback)`           | Function | to turn off listening for an event                                   |
-| `emit(key, [value, callback])` | Function | to emit data to the server with a key and optionally a callback      |
+| signature                      | kind     | description                                                        |
+| ------------------------------ | -------- | ------------------------------------------------------------------ |
+| `connect()`                    | Function | connects to the server, it auto-connects on disconnection          |
+| `connected`                    | Boolean  | `true` when the socket is connected else `false`                   |
+| `disconnect([reconnect])`      | Function | disconnects from the server, pass `true` to prevent re-connections |
+| `on(key, callback)`            | Function | listens for an event, returns an `off` function to stop listening  |
+| `off(key, callback)`           | Function | turns off listening for an event                                   |
+| `emit(key, [value, callback])` | Function | emits data to the server                                           |
 
 ## Authors
 

@@ -1,10 +1,25 @@
 export default class Client {
 	constructor(options) {
-		let url = typeof options == 'string' ? options : options.url;
-		console.log(new URL(url));
+		if (!options || typeof options === 'string') {
+			options = {
+				url: options,
+			};
+		}
+
+		let protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+		if (!options.url) {
+			options.url = protocol + '://' + location.hostname + ':3001';
+		} else if (options.url.indexOf('://') === -1) {
+			options.url = protocol + '://' + options.url;
+		}
+		options.url = new URL(options.url);
+		options.url.search = Object.entries(options.params || {})
+			.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+			.join('&');
+
 		Object.assign(this, {
-			debug: typeof options == 'string' ? false : options.debug,
-			url: typeof options == 'string' ? options : options.url,
+			debug: options.debug,
+			url: options.url,
 
 			reconnect: true,
 			isReconnect: false,

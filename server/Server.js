@@ -192,10 +192,10 @@ class Server {
 			messagesSent: this.messagesSent,
 			messagesReceived: this.messagesReceived,
 			// listeners
-			Listeners: this.Listeners,
+			Listeners: this.Listeners.toJSON(),
 			// data
 			emit: this.emit,
-			sockets: this.sockets,
+			sockets: Array.from(this.sockets),
 		};
 	}
 }

@@ -60,13 +60,24 @@ class Server {
 			perMessageDeflate: false,
 			maxPayload: this.maxMessageSize * 1024 * 1024,
 			clientTracking: false,
-			backlog: 1024, // queue of pending connections
+			backlog: 1024,
 		});
 
 		io.on('connection', this.onconnect);
 		io.on('error', this.onerror);
 
 		server.listen(this.port);
+
+		for (let m of ['RESTART', 'SIGINT', 'SIGTERM']) {
+			process.on(m, () => {
+				if (!io.closing) {
+					io.closing = true;
+					console.log('Server Shutting Down\n', this);
+					io.close();
+				}
+			});
+		}
+
 		this.Listeners.listen && this.Listeners.listen();
 	}
 

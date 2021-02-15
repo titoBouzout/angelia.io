@@ -1,4 +1,3 @@
-@RD /S /Q ..\\client\\build\\static
 @RD /S /Q ..\\client\\node_modules\\angelia.io
 @RD /S /Q ..\\server\\node_modules\\angelia.io
 mkdir ..\\client\\node_modules\\angelia.io

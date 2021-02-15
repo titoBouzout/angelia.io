@@ -140,17 +140,17 @@ Configurable options used by the constructor
 const server = new Server({
 	port: 3001,
 	maxMessageSize: 5,
-	cert: '/path/to/cert',
-	key: '/path/to/key',
+	cert: '/path/to/cert/fullchain.pem',
+	key: '/path/to/key/privkey.pem',
 });
 ```
 
-| name             | kind   | default   | description                           |
-| ---------------- | ------ | --------- | ------------------------------------- |
-| `port`           | number | 3001      | the port to use for this server       |
-| `maxMessageSize` | number | 5         | max size in mb of a message received  |
-| `cert`           | string | undefined | path to the cert file for using https |
-| `key`            | string | undefined | path to the key file for using https  |
+| name             | kind   | default   | description                                         |
+| ---------------- | ------ | --------- | --------------------------------------------------- |
+| `port`           | number | 3001      | the port to use for this server                     |
+| `maxMessageSize` | number | 5         | max size in mb of a message received                |
+| `cert`           | string | undefined | path to the cert file for using https fullchain.pem |
+| `key`            | string | undefined | path to the key file for using https privkey.pem    |
 
 ### Server Object
 

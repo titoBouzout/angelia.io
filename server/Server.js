@@ -47,8 +47,8 @@ class Server {
 		if (options.cert && options.key) {
 			let fs = require('fs');
 			server = require('https').createServer({
-				cert: fs.readFileSync(options.cert),
-				key: fs.readFileSync(options.key),
+				cert: fs.readFileSync(options.cert), // fullchain.pem
+				key: fs.readFileSync(options.key), // privkey.pem
 			});
 		} else {
 			server = require('http').createServer();

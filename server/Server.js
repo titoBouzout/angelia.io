@@ -206,7 +206,7 @@ class Server {
 			Listeners: this.Listeners.toJSON(),
 			// data
 			emit: this.emit,
-			sockets: Array.from(this.sockets),
+			sockets: this.sockets.size,
 		};
 	}
 }

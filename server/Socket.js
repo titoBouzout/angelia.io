@@ -124,9 +124,6 @@ class Socket {
 			this.io.send(JSON.stringify(this.messages));
 			this.server.messagesSent += length;
 			this.messagesSent += length;
-		} else {
-			console.warn('socket not ready to emit on Socket.emit', this.inspect());
-			this.server.messagesFail += length;
 		}
 		this.messages = [];
 	}

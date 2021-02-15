@@ -11,6 +11,8 @@ class Server {
 			maxMessageSize: +options.maxMessageSize > 0 ? +options.maxMessageSize : 5,
 			timeout: 30 * 1000,
 
+			messages: [],
+
 			since: Date.now(),
 			now: Date.now(),
 
@@ -23,8 +25,12 @@ class Server {
 			pong: this.pong.bind(this),
 			ping: this.ping.bind(this),
 			updateNow: this.updateNow.bind(this),
+
 			onconnect: this.onconnect.bind(this),
 			onerror: this.onerror.bind(this),
+
+			processMessages: this.processMessages.bind(this),
+
 			inspect: this.inspect.bind(this),
 
 			Listeners: new Server.Listeners(),
@@ -133,6 +139,21 @@ class Server {
 	}
 	onerror(err) {
 		console.error('Server.onerror', err);
+	}
+
+	nextMessages(socket) {
+		if (!this.messages.length) {
+			process.nextTick(this.processMessages);
+		}
+		this.messages.push(socket);
+	}
+
+	processMessages() {
+		let messages = this.messages;
+		this.messages = [];
+		for (let socket of messages) {
+			socket.processMessages();
+		}
 	}
 
 	// ping

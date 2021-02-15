@@ -23,7 +23,6 @@ class Socket {
 			onmessage: this.onmessage.bind(this),
 			oncallback: this.oncallback.bind(this),
 
-			nextTick: this.nextTick.bind(this),
 			inspect: this.inspect.bind(this),
 
 			io: socket,
@@ -38,7 +37,7 @@ class Socket {
 
 	emit(k, v) {
 		if (!this.messages.length) {
-			process.nextTick(this.nextTick);
+			this.server.nextMessages(this);
 		}
 
 		this.messages.push(typeof k !== 'string' ? k : [k, v]);
@@ -118,7 +117,7 @@ class Socket {
 			}
 		}
 	}
-	nextTick() {
+	processMessages() {
 		if (this.io.readyState === 1) {
 			this.server.Listeners.outgoing && this.server.Listeners.outgoing(this, this.messages);
 			let messages = JSON.stringify(this.messages);

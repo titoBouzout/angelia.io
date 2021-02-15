@@ -47,7 +47,8 @@ export default class Client {
 
 	disconnect(noReconnect) {
 		if (noReconnect) this.reconnect = false;
-		if (this.debug) console.log('ws manual disconnect');
+		if (this.debug)
+			console.log('ws manual disconnect ' + (!this.reconnect ? ' and disallow reconnect' : ''));
 		if (this.io.readyState !== WebSocket.CLOSING && this.io.readyState !== WebSocket.CLOSED) {
 			this.io.close();
 		}

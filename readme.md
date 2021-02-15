@@ -151,7 +151,7 @@ const server = new Server({
 | `maxMessageSize` | Number | 5         | max size in mb of a message received                         |
 | `cert`           | String | undefined | path to the cert file for using https fullchain.pem          |
 | `key`            | String | undefined | path to the key file for using https privkey.pem             |
-| `params`         | Object | undefined | to send data while connecting, accesible via `socket.params` |
+| `params`         | Object | {}        | to send data while connecting, accesible via `socket.params` |
 
 ### Server Object
 

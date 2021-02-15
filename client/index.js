@@ -78,10 +78,12 @@ export default class Client {
 		if (!this.messages.length) {
 			Promise.resolve().then(this.nextTick);
 		}
-		if (!c) {
+		if (c) {
+			this.messages.push([k, v, this.callback(c)]);
+		} else if (v !== null && v !== undefined) {
 			this.messages.push([k, v]);
 		} else {
-			this.messages.push([k, v, this.callback(c)]);
+			this.messages.push([k]);
 		}
 	}
 
@@ -140,7 +142,7 @@ export default class Client {
 		}
 	}
 	oncallback(d) {
-		this.callbacks[d[0]](d[1]);
+		this.callbacks[d[0]](...d[1]);
 		this.callbacks[d[0]] = null;
 	}
 	callback(c) {

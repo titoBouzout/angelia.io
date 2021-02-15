@@ -18,6 +18,12 @@ class Listeners {
 		}
 	}
 	[inspect]() {
+		return this.inspect();
+	}
+	toJSON() {
+		return this.inspect();
+	}
+	inspect() {
 		let listeners = [];
 		for (let m of Object.getOwnPropertyNames(this)) {
 			if (this[m]._class) listeners.push(this[m]._class + '.' + m);

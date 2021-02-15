@@ -17,7 +17,6 @@ class Server {
 			bytesReceived: 0,
 			messagesSent: 0,
 			messagesReceived: 0,
-			messagesFail: 0,
 
 			timeout: 30 * 1000,
 			pong: this.pong.bind(this),
@@ -192,7 +191,6 @@ class Server {
 			bytesReceived: this.bytesReceived,
 			messagesSent: this.messagesSent,
 			messagesReceived: this.messagesReceived,
-			messagesFail: this.messagesFail,
 			// listeners
 			Listeners: this.Listeners,
 			// data

@@ -159,6 +159,7 @@ class Server {
 			case '::':
 			case '::1':
 			case '::ffff:':
+			case '::ffff:127.0.0.1':
 			case 'fe80::1': {
 				return false;
 			}

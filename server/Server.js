@@ -7,18 +7,18 @@ const Socket = require('./Socket.js');
 class Server {
 	constructor(options) {
 		Object.assign(this, {
-			port: +options.port > 0 ? +options.port : 3001,
+			port: +options.port > 0 && +options.port <= 65535 ? +options.port : 3001,
 			maxMessageSize: +options.maxMessageSize > 0 ? +options.maxMessageSize : 5,
+			timeout: 30 * 1000,
 
 			since: Date.now(),
 			now: Date.now(),
 
-			socketsServed: 0,
+			served: 0,
 			bytesReceived: 0,
 			messagesSent: 0,
 			messagesReceived: 0,
 
-			timeout: 30 * 1000,
 			pong: this.pong.bind(this),
 			ping: this.ping.bind(this),
 			updateNow: this.updateNow.bind(this),
@@ -78,6 +78,8 @@ class Server {
 			});
 		}
 
+		console.log('Server Started Listening On Port ' + this.port);
+
 		this.Listeners.listen && this.Listeners.listen();
 	}
 
@@ -95,6 +97,9 @@ class Server {
 		}
 	}
 
+	get connections() {
+		return this.sockets.size;
+	}
 	// PRIVATE API
 
 	onconnect(socket, request) {
@@ -104,16 +109,17 @@ class Server {
 
 		// set the ip and userAgent
 		Object.assign(socket, {
-			ip:
+			ip: (
 				this.ip(request.connection.remoteAddress) ||
 				this.ip((request.headers['x-forwarded-for'] || '').split(/\s*,\s*/)[0]) ||
 				request.connection.remoteAddress ||
-				(request.headers['x-forwarded-for'] || '').split(/\s*,\s*/)[0],
+				(request.headers['x-forwarded-for'] || '').split(/\s*,\s*/)[0]
+			).replace(/'^::ffff:'/, ''),
 			userAgent: request.headers['user-agent'] || '',
 			query: URL.parse(request.url, true).query,
 		});
 
-		this.socketsServed++;
+		this.served++;
 
 		socket.listen();
 
@@ -141,6 +147,7 @@ class Server {
 				socket.io.terminate();
 			} else {
 				// ping
+				this.updateNow();
 				this.pingSocket(socket);
 			}
 		}
@@ -193,20 +200,23 @@ class Server {
 		return {
 			// started
 			since: this.since,
-			// settings
+			// options
 			port: this.port,
 			maxMessageSize: this.maxMessageSize,
 			timeout: this.timeout,
 			// stats
-			socketsServed: this.socketsServed,
+			connections: this.connections,
+			served: this.served,
 			bytesReceived: this.bytesReceived,
 			messagesSent: this.messagesSent,
 			messagesReceived: this.messagesReceived,
 			// listeners
 			Listeners: this.Listeners.toJSON(),
-			// data
+			// functions
 			emit: this.emit,
-			sockets: this.sockets.size,
+			once: this.once,
+			// data
+			sockets: this.sockets,
 		};
 	}
 }

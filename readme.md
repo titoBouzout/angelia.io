@@ -76,6 +76,7 @@ On user defined listeners, the listener receives three things as sent by the cli
 If you are building a chat you may write something like this
 
 ```JavaScript
+// server.js
 import Server, { Listeners } from 'angelia.io/server';
 
 class FancyChat {
@@ -104,16 +105,12 @@ Listeners.add(Connection);
 new Server({
 	port: 3001
 });
-```
 
-Then, on client you may write something like
-
-```JavaScript
+// index.js
 import Client from 'angelia.io/client';
 
 const socket = new Client({
 	url: 'ws://localhost:3001',
-	debug: true,
 });
 
 socket.emit('typing', true)
@@ -145,13 +142,12 @@ const server = new Server({
 });
 ```
 
-| name             | kind   | default   | description                                                  |
-| ---------------- | ------ | --------- | ------------------------------------------------------------ |
-| `port`           | Number | 3001      | the port to use for this server                              |
-| `maxMessageSize` | Number | 5         | max size in mb of a message received                         |
-| `cert`           | String | undefined | path to the cert file for using https fullchain.pem          |
-| `key`            | String | undefined | path to the key file for using https privkey.pem             |
-| `params`         | Object | {}        | to send data while connecting, accesible via `socket.params` |
+| name             | kind   | default   | description                                         |
+| ---------------- | ------ | --------- | --------------------------------------------------- |
+| `port`           | Number | 3001      | the port to use for this server                     |
+| `maxMessageSize` | Number | 5         | max size in mb of a message received                |
+| `cert`           | String | undefined | path to the cert file for using https fullchain.pem |
+| `key`            | String | undefined | path to the key file for using https privkey.pem    |
 
 ### Server Object
 
@@ -161,7 +157,7 @@ The server Object can be accessed from everywhere
 import Server, { Listeners } from 'angelia.io/server';
 
 class className {
-	methodName(socket) {
+	eventName(socket) {
 		console.log(this.server, 'also', socket.server);
 	}
 }
@@ -199,7 +195,7 @@ The socket Object is given to you by a listener
 import { Listeners } from 'angelia.io/server';
 
 class _ {
-	methodName(socket, data) {
+	eventName(socket, data) {
 		console.log(socket, data);
 	}
 }
@@ -272,6 +268,7 @@ Configurable options used by the constructor
 const socket = new Client({
 	url: 'ws://localhost:3001',
 	debug: true,
+	params: { fast: 'data', test: 'a space' },
 });
 ```
 
@@ -281,10 +278,11 @@ You may also do like this if you don't need any option
 const socket = new Client('ws://localhost:3001');
 ```
 
-| name    | kind    | default                                     | description                                             |
-| ------- | ------- | ------------------------------------------- | ------------------------------------------------------- |
-| `url`   | string  | 'ws(s)://\${window.location.hostname}:3001' | url of the socket server, example 'ws://localhost:3001' |
-| `debug` | boolean | false                                       | to console.log some messages                            |
+| name     | kind    | default                                     | description                                                  |
+| -------- | ------- | ------------------------------------------- | ------------------------------------------------------------ |
+| `url`    | string  | 'ws(s)://\${window.location.hostname}:3001' | url of the socket server, example 'ws://localhost:3001'      |
+| `debug`  | boolean | false                                       | to console.log some messages                                 |
+| `params` | Object  | {}                                          | to send data while connecting, accesible via `socket.params` |
 
 ### Client (Browser) API
 

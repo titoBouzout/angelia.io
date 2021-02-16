@@ -74,7 +74,7 @@ class Server {
 		io.on('connection', this.onconnect);
 		io.on('error', this.onerror);
 
-		server.listen(this.port);
+		server.listen(this.port, options.hostname || null);
 
 		for (let m of ['RESTART', 'SIGINT', 'SIGTERM']) {
 			process.on(m, () => {

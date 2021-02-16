@@ -135,6 +135,7 @@ Configurable options used by the constructor
 
 ```javascript
 const server = new Server({
+	hostname: 'localhost',
 	port: 3001,
 	maxMessageSize: 5,
 	cert: '/path/to/cert/fullchain.pem',
@@ -144,6 +145,7 @@ const server = new Server({
 
 | name             | kind   | default   | description                                         |
 | ---------------- | ------ | --------- | --------------------------------------------------- |
+| `hostname`       | String | null      | the hostname if any                                 |
 | `port`           | Number | 3001      | the port to use for this server                     |
 | `maxMessageSize` | Number | 5         | max size in mb of a message received                |
 | `cert`           | String | undefined | path to the cert file for using https fullchain.pem |

@@ -159,9 +159,7 @@ export default class Client {
 		}
 	}
 	oncallback(d) {
-		d[1] !== undefined && d[1] !== null
-			? this.callbacks[d[0]](...d[1])
-			: this.callbacks[d[0]](d[1]);
+		this.callbacks[d[0]](d[1]);
 		this.callbacks[d[0]] = null;
 	}
 	callback(c) {

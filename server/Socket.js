@@ -6,6 +6,7 @@ class Socket {
 			server: server,
 
 			messages: [],
+			raw: [],
 
 			bytesSent: 0,
 			bytesReceived: 0,
@@ -36,17 +37,30 @@ class Socket {
 	}
 
 	emit(k, v) {
-		if (!this.messages.length) {
+		if (!this.messages.length && !this.raw.length) {
 			this.server.nextMessages(this);
 		}
 
-		this.messages.push(typeof k !== 'string' ? k : [k, v]);
+		if (typeof k !== 'string') {
+			// TODO
+			this.messages.push(k);
+
+			/*
+			if (!this.server.wm.has(k)) {
+				this.server.wm.set(k, JSON.stringify([k]));
+			}
+			this.raw.push(k);
+			*/
+		} else {
+			this.messages.push([k, v]);
+		}
 	}
 	once(k, v) {
-		if (!this.messages.length) {
+		if (!this.messages.length && !this.raw.length) {
 			this.emit(k, v);
 		} else {
 			if (typeof k !== 'string') {
+				// carefull! reference will be lost for the weak map
 				for (let m of this.messages) {
 					if (m[0] === k[0]) {
 						m[1] = k[1];
@@ -119,21 +133,45 @@ class Socket {
 	}
 	processMessages() {
 		if (this.io.readyState === 1) {
-			this.server.Listeners.outgoing && this.server.Listeners.outgoing(this, this.messages);
-			let messages = JSON.stringify(this.messages);
-			this.io.send(messages);
+			// regular
+			if (this.messages.length) {
+				this.server.Listeners.outgoing && this.server.Listeners.outgoing(this, this.messages);
+				let messages = JSON.stringify(this.messages);
+				this.io.send(messages);
 
-			this.server.messagesSent += this.messages.length;
-			this.messagesSent += this.messages.length;
+				this.server.messagesSent += this.messages.length;
+				this.messagesSent += this.messages.length;
 
-			this.server.bytesSent += messages.length;
-			this.bytesSent += messages.length;
+				this.server.bytesSent += messages.length;
+				this.bytesSent += messages.length;
+			}
+			// raw
+			if (this.raw.length) {
+				this.server.Listeners.outgoing && this.server.Listeners.outgoing(this, this.raw);
+
+				for (let message of this.raw) {
+					if (!this.server.wm.has(message)) {
+						console.warn('weak map lost, recreating');
+						this.server.wm.set(message, JSON.stringify([message]));
+					}
+
+					message = this.server.wm.get(message);
+					this.io.send(message);
+
+					this.server.bytesSent += message.length;
+					this.bytesSent += message.length;
+				}
+
+				this.server.messagesSent += this.raw.length;
+				this.messagesSent += this.raw.length;
+			}
 		}
 		this.messages = [];
+		this.raw = [];
 	}
 
 	[inspect]() {
-		return Object.assign(this.toJSON ? this.toJSON() : {}, this.inspect());
+		return Object.assign({}, this.toJSON ? this.toJSON() : {}, this.inspect());
 	}
 	inspect() {
 		return {

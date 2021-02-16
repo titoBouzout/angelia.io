@@ -36,6 +36,7 @@ class Server {
 			Listeners: new Server.Listeners(),
 
 			sockets: new Set(),
+			wm: new WeakMap(),
 		});
 
 		this[inspect] = this.toJSON = this.inspect;

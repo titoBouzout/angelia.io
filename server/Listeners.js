@@ -1,21 +1,51 @@
 const inspect = Symbol.for('nodejs.util.inspect.custom');
 
-class Listeners {
-	static add(listener) {
-		let name = listener.name;
-		listener = new listener();
-		for (let m of Object.getOwnPropertyNames(listener.__proto__)) {
+const Listeners = new (class {
+	add(listener) {
+		this.addClass(listener);
+	}
+	addClass(listener) {
+		let className = listener.name;
+		let instance = new listener();
+		let methods = [
+			...Object.getOwnPropertyNames(instance.__proto__),
+			...Object.getOwnPropertyNames(instance),
+		];
+		for (let m of methods) {
 			if (m !== 'constructor') {
-				Listeners.prototype[m] = listener[m];
-				Listeners.prototype[m]._class = name;
+				instance[m] = instance[m].bind(instance);
+				instance[m].__class = className;
+
+				Listeners[m] = Listeners[m] || this.template();
+				Listeners[m].fns.push(instance[m]);
 			}
 		}
-		for (let m in listener) {
-			if (m !== 'constructor') {
-				Listeners.prototype[m] = listener[m];
-				Listeners.prototype[m]._class = name;
-			}
-		}
+		Object.defineProperty(instance, 'server', {
+			get: function() {
+				return Listeners.server;
+			},
+		});
+	}
+	addFunction(fn) {
+		let m = fn.name.replace('bound ', '');
+
+		Object.defineProperty(fn, 'server', {
+			get: function() {
+				return Listeners.server;
+			},
+		});
+		fn = fn.bind(fn);
+		fn.__class = 'Function';
+		Listeners[m] = Listeners[m] || this.template();
+		Listeners[m].fns.push(fn);
+	}
+	template() {
+		return {
+			fns: [],
+			run: function(...args) {
+				for (let fn of this.fns) fn(...args);
+			},
+		};
 	}
 	[inspect]() {
 		return this.inspect();
@@ -25,14 +55,18 @@ class Listeners {
 	}
 	inspect() {
 		let listeners = [];
-		for (let m of Object.getOwnPropertyNames(this)) {
-			if (this[m]._class) listeners.push(this[m]._class + '.' + m);
+		for (let m in Listeners) {
+			if (Array.isArray(Listeners[m].fns)) {
+				for (let fn of Listeners[m].fns) {
+					let className = fn.__class || 'Function';
+					let method = fn.name.replace('bound ', '');
+					method = method != m ? method + '/' + m : method;
+					listeners.push(className + '.' + method);
+				}
+			}
 		}
-		for (let m in this) {
-			if (this[m]._class) listeners.push(this[m]._class + '.' + m);
-		}
-		return listeners;
+		return listeners.sort();
 	}
-}
+})();
 
 module.exports = Listeners;

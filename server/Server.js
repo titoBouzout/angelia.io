@@ -4,6 +4,8 @@ const URL = require('url');
 
 const Socket = require('./Socket.js');
 
+const Listeners = require('./Listeners.js');
+
 class Server {
 	constructor(options) {
 		Object.assign(this, {
@@ -33,7 +35,7 @@ class Server {
 
 			inspect: this.inspect.bind(this),
 
-			Listeners: new Server.Listeners(),
+			Listeners: Listeners,
 
 			sockets: new Set(),
 			wm: new WeakMap(),
@@ -41,11 +43,9 @@ class Server {
 
 		this[inspect] = this.toJSON = this.inspect;
 
-		Object.assign(this.Listeners, {
-			server: this,
-			pong: this.pong,
-		});
-		delete this.Listeners.add;
+		this.Listeners.addFunction(this.pong);
+		this.Listeners.server = this;
+
 		// ping
 		setInterval(this.ping, this.timeout / 2);
 		setInterval(this.updateNow, 500);
@@ -88,7 +88,7 @@ class Server {
 
 		console.log('Server Started Listening On Port ' + this.port);
 
-		this.Listeners.listen && this.Listeners.listen();
+		this.Listeners.listen && this.Listeners.listen.run();
 	}
 
 	// emits to everyone connected to the server
@@ -134,7 +134,7 @@ class Server {
 		this.sockets.add(socket);
 
 		// dispatch connect
-		this.Listeners.connect && this.Listeners.connect(socket, request);
+		this.Listeners.connect && this.Listeners.connect.run(socket, request);
 
 		this.pingSocket(socket);
 	}
@@ -168,7 +168,7 @@ class Server {
 			if (delay > this.timeout) {
 				// timedout
 				socket.timedout = true;
-				this.Listeners.timeout && this.Listeners.timeout(socket, delay);
+				this.Listeners.timeout && this.Listeners.timeout.run(socket, delay);
 				socket.io.terminate();
 			} else {
 				// ping
@@ -187,7 +187,7 @@ class Server {
 		this.updateNow();
 		socket.seen = this.now;
 		socket.ping = this.now - socket.contacted;
-		this.Listeners.ping && this.Listeners.ping(socket);
+		this.Listeners.ping && this.Listeners.ping.run(socket);
 	}
 	// returns false if the ip is a private ip like 127.0.0.1
 	ip(i) {
@@ -248,6 +248,6 @@ class Server {
 	}
 }
 
-Server.Listeners = require('./Listeners.js');
+Server.Listeners = Listeners;
 
 module.exports = Server;

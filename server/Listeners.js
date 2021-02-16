@@ -35,6 +35,10 @@ const Listeners = {
 			);
 			throw new Error();
 		}
+
+		if (this.server && this.server.ensureFastProperties) {
+			this.server.ensureFastProperties();
+		}
 	},
 	[addClass](listener, className) {
 		className = className || listener.name || 'Class';
@@ -67,6 +71,7 @@ const Listeners = {
 			...Object.getOwnPropertyNames(instance.__proto__),
 			...Object.getOwnPropertyNames(instance),
 		];
+
 		for (let m of methods) {
 			if (m !== 'constructor' && instance[m].bind) {
 				if (m === 'add') {

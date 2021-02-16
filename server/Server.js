@@ -1,9 +1,8 @@
 const inspect = Symbol.for('nodejs.util.inspect.custom');
-
 const URL = require('url');
+const toFastProperties = require('to-fast-properties');
 
 const Socket = require('./Socket.js');
-
 const Listeners = require('./Listeners.js');
 
 class Server {
@@ -52,6 +51,8 @@ class Server {
 				enumerable: false,
 			},
 		});
+
+		this.ensureFastProperties();
 
 		// ping
 		setInterval(this.ping, this.timeout / 2);
@@ -251,6 +252,82 @@ class Server {
 			// data
 			sockets: this.sockets,
 		};
+	}
+	ensureFastProperties() {
+		// server
+		toFastProperties(this);
+
+		// the Listener class
+		toFastProperties(this.Listeners);
+
+		// listeners
+		for (let l in this.Listeners) {
+			// listener
+			toFastProperties(this.Listeners[l]);
+			// methods
+			if (this.Listeners[l].fns) {
+				for (let m in this.Listeners[l].fns) {
+					toFastProperties(this.Listeners[l].fns[m]);
+				}
+			}
+		}
+
+		const Classes = Symbol.for('Listeners.Classes');
+
+		// classes
+		toFastProperties(this.Listeners[Classes]);
+		for (let l in this.Listeners[Classes]) {
+			// class
+			toFastProperties(this.Listeners[Classes][l]);
+			// methods
+			for (let m in this.Listeners[Classes][l]) {
+				toFastProperties(this.Listeners[Classes][l][m]);
+			}
+		}
+
+		// this.fastPropertiesPrint();
+	}
+	fastPropertiesPrint() {
+		// server
+		console.log('this.server', this.HasFastProperties(this));
+		console.log('this.Listeners', this.HasFastProperties(this.Listeners));
+
+		// listeners
+		for (let l in this.Listeners) {
+			// listener
+			console.log('this.Listeners.' + l, this.HasFastProperties(this.Listeners[l]));
+			// methods
+			if (this.Listeners[l].fns) {
+				for (let m in this.Listeners[l].fns) {
+					console.log(
+						'this.Listeners.' + l + '.' + this.Listeners[l].fns[m].name,
+						this.HasFastProperties(this.Listeners[l].fns[m]),
+					);
+				}
+			}
+		}
+
+		const Classes = Symbol.for('Listeners.Classes');
+
+		// classes
+		console.log('this.Listeners.Classes', this.HasFastProperties(this.Listeners[Classes]));
+		for (let m in this.Listeners[Classes]) {
+			console.log(
+				'this.Listeners.Classes.' + m,
+				this.HasFastProperties(this.Listeners[Classes][m]),
+			);
+			// class
+			for (let f in this.Listeners[Classes][m]) {
+				// methods
+				console.log(
+					'this.Listeners.Classes.' + m + '.' + this.Listeners[Classes][m][f].name,
+					this.HasFastProperties(this.Listeners[Classes][m][f]),
+				);
+			}
+		}
+	}
+	HasFastProperties(o) {
+		// return %HasFastProperties(o);
 	}
 }
 

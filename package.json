@@ -23,6 +23,8 @@
 	"author": "@titoBouzout @boredofnames",
 	"license": "MIT",
 	"dependencies": {
+		"is-class": "^0.0.9",
+		"isobject": "^4.0.0",
 		"ws": "^7.4.3"
 	}
 }

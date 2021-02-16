@@ -5,3 +5,4 @@ CMD /C npm link angelia.io
 
 cd ../server/
 CMD /C npm link angelia.io
+exit

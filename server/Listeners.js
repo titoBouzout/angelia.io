@@ -1,64 +1,133 @@
-const inspect = Symbol.for('nodejs.util.inspect.custom');
+const utilsInspect = Symbol.for('nodejs.util.inspect.custom');
 
-const Listeners = new (class {
-	add(listener) {
-		this.addClass(listener);
-	}
-	addClass(listener) {
-		let className = listener.name;
+const addClass = Symbol.for('Listeners.addClass');
+const addObject = Symbol.for('Listeners.addObject');
+const addFunction = Symbol.for('Listeners.addFunction');
+const addProperties = Symbol.for('Listeners.addProperties');
+const addDefaultProperties = Symbol.for('Listeners.addDefaultProperties');
+const Classes = Symbol.for('Listeners.Classes');
+
+const template = Symbol.for('Listeners.template');
+const inspect = Symbol.for('Listeners.inspect');
+
+const isClass = require('is-class');
+const isObject = require('isobject');
+
+const Listeners = {
+	[Classes]: Object.create(null),
+	add(listener, className) {
+		if (isClass(listener)) {
+			this[addClass](listener, className);
+		} else if (isObject(listener)) {
+			this[addObject](listener, className);
+		} else if (listener && listener.bind) {
+			this[addFunction](listener, className);
+		} else if (Array.isArray(listener)) {
+			for (let l of listener) {
+				this.add(l);
+			}
+		} else {
+			console.error(
+				'angelia.io Error - Call to Listeners.add with unsupported type:',
+				listener,
+				className || '',
+				'\n',
+			);
+			throw new Error();
+		}
+	},
+	[addClass](listener, className) {
+		className = className || listener.name || 'Class';
+
 		let instance = new listener();
+		this[addProperties](instance, className);
+	},
+	[addObject](listener, className) {
+		className = className || listener.name || 'Object';
+
+		function Listener(methods) {
+			Object.assign(this, methods);
+		}
+
+		let instance = new Listener(listener);
+		this[addProperties](instance, className);
+	},
+	[addFunction](listener, className) {
+		className = className || listener.name.replace(/bound /g, '');
+
+		this[addObject](
+			{
+				[className]: listener,
+			},
+			'Function',
+		);
+	},
+	[addProperties](instance, className) {
 		let methods = [
 			...Object.getOwnPropertyNames(instance.__proto__),
 			...Object.getOwnPropertyNames(instance),
 		];
 		for (let m of methods) {
-			if (m !== 'constructor') {
-				instance[m] = instance[m].bind(instance);
-				instance[m].__class = className;
+			if (m !== 'constructor' && instance[m].bind) {
+				if (m === 'add') {
+					throw new Error(
+						'angelia.io Error - Adding a listener named "add" is forbidden',
+						typeof instance,
+						instance,
+						className,
+					);
+				} else {
+					let method = instance[m].bind(instance);
+					method.__className = className;
 
-				Listeners[m] = Listeners[m] || this.template();
-				Listeners[m].fns.push(instance[m]);
+					this[m] = this[m] || this[template]();
+					this[m].fns.push(method);
+
+					this[Classes][className] = this[Classes][className] || Object.create(null);
+					this[Classes][className][m] = method;
+				}
 			}
 		}
-		Object.defineProperty(instance, 'server', {
+		this[addDefaultProperties](instance);
+	},
+	[addDefaultProperties](o) {
+		Object.defineProperty(o, 'server', {
 			get: function() {
 				return Listeners.server;
 			},
+			configurable: false,
+			enumerable: false,
 		});
-	}
-	addFunction(fn) {
-		let m = fn.name.replace('bound ', '');
-
-		Object.defineProperty(fn, 'server', {
+		Object.defineProperty(o, 'listeners', {
 			get: function() {
-				return Listeners.server;
+				return Listeners[Classes];
 			},
+			configurable: false,
+			enumerable: false,
 		});
-		fn = fn.bind(fn);
-		fn.__class = 'Function';
-		Listeners[m] = Listeners[m] || this.template();
-		Listeners[m].fns.push(fn);
-	}
-	template() {
-		return {
-			fns: [],
-			run: function(...args) {
-				for (let fn of this.fns) fn(...args);
-			},
-		};
-	}
-	[inspect]() {
-		return this.inspect();
-	}
+	},
+	[template]() {
+		function Listener(...args) {
+			for (let fn of this.fns) fn(...args);
+		}
+		let fns = [];
+		Listener.fns = fns;
+		Listener = Listener.bind(Listener);
+		Listener.fns = fns;
+		return Listener;
+	},
+	[utilsInspect]() {
+		return this[inspect]();
+	},
 	toJSON() {
-		return this.inspect();
-	}
-	inspect() {
+		return this[inspect]();
+	},
+	[inspect]() {
 		let listeners = [];
-		for (let m in Listeners) {
-			if (Array.isArray(Listeners[m].fns)) {
-				for (let fn of Listeners[m].fns) {
-					let className = fn.__class || 'Function';
+		for (let m in this) {
+			if (Array.isArray(this[m].fns)) {
+				for (let fn of this[m].fns) {
+					let className = fn.__className;
 					let method = fn.name.replace('bound ', '');
 					method = method != m ? method + '/' + m : method;
 					listeners.push(className + '.' + method);
@@ -66,7 +135,31 @@ const Listeners = new (class {
 			}
 		}
 		return listeners.sort();
-	}
-})();
+	},
+};
+
+Listeners.__proto__ = Object.create(null);
+
+const protect = {
+	writable: false,
+	configurable: false,
+	enumerable: false,
+};
+
+Object.defineProperties(Listeners, {
+	add: protect,
+	[Classes]: protect,
+
+	[addClass]: protect,
+	[addObject]: protect,
+	[addFunction]: protect,
+	[addProperties]: protect,
+	[addDefaultProperties]: protect,
+	[template]: protect,
+
+	[utilsInspect]: protect,
+	toJSON: protect,
+	[inspect]: protect,
+});
 
 module.exports = Listeners;

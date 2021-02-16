@@ -95,7 +95,7 @@ class Socket {
 	onclose(code, message) {
 		this.server.sockets.delete(this);
 
-		this.server.Listeners.disconnect && this.server.Listeners.disconnect.run(this, code, message);
+		this.server.Listeners.disconnect && this.server.Listeners.disconnect(this, code, message);
 	}
 	onerror(err) {
 		console.error('Socket.onerror', err, this.inspect());
@@ -105,7 +105,7 @@ class Socket {
 	}
 	onmessage(e) {
 		if (e === '') {
-			this.server.Listeners.pong.run(this);
+			this.server.Listeners.pong(this);
 		} else {
 			this.seen = this.server.now;
 
@@ -117,17 +117,17 @@ class Socket {
 				this.server.messagesReceived += messages.length;
 				this.messagesReceived += messages.length;
 
-				this.server.Listeners.incoming && this.server.Listeners.incoming.run(this, messages);
+				this.server.Listeners.incoming && this.server.Listeners.incoming(this, messages);
 
 				for (let m of messages) {
 					if (this.server.Listeners[m[0]]) {
-						this.server.Listeners[m[0]].run(this, m[1], m[2] && this.oncallback.bind(null, m[2]));
+						this.server.Listeners[m[0]](this, m[1], m[2] && this.oncallback.bind(null, m[2]));
 					} else {
-						this.server.Listeners.garbage && this.server.Listeners.garbage.run(this, m);
+						this.server.Listeners.garbage && this.server.Listeners.garbage(this, m);
 					}
 				}
 			} else {
-				this.server.Listeners.garbage && this.server.Listeners.garbage.run(this, messages);
+				this.server.Listeners.garbage && this.server.Listeners.garbage(this, messages);
 			}
 		}
 	}
@@ -135,7 +135,7 @@ class Socket {
 		if (this.io.readyState === 1) {
 			// regular
 			if (this.messages.length) {
-				this.server.Listeners.outgoing && this.server.Listeners.outgoing.run(this, this.messages);
+				this.server.Listeners.outgoing && this.server.Listeners.outgoing(this, this.messages);
 				let messages = JSON.stringify(this.messages);
 				this.io.send(messages);
 
@@ -147,7 +147,7 @@ class Socket {
 			}
 			// raw
 			if (this.raw.length) {
-				this.server.Listeners.outgoing && this.server.Listeners.outgoing.run(this, this.raw);
+				this.server.Listeners.outgoing && this.server.Listeners.outgoing(this, this.raw);
 
 				for (let message of this.raw) {
 					if (!this.server.wm.has(message)) {

@@ -113,7 +113,10 @@ const Listeners = {
 	},
 	[template]() {
 		function Listener(...args) {
-			for (let fn of this.fns) fn(...args);
+			for (let fn of this.fns) {
+				// console.log('calling listener', fn.name);
+				fn(...args);
+			}
 		}
 		let fns = [];
 		Listener.fns = fns;

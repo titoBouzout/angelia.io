@@ -6,7 +6,6 @@ class Socket {
 			server: server,
 
 			messages: [],
-			raw: [],
 
 			bytesSent: 0,
 			bytesReceived: 0,
@@ -37,22 +36,18 @@ class Socket {
 	}
 
 	emit(k, v) {
-		if (!this.messages.length && !this.raw.length) {
+		if (!this.messages.length) {
 			this.server.nextMessages(this);
 		}
 
-		if (typeof k !== 'string') {
-			this.raw.push(k);
-		} else {
-			this.messages.push([k, v]);
-		}
+		this.messages.push(typeof k !== 'string' ? k : [k, v]);
 	}
 	once(k, v) {
-		if (!this.messages.length && !this.raw.length) {
+		if (!this.messages.length) {
 			this.emit(k, v);
 		} else {
 			if (typeof k !== 'string') {
-				for (let m of this.raw) {
+				for (let m of this.messages) {
 					if (m[0] === k[0]) {
 						m[1] = k[1];
 						return;
@@ -109,7 +104,6 @@ class Socket {
 				this.messagesReceived += messages.length;
 
 				this.server.Listeners.incoming && this.server.Listeners.incoming(this, messages);
-
 				for (let m of messages) {
 					if (this.server.Listeners[m[0]]) {
 						this.server.Listeners[m[0]](this, m[1], m[2] && this.oncallback.bind(null, m[2]));
@@ -128,7 +122,7 @@ class Socket {
 			if (this.messages.length) {
 				this.server.Listeners.outgoing && this.server.Listeners.outgoing(this, this.messages);
 
-				let messages = JSON.stringify(this.messages);
+				let messages = this.server.messagesCache(this.messages);
 				this.io.send(messages);
 
 				this.server.bytesSent += messages.length;
@@ -137,22 +131,8 @@ class Socket {
 				this.server.messagesSent += this.messages.length;
 				this.messagesSent += this.messages.length;
 			}
-			// raw
-			if (this.raw.length) {
-				this.server.Listeners.outgoing && this.server.Listeners.outgoing(this, this.raw);
-
-				let messages = this.server.messagesCache(this.raw);
-				this.io.send(messages);
-
-				this.server.bytesSent += messages.length;
-				this.bytesSent += messages.length;
-
-				this.server.messagesSent += this.raw.length;
-				this.messagesSent += this.raw.length;
-			}
 		}
 		this.messages = [];
-		this.raw = [];
 	}
 
 	[inspect]() {

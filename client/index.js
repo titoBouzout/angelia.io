@@ -1,3 +1,5 @@
+'use strict';
+
 export default class Client {
 	constructor(options) {
 		if (!options || typeof options === 'string') {

@@ -1,3 +1,5 @@
+'use strict';
+
 const inspect = Symbol.for('nodejs.util.inspect.custom');
 
 class Socket {

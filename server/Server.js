@@ -1,3 +1,5 @@
+'use strict';
+
 const inspect = Symbol.for('nodejs.util.inspect.custom');
 const URL = require('url');
 const toFastProperties = require('to-fast-properties');

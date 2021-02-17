@@ -1,13 +1,14 @@
+'use strict';
+
 const utilsInspect = Symbol.for('nodejs.util.inspect.custom');
 
 const addClass = Symbol.for('Listeners.addClass');
 const addObject = Symbol.for('Listeners.addObject');
 const addFunction = Symbol.for('Listeners.addFunction');
 const addProperties = Symbol.for('Listeners.addProperties');
-const addDefaultProperties = Symbol.for('Listeners.addDefaultProperties');
 const Classes = Symbol.for('Listeners.Classes');
 
-const template = Symbol.for('Listeners.template');
+const Template = Symbol.for('Listeners.Template');
 const inspect = Symbol.for('Listeners.inspect');
 
 const isClass = require('is-class');
@@ -85,7 +86,7 @@ const Listeners = {
 					let method = instance[m].bind(instance);
 					method.__className = className;
 
-					this[m] = this[m] || this[template]();
+					this[m] = this[m] || this[Template]();
 					this[m].fns.push(method);
 
 					this[Classes][className] = this[Classes][className] || Object.create(null);
@@ -93,17 +94,15 @@ const Listeners = {
 				}
 			}
 		}
-		this[addDefaultProperties](instance);
-	},
-	[addDefaultProperties](o) {
-		Object.defineProperty(o, 'server', {
+
+		Object.defineProperty(instance, 'server', {
 			get: function() {
 				return Listeners.server;
 			},
 			configurable: false,
 			enumerable: false,
 		});
-		Object.defineProperty(o, 'listeners', {
+		Object.defineProperty(instance, 'listeners', {
 			get: function() {
 				return Listeners[Classes];
 			},
@@ -111,7 +110,8 @@ const Listeners = {
 			enumerable: false,
 		});
 	},
-	[template]() {
+
+	[Template]() {
 		function Listener(...args) {
 			for (let fn of this.fns) {
 				// console.log('calling listener', fn.name);
@@ -122,6 +122,9 @@ const Listeners = {
 		Listener.fns = fns;
 		Listener = Listener.bind(Listener);
 		Listener.fns = fns;
+
+		Object.freeze(Listener);
+
 		return Listener;
 	},
 	[utilsInspect]() {
@@ -148,26 +151,15 @@ const Listeners = {
 
 Listeners.__proto__ = Object.create(null);
 
-const protect = {
-	writable: false,
-	configurable: false,
-	enumerable: false,
-};
+Object.freeze(Listeners.add);
+Object.freeze(Listeners[addClass]);
+Object.freeze(Listeners[addObject]);
+Object.freeze(Listeners[addFunction]);
+Object.freeze(Listeners[addProperties]);
+Object.freeze(Listeners[Template]);
 
-Object.defineProperties(Listeners, {
-	add: protect,
-	[Classes]: protect,
-
-	[addClass]: protect,
-	[addObject]: protect,
-	[addFunction]: protect,
-	[addProperties]: protect,
-	[addDefaultProperties]: protect,
-	[template]: protect,
-
-	[utilsInspect]: protect,
-	toJSON: protect,
-	[inspect]: protect,
-});
+Object.freeze(Listeners[utilsInspect]);
+Object.freeze(Listeners.toJSON);
+Object.freeze(Listeners[inspect]);
 
 module.exports = Listeners;

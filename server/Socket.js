@@ -42,15 +42,7 @@ class Socket {
 		}
 
 		if (typeof k !== 'string') {
-			// TODO
-			this.messages.push(k);
-
-			/*
-			if (!this.server.wm.has(k)) {
-				this.server.wm.set(k, JSON.stringify([k]));
-			}
 			this.raw.push(k);
-			*/
 		} else {
 			this.messages.push([k, v]);
 		}
@@ -60,8 +52,7 @@ class Socket {
 			this.emit(k, v);
 		} else {
 			if (typeof k !== 'string') {
-				// carefull! reference will be lost for the weak map
-				for (let m of this.messages) {
+				for (let m of this.raw) {
 					if (m[0] === k[0]) {
 						m[1] = k[1];
 						return;
@@ -136,31 +127,25 @@ class Socket {
 			// regular
 			if (this.messages.length) {
 				this.server.Listeners.outgoing && this.server.Listeners.outgoing(this, this.messages);
+
 				let messages = JSON.stringify(this.messages);
 				this.io.send(messages);
 
-				this.server.messagesSent += this.messages.length;
-				this.messagesSent += this.messages.length;
-
 				this.server.bytesSent += messages.length;
 				this.bytesSent += messages.length;
+
+				this.server.messagesSent += this.messages.length;
+				this.messagesSent += this.messages.length;
 			}
 			// raw
 			if (this.raw.length) {
 				this.server.Listeners.outgoing && this.server.Listeners.outgoing(this, this.raw);
 
-				for (let message of this.raw) {
-					if (!this.server.wm.has(message)) {
-						console.warn('weak map lost, recreating');
-						this.server.wm.set(message, JSON.stringify([message]));
-					}
+				let messages = this.server.messagesCache(this.raw);
+				this.io.send(messages);
 
-					message = this.server.wm.get(message);
-					this.io.send(message);
-
-					this.server.bytesSent += message.length;
-					this.bytesSent += message.length;
-				}
+				this.server.bytesSent += messages.length;
+				this.bytesSent += messages.length;
 
 				this.server.messagesSent += this.raw.length;
 				this.messagesSent += this.raw.length;

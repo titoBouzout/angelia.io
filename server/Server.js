@@ -37,7 +37,10 @@ class Server {
 			Listeners: Listeners,
 
 			sockets: new Set(),
-			wm: new WeakMap(),
+
+			cacheIds: Symbol.for('Server.cacheIds'),
+			cacheId: 1,
+			cache: Object.create(null),
 		});
 
 		this[inspect] = this.toJSON = this.inspect;
@@ -162,8 +165,23 @@ class Server {
 		for (let socket of messages) {
 			socket.processMessages();
 		}
+		// clear cache
+		this.cache = Object.create(null);
 	}
 
+	messagesCache(messages) {
+		let id = '';
+		for (let m of messages) {
+			if (!m[this.cacheIds]) {
+				m[this.cacheIds] = this.cacheId++;
+			}
+			id += m[this.cacheIds] + ',';
+		}
+		if (!this.cache[id]) {
+			this.cache[id] = JSON.stringify(messages);
+		}
+		return this.cache[id];
+	}
 	// ping
 	updateNow() {
 		this.now = Date.now();

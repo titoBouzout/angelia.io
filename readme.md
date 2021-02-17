@@ -125,8 +125,40 @@ setTimeout(() => {
 socket.on('gotIt', (message) => {
 	console.log('Server got it yey', message)
 })
+```
 
+#### Syntax For Listeners
 
+Listeners have the following alternative syntax if you feel like
+
+```javascript
+import Server, { Listeners } from 'angelia.io/server';
+
+Listeners.add(
+	class Connection {
+		async connect(socket, request) {
+			console.log('connect in Class');
+		}
+	},
+);
+
+Listeners.add(function connect(socket, request) {
+	console.log('connect in Function');
+});
+
+Listeners.add({
+	connect: function(socket, request) {
+		console.log('connect in Object');
+		this.works();
+	},
+	works: function() {
+		console.log('this works yep');
+	},
+});
+
+new Server({
+	port: 3001,
+});
 ```
 
 ### Server Options

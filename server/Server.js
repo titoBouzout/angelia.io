@@ -1,11 +1,14 @@
 'use strict';
 
 const inspect = Symbol.for('nodejs.util.inspect.custom');
+
 const URL = require('url');
 const toFastProperties = require('to-fast-properties');
 
 const Socket = require('./Socket.js');
+
 const Listeners = require('./Listeners.js');
+const addEvent = Symbol.for('Listeners.add');
 
 class Server {
 	constructor(options) {
@@ -37,7 +40,7 @@ class Server {
 
 			inspect: this.inspect.bind(this),
 
-			Listeners: Listeners,
+			events: Listeners,
 
 			sockets: new Set(),
 
@@ -48,9 +51,9 @@ class Server {
 
 		this[inspect] = this.toJSON = this.inspect;
 
-		this.Listeners.add(this.pong);
-		this.Listeners.server = this;
-		Object.defineProperties(this.Listeners, {
+		this.events[addEvent](this.pong);
+		this.events.server = this;
+		Object.defineProperties(this.events, {
 			server: {
 				writable: false,
 				configurable: false,
@@ -101,10 +104,16 @@ class Server {
 		}
 
 		console.log('Server Started Listening On Port ' + this.port);
-		this.Listeners.listen && this.Listeners.listen();
+		this.events.listen && this.events.listen();
 	}
 
+	// listen for an event
+
+	on(k, cb) {
+		Listeners[addEvent](k, cb);
+	}
 	// emits to everyone connected to the server
+
 	emit(k, v) {
 		let d = [k, v];
 		for (let socket of this.sockets) {
@@ -147,7 +156,7 @@ class Server {
 		this.sockets.add(socket);
 
 		// dispatch connect
-		this.Listeners.connect && this.Listeners.connect(socket, request);
+		this.events.connect && this.events.connect(socket, request);
 
 		this.pingSocket.bind(this, socket);
 	}
@@ -201,7 +210,7 @@ class Server {
 			if (delay > this.timeout) {
 				// timedout
 				socket.timedout = true;
-				this.Listeners.timeout && this.Listeners.timeout(socket, delay);
+				this.events.timeout && this.events.timeout(socket, delay);
 				socket.io.terminate();
 			} else {
 				// ping
@@ -220,7 +229,7 @@ class Server {
 		this.updateNow();
 		socket.seen = this.now;
 		socket.ping = this.now - socket.contacted;
-		this.Listeners.ping && this.Listeners.ping(socket);
+		this.events.ping && this.events.ping(socket);
 	}
 	// returns false if the ip is a private ip like 127.0.0.1
 	ip(i) {
@@ -272,8 +281,9 @@ class Server {
 			messagesReceived: this.messagesReceived,
 			messagesCached: this.messagesCached,
 			// listeners
-			Listeners: this.Listeners.toJSON(),
+			events: this.events.toJSON(),
 			// functions
+			on: this.on,
 			emit: this.emit,
 			once: this.once,
 			// data
@@ -284,17 +294,17 @@ class Server {
 		// server
 		toFastProperties(this);
 
-		// the Listener class
-		toFastProperties(this.Listeners);
+		// the events class
+		toFastProperties(this.events);
 
 		// listeners
-		for (let l in this.Listeners) {
+		for (let l in this.events) {
 			// listener
-			toFastProperties(this.Listeners[l]);
+			toFastProperties(this.events[l]);
 			// methods
-			if (this.Listeners[l].fns) {
-				for (let m in this.Listeners[l].fns) {
-					toFastProperties(this.Listeners[l].fns[m]);
+			if (this.events[l].fns) {
+				for (let m in this.events[l].fns) {
+					toFastProperties(this.events[l].fns[m]);
 				}
 			}
 		}
@@ -302,13 +312,13 @@ class Server {
 		const Classes = Symbol.for('Listeners.Classes');
 
 		// classes
-		toFastProperties(this.Listeners[Classes]);
-		for (let l in this.Listeners[Classes]) {
+		toFastProperties(this.events[Classes]);
+		for (let l in this.events[Classes]) {
 			// class
-			toFastProperties(this.Listeners[Classes][l]);
+			toFastProperties(this.events[Classes][l]);
 			// methods
-			for (let m in this.Listeners[Classes][l]) {
-				toFastProperties(this.Listeners[Classes][l][m]);
+			for (let m in this.events[Classes][l]) {
+				toFastProperties(this.events[Classes][l][m]);
 			}
 		}
 
@@ -317,18 +327,18 @@ class Server {
 	fastPropertiesPrint() {
 		// server
 		console.log('this.server', this.HasFastProperties(this));
-		console.log('this.Listeners', this.HasFastProperties(this.Listeners));
+		console.log('this.events', this.HasFastProperties(this.events));
 
 		// listeners
-		for (let l in this.Listeners) {
+		for (let l in this.events) {
 			// listener
-			console.log('this.Listeners.' + l, this.HasFastProperties(this.Listeners[l]));
+			console.log('this.events.' + l, this.HasFastProperties(this.events[l]));
 			// methods
-			if (this.Listeners[l].fns) {
-				for (let m in this.Listeners[l].fns) {
+			if (this.events[l].fns) {
+				for (let m in this.events[l].fns) {
 					console.log(
-						'this.Listeners.' + l + '.' + this.Listeners[l].fns[m].name,
-						this.HasFastProperties(this.Listeners[l].fns[m]),
+						'this.events.' + l + '.' + this.events[l].fns[m].name,
+						this.HasFastProperties(this.events[l].fns[m]),
 					);
 				}
 			}
@@ -337,27 +347,25 @@ class Server {
 		const Classes = Symbol.for('Listeners.Classes');
 
 		// classes
-		console.log('this.Listeners.Classes', this.HasFastProperties(this.Listeners[Classes]));
-		for (let m in this.Listeners[Classes]) {
-			console.log(
-				'this.Listeners.Classes.' + m,
-				this.HasFastProperties(this.Listeners[Classes][m]),
-			);
+		console.log('this.events', this.HasFastProperties(this.events[Classes]));
+		for (let m in this.events[Classes]) {
+			console.log('this.events.' + m, this.HasFastProperties(this.events[Classes][m]));
 			// class
-			for (let f in this.Listeners[Classes][m]) {
+			for (let f in this.events[Classes][m]) {
 				// methods
 				console.log(
-					'this.Listeners.Classes.' + m + '.' + this.Listeners[Classes][m][f].name,
-					this.HasFastProperties(this.Listeners[Classes][m][f]),
+					'this.events.' + m + '.' + this.events[Classes][m][f].name,
+					this.HasFastProperties(this.events[Classes][m][f]),
 				);
 			}
 		}
 	}
 	HasFastProperties(o) {
+		// to uncomment this run node as "node --allow-natives-syntax"
 		// return %HasFastProperties(o);
 	}
 }
 
-Server.Listeners = Listeners;
+Server.on = Server.prototype.on;
 
 module.exports = Server;

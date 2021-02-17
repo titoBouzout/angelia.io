@@ -83,7 +83,7 @@ class Socket {
 	onclose(code, message) {
 		this.server.sockets.delete(this);
 
-		this.server.Listeners.disconnect && this.server.Listeners.disconnect(this, code, message);
+		this.server.events.disconnect && this.server.events.disconnect(this, code, message);
 	}
 	onerror(err) {
 		console.error('Socket.onerror', err, this.inspect());
@@ -93,7 +93,7 @@ class Socket {
 	}
 	onmessage(e) {
 		if (e === '') {
-			this.server.Listeners.pong(this);
+			this.server.events.pong(this);
 		} else {
 			this.seen = this.server.now;
 
@@ -105,16 +105,16 @@ class Socket {
 				this.server.messagesReceived += messages.length;
 				this.messagesReceived += messages.length;
 
-				this.server.Listeners.incoming && this.server.Listeners.incoming(this, messages);
+				this.server.events.incoming && this.server.events.incoming(this, messages);
 				for (let m of messages) {
-					if (this.server.Listeners[m[0]]) {
-						this.server.Listeners[m[0]](this, m[1], m[2] && this.oncallback.bind(null, m[2]));
+					if (this.server.events[m[0]]) {
+						this.server.events[m[0]](this, m[1], m[2] && this.oncallback.bind(null, m[2]));
 					} else {
-						this.server.Listeners.garbage && this.server.Listeners.garbage(this, m);
+						this.server.events.garbage && this.server.events.garbage(this, m);
 					}
 				}
 			} else {
-				this.server.Listeners.garbage && this.server.Listeners.garbage(this, messages);
+				this.server.events.garbage && this.server.events.garbage(this, messages);
 			}
 		}
 	}
@@ -122,7 +122,7 @@ class Socket {
 		if (this.io.readyState === 1) {
 			// regular
 			if (this.messages.length) {
-				this.server.Listeners.outgoing && this.server.Listeners.outgoing(this, this.messages);
+				this.server.events.outgoing && this.server.events.outgoing(this, this.messages);
 
 				let messages = this.server.cacheMessages(this.messages);
 				this.io.send(messages);

@@ -292,6 +292,13 @@ Predefined listeners
 | `incoming(socket, messages)`        | for debugging: ref to array of incoming messages received before dispatching to listeners |
 | `outgoing(socket, messages)`        | for debugging: ref to array of outgoing messages before sending to socket                 |
 
+`this` object on listeners has some predefined properties
+
+| signature   | description                                                                                                                          |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `server`    | reference to server object                                                                                                           |
+| `listeners` | ref to listeners, examples: `this.listeners.Connections.connect`, `this.listeners.Function.connect`, `this.listeners.Object.connect` |
+
 ## Client (Browser)
 
 ### Client (Browser) Options
@@ -312,11 +319,11 @@ You may also do like this if you don't need any option
 const socket = new Client('ws://localhost:3001');
 ```
 
-| name     | kind    | default                                     | description                                                  |
-| -------- | ------- | ------------------------------------------- | ------------------------------------------------------------ |
-| `url`    | string  | 'ws(s)://\${window.location.hostname}:3001' | url of the socket server, example 'ws://localhost:3001'      |
-| `debug`  | boolean | false                                       | to console.log some messages                                 |
-| `params` | Object  | {}                                          | to send data while connecting, accesible via `socket.params` |
+| name     | kind    | default                                     | description                                                              |
+| -------- | ------- | ------------------------------------------- | ------------------------------------------------------------------------ |
+| `url`    | string  | 'ws(s)://\${window.location.hostname}:3001' | url of the socket server, example 'ws://localhost:3001'                  |
+| `debug`  | boolean | false                                       | to console.log some messages                                             |
+| `params` | Object  | {}                                          | to send data while connecting, accesible via `socket.params` server side |
 
 ### Client (Browser) API
 

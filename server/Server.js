@@ -22,6 +22,7 @@ class Server {
 			bytesReceived: 0,
 			messagesSent: 0,
 			messagesReceived: 0,
+			messagesCached: 0,
 
 			pong: this.pong.bind(this),
 			ping: this.ping.bind(this),
@@ -152,6 +153,8 @@ class Server {
 		console.error('Server.onerror', err);
 	}
 
+	// messages
+
 	nextMessages(socket) {
 		if (!this.messages.length) {
 			process.nextTick(this.processMessages);
@@ -169,7 +172,7 @@ class Server {
 		this.cache = Object.create(null);
 	}
 
-	messagesCache(messages) {
+	cacheMessages(messages) {
 		let id = '';
 		for (let m of messages) {
 			if (!m[this.cacheIds]) {
@@ -179,9 +182,12 @@ class Server {
 		}
 		if (!this.cache[id]) {
 			this.cache[id] = JSON.stringify(messages);
+		} else {
+			this.messagesCached++;
 		}
 		return this.cache[id];
 	}
+
 	// ping
 	updateNow() {
 		this.now = Date.now();
@@ -262,6 +268,7 @@ class Server {
 			bytesReceived: this.bytesReceived,
 			messagesSent: this.messagesSent,
 			messagesReceived: this.messagesReceived,
+			messagesCached: this.messagesCached,
 			// listeners
 			Listeners: this.Listeners.toJSON(),
 			// functions

@@ -122,7 +122,7 @@ class Socket {
 			if (this.messages.length) {
 				this.server.Listeners.outgoing && this.server.Listeners.outgoing(this, this.messages);
 
-				let messages = this.server.messagesCache(this.messages);
+				let messages = this.server.cacheMessages(this.messages);
 				this.io.send(messages);
 
 				this.server.bytesSent += messages.length;

@@ -16,6 +16,7 @@ export default class Client {
 		}
 		options.url = new URL(options.url);
 		options.url.search = Object.entries(options.params || {})
+			.filter(([k, v]) => v === null || v === undefined)
 			.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
 			.join('&');
 

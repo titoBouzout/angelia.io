@@ -1,7 +1,7 @@
 {
 	"name": "angelia.io",
 	"version": "1.26.0",
-	"description": "Simple WebSockets Server and Client for node.js",
+	"description": "WebSockets Server and Client API for node.js and the browser, with rooms support.",
 	"homepage": "https://github.com/titoBouzout/angelia.io",
 	"repository": {
 		"type": "git",
@@ -17,14 +17,16 @@
 		"WebSocketClient",
 		"WebSocketServer",
 		"events",
+		"rooms api",
+		"rooms",
+		"socket api",
+		"sockets api",
 		"io",
 		"ws"
 	],
 	"author": "@titoBouzout @boredofnames",
 	"license": "MIT",
 	"dependencies": {
-		"is-class": "^0.0.9",
-		"isobject": "^4.0.0",
 		"to-fast-properties": "^3.0.1",
 		"ws": "^7.4.3"
 	}

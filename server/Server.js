@@ -5,10 +5,13 @@ const inspect = Symbol.for('nodejs.util.inspect.custom');
 const URL = require('url');
 const toFastProperties = require('to-fast-properties');
 
-const Socket = require('./Socket.js');
+const Listeners = new (require('./Listeners.js'))();
+Listeners[inspect] = function() {
+	return this.inspect();
+};
 
-const Listeners = require('./Listeners.js');
-const addEvent = Symbol.for('Listeners.add');
+const Socket = require('./Socket.js');
+const Tracker = require('./Tracker.js');
 
 class Server {
 	constructor(options) {
@@ -40,20 +43,21 @@ class Server {
 
 			inspect: this.inspect.bind(this),
 
-			events: Listeners,
+			listeners: Listeners,
+			events: Listeners.events,
 
 			sockets: new Set(),
 
-			cacheIds: Symbol.for('Server.cacheIds'),
+			cacheIds: Symbol('cache'),
 			cacheId: 1,
 			cache: Object.create(null),
 		});
 
 		this[inspect] = this.toJSON = this.inspect;
 
-		this.events[addEvent](this.pong);
-		this.events.server = this;
-		Object.defineProperties(this.events, {
+		this.listeners.on(this.pong);
+		this.listeners.server = this;
+		Object.defineProperties(this.listeners, {
 			server: {
 				writable: false,
 				configurable: false,
@@ -107,11 +111,28 @@ class Server {
 		this.events.listen && this.events.listen();
 	}
 
+	// count of connections
+
+	get connections() {
+		return this.sockets.size;
+	}
+
 	// listen for an event
 
 	on(k, cb) {
-		Listeners[addEvent](k, cb);
+		let instance = Listeners.on(k, cb);
+		Object.defineProperty(instance, 'server', {
+			get: function() {
+				return Listeners.server;
+			},
+			configurable: false,
+			enumerable: false,
+		});
+		if (this && this.ensureFastProperties) {
+			this.ensureFastProperties();
+		}
 	}
+
 	// emits to everyone connected to the server
 
 	emit(k, v) {
@@ -127,8 +148,10 @@ class Server {
 		}
 	}
 
-	get connections() {
-		return this.sockets.size;
+	// tracker
+
+	track(path) {
+		return Tracker.track(path);
 	}
 	// PRIVATE API
 
@@ -156,7 +179,7 @@ class Server {
 		this.sockets.add(socket);
 
 		// dispatch connect
-		this.events.connect && this.events.connect(socket, request);
+		this.events.connect && this.events.connect(socket.proxy, request);
 
 		this.pingSocket.bind(this, socket);
 	}
@@ -210,7 +233,7 @@ class Server {
 			if (delay > this.timeout) {
 				// timedout
 				socket.timedout = true;
-				this.events.timeout && this.events.timeout(socket, delay);
+				this.events.timeout && this.events.timeout(socket.proxy, delay);
 				socket.io.terminate();
 			} else {
 				// ping
@@ -229,7 +252,7 @@ class Server {
 		this.updateNow();
 		socket.seen = this.now;
 		socket.ping = this.now - socket.contacted;
-		this.events.ping && this.events.ping(socket);
+		this.events.ping && this.events.ping(socket.proxy);
 	}
 	// returns false if the ip is a private ip like 127.0.0.1
 	ip(i) {
@@ -281,7 +304,8 @@ class Server {
 			messagesReceived: this.messagesReceived,
 			messagesCached: this.messagesCached,
 			// listeners
-			events: this.events.toJSON(),
+			events: this.events,
+			listeners: this.listeners,
 			// functions
 			on: this.on,
 			emit: this.emit,
@@ -290,6 +314,8 @@ class Server {
 			sockets: this.sockets,
 		};
 	}
+	// fast properties
+
 	ensureFastProperties() {
 		// server
 		toFastProperties(this);
@@ -309,16 +335,14 @@ class Server {
 			}
 		}
 
-		const Classes = Symbol.for('Listeners.Classes');
-
 		// classes
-		toFastProperties(this.events[Classes]);
-		for (let l in this.events[Classes]) {
+		toFastProperties(this.events.classes);
+		for (let l in this.events.classes) {
 			// class
-			toFastProperties(this.events[Classes][l]);
+			toFastProperties(this.events.classes[l]);
 			// methods
-			for (let m in this.events[Classes][l]) {
-				toFastProperties(this.events[Classes][l][m]);
+			for (let m in this.events.classes[l]) {
+				toFastProperties(this.events.classes[l][m]);
 			}
 		}
 
@@ -344,18 +368,16 @@ class Server {
 			}
 		}
 
-		const Classes = Symbol.for('Listeners.Classes');
-
 		// classes
-		console.log('this.events', this.HasFastProperties(this.events[Classes]));
-		for (let m in this.events[Classes]) {
-			console.log('this.events.' + m, this.HasFastProperties(this.events[Classes][m]));
+		console.log('this.events', this.HasFastProperties(this.events.classes));
+		for (let m in this.events.classes) {
+			console.log('this.events.' + m, this.HasFastProperties(this.events.classes[m]));
 			// class
-			for (let f in this.events[Classes][m]) {
+			for (let f in this.events.classes[m]) {
 				// methods
 				console.log(
-					'this.events.' + m + '.' + this.events[Classes][m][f].name,
-					this.HasFastProperties(this.events[Classes][m][f]),
+					'this.events.' + m + '.' + this.events.classes[m][f].name,
+					this.HasFastProperties(this.events.classes[m][f]),
 				);
 			}
 		}
@@ -367,5 +389,6 @@ class Server {
 }
 
 Server.on = Server.prototype.on;
+Server.track = Server.prototype.track;
 
 module.exports = Server;

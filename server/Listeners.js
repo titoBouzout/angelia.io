@@ -1,37 +1,23 @@
 'use strict';
 
-const utilsInspect = Symbol.for('nodejs.util.inspect.custom');
-
-const add = Symbol.for('Listeners.add');
-const addClass = Symbol.for('Listeners.addClass');
-const addObject = Symbol.for('Listeners.addObject');
-const addFunction = Symbol.for('Listeners.addFunction');
-const addProperties = Symbol.for('Listeners.addProperties');
-const Classes = Symbol.for('Listeners.Classes');
-
-const Template = Symbol.for('Listeners.Template');
-
-const inspect = Symbol.for('Listeners.inspect');
-
-const isClass = require('is-class');
-const isObject = require('isobject');
-
-const Listeners = {
-	[Classes]: Object.create(null),
-
-	[add](listener, asCallback) {
-		// Server.on('connect', function(){ console.log('connected as callback')})
+class Listeners {
+	constructor() {
+		this.classes = Object.create(null);
+		this.events = Object.create(null);
+	}
+	on(listener, asCallback) {
+		// Listeners.on('connect', function(){ console.log('connected as callback')})
 		if (asCallback !== undefined) {
 			if (
 				typeof listener === 'string' &&
-				!isClass(asCallback) &&
-				!isObject(asCallback) &&
-				asCallback.bind
+				!this.isClass(asCallback) &&
+				!this.isObject(asCallback) &&
+				this.isFunction(asCallback)
 			) {
-				this[addFunction](asCallback, listener);
+				return this.addFunction(asCallback, listener);
 			} else {
 				throw new Error(
-					`\nangelia.io - Call to Server.on(key, callback) with unsupported types. Named listeners only support strings as name, and functions as callbacks. \nExample: Server.on("connect", ()=>{console.log("connected")}) \nData you passed: \nName: "${listener}" ${
+					`\nCall to Listeners.on(key, callback) with unsupported types. Named listeners only support strings as name, and functions as callbacks. \nExample: Listeners.on("connect", ()=>{console.log("connected")}) \nData you passed: \nName: "${listener}" ${
 						typeof listener === 'string'
 							? 'OK'
 							: 'FAIL should be of the type "string" when a callback is passed'
@@ -40,36 +26,28 @@ const Listeners = {
 					}\n`,
 				);
 			}
-		} else if (isClass(listener)) {
-			this[addClass](listener);
-		} else if (isObject(listener)) {
-			this[addObject](listener);
-		} else if (listener && listener.bind) {
-			this[addFunction](listener);
-		} else if (Array.isArray(listener)) {
-			for (let l of listener) {
-				this[add](l);
-			}
+		} else if (this.isClass(listener)) {
+			return this.addClass(listener);
+		} else if (this.isObject(listener)) {
+			return this.addObject(listener);
+		} else if (this.isFunction(listener)) {
+			return this.addFunction(listener);
 		} else {
 			throw new Error(
-				'angelia.io - Call to Server.on with unsupported type:',
+				'angelia.io - Call to Listeners.on with unsupported type:',
 				listener,
 				className || '',
 				'\n',
 			);
 		}
-
-		if (this.server && this.server.ensureFastProperties) {
-			this.server.ensureFastProperties();
-		}
-	},
-	[addClass](listener, className) {
+	}
+	addClass(listener, className) {
 		className = className || listener.name || 'Class';
 
 		let instance = new listener();
-		this[addProperties](instance, className);
-	},
-	[addObject](listener, className) {
+		return this.addProperties(instance, className);
+	}
+	addObject(listener, className) {
 		className = className || listener.name || 'Object';
 
 		function Listener(methods) {
@@ -77,62 +55,56 @@ const Listeners = {
 		}
 
 		let instance = new Listener(listener);
-		this[addProperties](instance, className);
-	},
-	[addFunction](listener, className) {
+		return this.addProperties(instance, className);
+	}
+	addFunction(listener, className) {
 		className = className || listener.name.replace(/bound /g, '');
 
-		this[addObject](
+		return this.addObject(
 			{
 				[className]: listener,
 			},
 			'Function',
 		);
-	},
-	[addProperties](instance, className) {
+	}
+	addProperties(instance, className) {
 		let methods = [
 			...Object.getOwnPropertyNames(instance.__proto__),
 			...Object.getOwnPropertyNames(instance),
 		];
 
 		for (let m of methods) {
+			// '' listener is reserved
 			if (m !== 'constructor' && m !== '') {
-				if (instance[m].bind) {
+				if (this.isFunction(instance[m])) {
 					let method = instance[m].bind(instance);
 					method.__className = className;
 
-					this[m] = this[m] || this[Template]();
-					this[m].fns.push(method);
+					this.events[m] = this.events[m] || this.Template();
+					this.events[m].fns.push(method);
 
-					this[Classes][className] = this[Classes][className] || Object.create(null);
-					this[Classes][className][m] = method;
+					this.classes[className] = this.classes[className] || Object.create(null);
+					this.classes[className][m] = method;
 				}
 			}
 		}
 
-		Object.defineProperty(instance, 'server', {
-			get: function() {
-				return Listeners.server;
-			},
-			configurable: false,
-			enumerable: false,
-		});
-		Object.defineProperty(instance, 'listeners', {
-			get: function() {
-				return Listeners[Classes];
-			},
-			configurable: false,
-			enumerable: false,
-		});
-		Object.defineProperty(instance, 'events', {
-			value: this,
+		Object.defineProperty(instance, 'classes', {
+			value: this.classes,
 			configurable: false,
 			enumerable: false,
 			writable: false,
 		});
-	},
+		Object.defineProperty(instance, 'events', {
+			value: this.events,
+			configurable: false,
+			enumerable: false,
+			writable: false,
+		});
+		return instance;
+	}
 
-	[Template]() {
+	Template() {
 		function Listener(...args) {
 			for (let fn of this.fns) {
 				// console.log('calling listener', fn.name);
@@ -144,21 +116,58 @@ const Listeners = {
 		Listener = Listener.bind(Listener);
 		Listener.fns = fns;
 
-		Object.freeze(Listener);
-
 		return Listener;
-	},
-	[utilsInspect]() {
-		return this[inspect]();
-	},
+	}
+
+	isFunction(o) {
+		return o && o.bind;
+	}
+	// isobject <https://github.com/jonschlinkert/isobject>
+	// MIT license - Copyright (c) 2014-2017, Jon Schlinkert.
+	isObject(o) {
+		return o != null && typeof o === 'object' && Array.isArray(o) === false;
+	}
+	// is-class <https://github.com/miguelmota/is-class>
+	// MIT license - Copyright (C) 2014 Miguel Mota
+	isClass() {
+		(function(root) {
+			const toString = Function.prototype.toString;
+
+			function fnBody(fn) {
+				return toString
+					.call(fn)
+					.replace(/^[^{]*{\s*/, '')
+					.replace(/\s*}[^}]*$/, '');
+			}
+
+			function isClass(fn) {
+				if (typeof fn !== 'function') {
+					return false;
+				}
+
+				if (/^class[\s{]/.test(toString.call(fn))) {
+					return true;
+				}
+
+				// babel.js classCallCheck() & inlined
+				const body = fnBody(fn);
+				return (
+					/classCallCheck\(/.test(body) ||
+					/TypeError\("Cannot call a class as a function"\)/.test(body)
+				);
+			}
+
+			root.isClass = isClass;
+		})(Listeners.prototype);
+	}
 	toJSON() {
-		return this[inspect]();
-	},
-	[inspect]() {
+		return this.inspect();
+	}
+	inspect() {
 		let listeners = [];
-		for (let m in this) {
-			if (Array.isArray(this[m].fns)) {
-				for (let fn of this[m].fns) {
+		for (let m in this.events) {
+			if (Array.isArray(this.events[m].fns)) {
+				for (let fn of this.events[m].fns) {
 					let className = fn.__className;
 					let method = fn.name.replace('bound ', '');
 					method = method != m ? method + ' as ' + m : method;
@@ -167,20 +176,9 @@ const Listeners = {
 			}
 		}
 		return listeners.sort();
-	},
-};
+	}
+}
 
-Listeners.__proto__ = Object.create(null);
-
-Object.freeze(Listeners[add]);
-Object.freeze(Listeners[addClass]);
-Object.freeze(Listeners[addObject]);
-Object.freeze(Listeners[addFunction]);
-Object.freeze(Listeners[addProperties]);
-Object.freeze(Listeners[Template]);
-
-Object.freeze(Listeners[utilsInspect]);
-Object.freeze(Listeners.toJSON);
-Object.freeze(Listeners[inspect]);
+Listeners.prototype.isClass();
 
 module.exports = Listeners;

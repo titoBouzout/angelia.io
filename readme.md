@@ -1,6 +1,6 @@
 # angelia.io
 
-WebSockets Server and WebSockets Client for node.js.
+WebSockets Server and Client API for node.js and the browser, with rooms support.
 
 The goal of this project is to provide a developer friendly API that just works™.
 
@@ -116,26 +116,27 @@ const server = new Server({
 
 #### Server Properties
 
-| signature            | kind     | description                                                                       |
-| -------------------- | -------- | --------------------------------------------------------------------------------- |
-| `since`              | Number   | timestamp of initialization                                                       |
-| `port`               | Number   | port used by this server                                                          |
-| `maxMessageSize`     | Number   | maximum message size in mb                                                        |
-| `timeout`            | Number   | after how long the socket is considered gone, in ms                               |
-| `connections`        | Number   | count of sockets connected                                                        |
-| `served`             | Number   | count of sockets ever connected                                                   |
-| `bytesSent`          | Number   | sum of bytes sent by the server                                                   |
-| `bytesReceived`      | Number   | sum of bytes the server has ever received                                         |
-| `messagesSent`       | Number   | count of messages ever sent                                                       |
-| `messagesReceived`   | Number   | count of messages ever received                                                   |
-| `events`             | Object   | console.log(server.events) will pretty list them as an array                      |
-| `on(Class)`          | Function | attaches all methods of a `Class` as listeners                                    |
-| `on(Function)`       | Function | attaches a named `Function` as a listener                                         |
-| `on(Object)`         | Function | attaches all properties of an object that are of the type `Function` as listeners |
-| `on(key, Function)`  | Function | attaches a `Function` as a listener for `key`                                     |
-| `emit(key, [value])` | Function | emits to all connected sockets                                                    |
-| `once(key, [value])` | Function | emits to the sockets and replace if exists a pending message with the same `key`  |
-| `sockets`            | Set      | a Set() with all the current connected sockets                                    |
+| signature            | kind     | description                                                                            |
+| -------------------- | -------- | -------------------------------------------------------------------------------------- |
+| `since`              | Number   | timestamp of initialization                                                            |
+| `port`               | Number   | port used by this server                                                               |
+| `maxMessageSize`     | Number   | maximum message size in mb                                                             |
+| `timeout`            | Number   | after how long the socket is considered gone, in ms                                    |
+| `connections`        | Number   | count of sockets connected                                                             |
+| `served`             | Number   | count of sockets ever connected                                                        |
+| `bytesSent`          | Number   | sum of bytes sent by the server                                                        |
+| `bytesReceived`      | Number   | sum of bytes the server has ever received                                              |
+| `messagesSent`       | Number   | count of messages ever sent                                                            |
+| `messagesReceived`   | Number   | count of messages ever received                                                        |
+| `events`             | Object   | ref to events, ex: server.events.typing() to dispatch typing to anyone listening to it |
+| `listeners`          | Array    | for debbuging: array of listeners as strings                                           |
+| `on(Class)`          | Function | attaches all methods of a `Class` as listeners                                         |
+| `on(Function)`       | Function | attaches a named `Function` as a listener                                              |
+| `on(Object)`         | Function | attaches all properties of an object that are of the type `Function` as listeners      |
+| `on(key, Function)`  | Function | attaches a `Function` as a listener for `key`                                          |
+| `emit(key, [value])` | Function | emits to all connected sockets                                                         |
+| `once(key, [value])` | Function | emits to the sockets and replace if exists a pending message with the same `key`       |
+| `sockets`            | Set      | a Set() with all the current connected sockets                                         |
 
 ### Socket Object
 
@@ -330,11 +331,11 @@ const server = new Server({
 
 `this` object on listeners has some predefined properties
 
-| property    | description                                                                                                            |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `server`    | reference to server object                                                                                             |
-| `events`    | reference to event dispatcher, ex: `this.events.typing()` will dispatch the `typing` event to anyone listening to it   |
-| `listeners` | EXPERIMENTAL reference to all functions that have been attached as listeners , ex: `this.listeners.MyFancyChat.typing` |
+| property  | description                                                                                                          |
+| --------- | -------------------------------------------------------------------------------------------------------------------- |
+| `server`  | reference to server object                                                                                           |
+| `events`  | reference to event dispatcher, ex: `this.events.typing()` will dispatch the `typing` event to anyone listening to it |
+| `classes` | EXPERIMENTAL reference to all functions that have been attached as listeners , ex: `this.classes.MyFancyChat.typing` |
 
 ## Client API (Browser)
 

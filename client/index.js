@@ -50,6 +50,8 @@ export default class Client {
 
 			nextTick: this.nextTick.bind(this),
 			disconnect: this.disconnect.bind(this),
+
+			longLiveFlash: options.longLiveFlash,
 		});
 
 		if (this.debug) console.log('ws instantiated');
@@ -203,9 +205,19 @@ export default class Client {
 		return i;
 	}
 	dispatch(k, v) {
-		if (this.listeners[k]) {
-			for (let event of this.listeners[k]) {
-				event(v);
+		if (this.longLiveFlash) {
+			setTimeout(() => {
+				if (this.listeners[k]) {
+					for (let event of this.listeners[k]) {
+						event(v);
+					}
+				}
+			});
+		} else {
+			if (this.listeners[k]) {
+				for (let event of this.listeners[k]) {
+					event(v);
+				}
 			}
 		}
 	}

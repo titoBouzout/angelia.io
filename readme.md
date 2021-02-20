@@ -160,23 +160,23 @@ new Server({
 
 #### Socket Properties
 
-| signature                 | kind     | description                                                                      |
-| ------------------------- | -------- | -------------------------------------------------------------------------------- |
-| `server`                  | Object   | reference to the server                                                          |
-| `ip`                      | String   | ip of the socket                                                                 |
-| `userAgent`               | String   | user agent of the socket                                                         |
-| `params`                  | Object   | the params sent via the client constructor                                       |
-| `since`                   | Number   | timestamp of first seen                                                          |
-| `seen`                    | Number   | timestamp of last received message                                               |
-| `ping`                    | Number   | delay with the socket in milliseconds (full round trip)                          |
-| `timedout`                | Boolean  | whether we lost connection with this socket                                      |
-| `bytesSent`               | Number   | sum of bytes sent to this socket                                                 |
-| `bytesReceived`           | Number   | sum of bytes received from this socket                                           |
-| `messagesSent`            | Number   | count of messages sent to this socket                                            |
-| `messagesReceived`        | Number   | count of messages received from this socket                                      |
-| `emit(key, [value])`      | Function | emits to this socket                                                             |
-| `once(key, [value])`      | Function | emits to this socket and replace if exists a pending message with the same `key` |
-| `disconnect([reconnect])` | Function | disconnects the socket from the server, pass true to prevent re-connections      |
+| signature                   | kind     | description                                                                      |
+| --------------------------- | -------- | -------------------------------------------------------------------------------- |
+| `server`                    | Object   | reference to the server                                                          |
+| `ip`                        | String   | ip of the socket                                                                 |
+| `userAgent`                 | String   | user agent of the socket                                                         |
+| `params`                    | Object   | the params sent via the client constructor                                       |
+| `since`                     | Number   | timestamp of first seen                                                          |
+| `seen`                      | Number   | timestamp of last received message                                               |
+| `ping`                      | Number   | delay with the socket in milliseconds (full round trip)                          |
+| `timedout`                  | Boolean  | whether we lost connection with this socket                                      |
+| `bytesSent`                 | Number   | sum of bytes sent to this socket                                                 |
+| `bytesReceived`             | Number   | sum of bytes received from this socket                                           |
+| `messagesSent`              | Number   | count of messages sent to this socket                                            |
+| `messagesReceived`          | Number   | count of messages received from this socket                                      |
+| `emit(key, [value])`        | Function | emits to this socket                                                             |
+| `once(key, [value])`        | Function | emits to this socket and replace if exists a pending message with the same `key` |
+| `disconnect([noReconnect])` | Function | disconnects the socket from the server, pass `true` to prevent re-connections    |
 
 ### Listeners
 
@@ -351,11 +351,12 @@ const socket = new Client({
 });
 ```
 
-| property | kind    | default                                     | description                                                              |
-| -------- | ------- | ------------------------------------------- | ------------------------------------------------------------------------ |
-| `url`    | string  | 'ws(s)://\${window.location.hostname}:3001' | url of the socket server, example 'ws://localhost:3001'                  |
-| `debug`  | boolean | false                                       | to console.log some messages                                             |
-| `params` | Object  | {}                                          | to send data while connecting, accesible via `socket.params` server side |
+| property        | kind    | default                                     | description                                                                                                                                                               |
+| --------------- | ------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`           | string  | 'ws(s)://\${window.location.hostname}:3001' | url of the socket server, example 'ws://localhost:3001'                                                                                                                   |
+| `params`        | Object  | {}                                          | to send data while connecting, accesible via `socket.params` server side                                                                                                  |
+| `debug`         | boolean | false                                       | to console.log some messages                                                                                                                                              |
+| `longLiveFlash` | boolean | false                                       | browsers throw when calling swf functions via ExternalInterface after events like WebSocket.onmesssage; setting this to `true` fix it by dispatching them in a setTimeout |
 
 You may also do like this if you don't need any option
 
@@ -371,7 +372,7 @@ The client API is similar to regular event handling
 | ------------------------------ | -------- | ------------------------------------------------------------------ |
 | `connect()`                    | Function | connects to the server, it auto-connects on disconnection          |
 | `connected`                    | Boolean  | `true` when the socket is connected else `false`                   |
-| `disconnect([reconnect])`      | Function | disconnects from the server, pass `true` to prevent re-connections |
+| `disconnect([noReconnect])`    | Function | disconnects from the server, pass `true` to prevent re-connections |
 | `on(key, callback)`            | Function | listens for an event, returns an `off` function to stop listening  |
 | `off(key, callback)`           | Function | turns off listening for an event                                   |
 | `emit(key, [value, callback])` | Function | emits data to the server                                           |

@@ -34,7 +34,7 @@ export default class Client {
 
 		Object.assign(this, {
 			debug: options.debug,
-			url: options.url,
+			url: options.url.toString(),
 
 			reconnect: true,
 			isReconnect: false,
@@ -54,8 +54,10 @@ export default class Client {
 
 		if (this.debug) console.log('ws instantiated');
 
-		this.connect();
 		window.addEventListener('unload', () => this.disconnect(true), true);
+
+		// to send messages without waiting for the connection
+		Promise.resolve().then(() => this.connect());
 	}
 	// public API
 	connect() {
@@ -64,7 +66,19 @@ export default class Client {
 			this.reconnect &&
 			(!this.io || this.io.readyState === WebSocket.CLOSED)
 		) {
-			this.io = new WebSocket(this.url);
+			let url = this.url;
+			if (this.messages.length) {
+				url =
+					(url.indexOf('?') === -1 ? url + '?' : url + '&') +
+					'angelia.io=' +
+					encodeURIComponent(JSON.stringify(this.messages));
+				if (url.length <= 2048) {
+					this.messages = [];
+				} else {
+					url = this.url;
+				}
+			}
+			this.io = new WebSocket(url);
 			Object.assign(this.io, {
 				onopen: this.onopen,
 				onclose: this.onclose,
@@ -81,7 +95,11 @@ export default class Client {
 		if (noReconnect) this.reconnect = false;
 		if (this.debug)
 			console.log('ws manual disconnect ' + (!this.reconnect ? ' and disallow reconnect' : ''));
-		if (this.io.readyState !== WebSocket.CLOSING && this.io.readyState !== WebSocket.CLOSED) {
+		if (
+			this.io &&
+			this.io.readyState !== WebSocket.CLOSING &&
+			this.io.readyState !== WebSocket.CLOSED
+		) {
 			this.io.close();
 		}
 	}
@@ -192,13 +210,13 @@ export default class Client {
 		}
 	}
 	nextTick() {
-		if (this.io.readyState === WebSocket.OPEN && this.messages.length) {
+		if (this.io && this.io.readyState === WebSocket.OPEN && this.messages.length) {
 			this.io.send(JSON.stringify(this.messages));
 			this.messages = [];
 		}
 	}
 	pong() {
-		if (this.io.readyState === WebSocket.OPEN) {
+		if (this.io && this.io.readyState === WebSocket.OPEN) {
 			this.io.send('');
 		}
 	}

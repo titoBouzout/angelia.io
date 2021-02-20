@@ -160,7 +160,11 @@ class Server {
 
 		socket = new Socket(socket, this);
 
-		// set the ip and userAgent
+		// set the ip, userAgent and params
+		let params = URL.parse(request.url, true).query;
+		let angeliaParams = params['angelia.io'];
+		delete params['angelia.io'];
+
 		Object.assign(socket, {
 			ip: (
 				this.ip(request.connection.remoteAddress) ||
@@ -169,7 +173,7 @@ class Server {
 				(request.headers['x-forwarded-for'] || '').split(/\s*,\s*/)[0]
 			).replace(/'^::ffff:'/, ''),
 			userAgent: request.headers['user-agent'] || '',
-			params: URL.parse(request.url, true).query,
+			params: params,
 		});
 
 		this.served++;
@@ -178,8 +182,11 @@ class Server {
 
 		this.sockets.add(socket);
 
-		// dispatch connect
 		this.events.connect && this.events.connect(socket.proxy, request);
+
+		if (angeliaParams) {
+			socket.onmessage(angeliaParams);
+		}
 
 		this.pingSocket.bind(this, socket);
 	}

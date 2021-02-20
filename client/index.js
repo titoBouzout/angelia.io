@@ -14,9 +14,21 @@ export default class Client {
 		} else if (options.url.indexOf('://') === -1) {
 			options.url = protocol + '://' + options.url;
 		}
+
 		options.url = new URL(options.url);
-		options.url.search = Object.entries(options.params || {})
-			.filter(([k, v]) => v === null || v === undefined)
+
+		let params = options.params || {};
+
+		for (let [k, v] of options.url.searchParams.entries()) {
+			if (!params.hasOwnProperty(k)) {
+				params[k] = v;
+			}
+		}
+
+		options.url.search = Object.entries(params)
+			.filter(([k, v]) => {
+				return k !== undefined && k !== null && v !== undefined && v !== null;
+			})
 			.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
 			.join('&');
 

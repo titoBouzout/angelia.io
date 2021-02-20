@@ -131,7 +131,7 @@ export default class Client {
 		if (c) {
 			this.messages.push([k, v, this.callback(c)]);
 		} else if (typeof v === 'function') {
-			this.messages.push([k, {}, this.callback(c)]);
+			this.messages.push([k, {}, this.callback(v)]);
 		} else if (v !== null && v !== undefined) {
 			this.messages.push([k, v]);
 		} else {
@@ -194,7 +194,7 @@ export default class Client {
 		}
 	}
 	oncallback(d) {
-		this.callbacks[d[0]](d[1]);
+		this.callbacks[d[0]](...d[1]);
 		this.callbacks[d[0]] = null;
 	}
 	callback(c) {

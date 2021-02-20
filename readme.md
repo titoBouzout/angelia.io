@@ -8,7 +8,7 @@ The goal of this project is to provide a developer friendly API that just worksâ
 
 Install on node.js/browser `npm install angelia.io`
 
-If you fancy for Client side a regular JavaScript file, then use https://github.com/titoBouzout/angelia.io/blob/master/client/index.js and include it as a regular script tag. For es5 remove `export default` from it.
+If you fancy for Client side a regular JavaScript file, then use https://github.com/titoBouzout/angelia.io/blob/master/client/index.js and include it as a regular script tag.
 
 ## Simple Example
 

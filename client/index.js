@@ -1,6 +1,6 @@
 'use strict';
 
-export default class Client {
+class Client {
 	constructor(options) {
 		if (!options || typeof options === 'string') {
 			options = {
@@ -233,3 +233,18 @@ export default class Client {
 		}
 	}
 }
+
+(function(root) {
+	if (typeof exports !== 'undefined') {
+		if (typeof module !== 'undefined' && module.exports) {
+			exports = module.exports = Client;
+		}
+		exports.Client = Client;
+	} else if (typeof define === 'function' && define.amd) {
+		define([], function() {
+			return Client;
+		});
+	} else {
+		root.Client = Client;
+	}
+})(this);

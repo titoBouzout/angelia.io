@@ -382,6 +382,7 @@ The client API is similar to regular event handling
 - Tito Bouzout https://github.com/titoBouzout
 - Anthony K. https://github.com/boredofnames
 
-## URL
+## URLs
 
 https://github.com/titoBouzout/angelia.io
+https://www.npmjs.com/package/angelia.io

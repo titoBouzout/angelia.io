@@ -100,6 +100,8 @@ export default class Client {
 		}
 		if (c) {
 			this.messages.push([k, v, this.callback(c)]);
+		} else if (typeof v === 'function') {
+			this.messages.push([k, {}, this.callback(c)]);
 		} else if (v !== null && v !== undefined) {
 			this.messages.push([k, v]);
 		} else {

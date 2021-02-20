@@ -27,6 +27,8 @@
 	"author": "@titoBouzout @boredofnames",
 	"license": "MIT",
 	"dependencies": {
+		"is-class": "^0.0.9",
+		"isobject": "^4.0.0",
 		"to-fast-properties": "^3.0.1",
 		"ws": "^7.4.3"
 	}

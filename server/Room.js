@@ -1,109 +1,72 @@
 'use strict';
 
-const inspect = Symbol.for('nodejs.util.inspect.custom');
-
-const listeners = Symbol.for('Room.listeners');
-const parent = Symbol.for('Room.parent');
-const id = Symbol.for('Room.id');
 const join = Symbol.for('Room.join');
 const leave = Symbol.for('Room.leave');
-const proto = Symbol.for('Room.proto');
-const property = Symbol.for('Room.property');
-
-const Listeners = require('./Listeners.js');
+const parent = Symbol.for('Room.parent');
 
 class Room {
-	constructor(aParent, i, socket) {
-		this[listeners] = new Listeners();
-		this[parent] = aParent;
-		this[id] = i;
+	constructor() {
 		this.users = [];
-
-		// copy this.user = []
-		Object.assign(i, this);
-
-		// copy methods
-		if (typeof i === 'object' && !i.__proto__[proto]) {
-			i.__proto__[proto] = true;
-
-			for (let m of Object.getOwnPropertyNames(this.__proto__)) {
-				if (m != 'constructor') {
-					i.__proto__[m] = this.__proto__[m];
-				}
-			}
-		}
 	}
-	on(k, cb) {
-		this[listeners].on(k, cb);
+	has() {
+		return this.users.indexOf(socket) !== -1;
 	}
 	[join](socket) {
+		// add user
 		this.users.push(socket);
 
-		let events = this[listeners].events;
-		let parentEvents = this[parent][listeners].events;
+		// dispatch join
+		this.join && this.join(socket);
 
-		events.join && events.join(this, socket);
-		parentEvents.join && parentEvents.join(this[parent], this, socket);
-
-		events.update && events.update(this);
-		parentEvents.update && parentEvents.update(this[parent], this);
+		// to be able to list rooms for socket
+		socket.rooms.add(this);
 	}
 	[leave](socket) {
-		this.users.splice(this.users.indexOf(socket), 1);
+		// remove user
+		let index = this.users.indexOf(socket);
+		if (index !== -1) this.users.splice(index, 1);
 
-		let events = this[listeners].events;
-		let parentEvents = this[parent][listeners].events;
+		// to be able to list rooms for socket
+		socket.rooms.delete(this);
 
-		events.leave && events.leave(this, socket);
-		parentEvents.leave && parentEvents.leave(this[parent], this, socket);
+		// dispatch leave
+		this.leave && this.leave(socket);
 
-		events.update && events.update(this);
-		parentEvents.update && parentEvents.update(this[parent], this);
-
+		// check removal
 		if (this.users.length === 0) {
-			this[parent].delete(this, socket);
+			// remove room from list
+			this[parent].delete(this);
+			// dispatch that the room has been deleted
+			this.delete && this.delete();
 		}
 	}
-	[property](name, oldValue, newValue) {
-		let events = this[listeners].events;
-		let parentEvents = this[parent][listeners].events;
-
-		events.property && events.property(this, name, oldValue, newValue);
-		parentEvents.property && parentEvents.property(this[parent], this, name, oldValue, newValue);
-
-		events.update && events.update(this);
-		parentEvents.update && parentEvents.update(this[parent], this);
-	}
 	emit(k, v) {
-		// lala
 		let d = [k, v];
+
 		for (let socket of this.users) {
 			socket.emit(d);
 		}
 	}
 	once(k, v) {
 		let d = [k, v];
+
 		for (let socket of this.users) {
 			socket.once(d);
 		}
 	}
 	broadcast(me, k, v) {
 		let d = [k, v];
+
 		for (let socket of this.users) {
 			if (me != socket) socket.emit(d);
 		}
 	}
 	broadcastOnce(me, k, v) {
 		let d = [k, v];
+
 		for (let socket of this.users) {
 			if (me != socket) socket.once(d);
 		}
-	}
-	[inspect]() {
-		return {
-			id: this[id],
-			users: this.users,
-		};
 	}
 }
 

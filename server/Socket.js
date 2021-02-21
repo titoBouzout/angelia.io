@@ -4,6 +4,8 @@ const inspect = Symbol.for('nodejs.util.inspect.custom');
 
 const Tracker = require('./Tracker.js');
 
+const leave = Symbol.for('Room.leave');
+
 class Socket {
 	constructor(socket, server) {
 		Object.assign(this, {
@@ -31,6 +33,7 @@ class Socket {
 
 			io: socket,
 			proxy: Tracker.watch(this),
+			rooms: new Set(),
 		});
 		this.toJSON = this.inspect;
 
@@ -86,9 +89,11 @@ class Socket {
 	onclose(code, message) {
 		this.server.sockets.delete(this);
 
-		this.server.events.disconnect && this.server.events.disconnect(this.proxy, code, message);
+		for (let room of this.rooms) {
+			room[leave](this);
+		}
 
-		Tracker.unwatch(this);
+		this.server.events.disconnect && this.server.events.disconnect(this.proxy, code, message);
 	}
 	onerror(err) {
 		console.error('Socket.onerror', err, this.inspect());
@@ -98,7 +103,7 @@ class Socket {
 	}
 	onmessage(e) {
 		if (e === '') {
-			this.server.events.pong(this.proxy);
+			this.server.pong(this);
 		} else {
 			this.seen = this.server.now;
 

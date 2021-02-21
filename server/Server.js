@@ -11,6 +11,7 @@ Listeners[inspect] = function() {
 };
 
 const Socket = require('./Socket.js');
+const Room = require('./Room.js');
 const Tracker = require('./Tracker.js');
 
 class Server {
@@ -32,7 +33,6 @@ class Server {
 			messagesReceived: 0,
 			messagesCached: 0,
 
-			pong: this.pong.bind(this),
 			ping: this.ping.bind(this),
 			updateNow: this.updateNow.bind(this),
 
@@ -55,7 +55,6 @@ class Server {
 
 		this[inspect] = this.toJSON = this.inspect;
 
-		this.listeners.on(this.pong);
 		this.listeners.server = this;
 		Object.defineProperties(this.listeners, {
 			server: {
@@ -397,5 +396,7 @@ class Server {
 
 Server.on = Server.prototype.on;
 Server.track = Server.prototype.track;
+
+Server.Room = Room;
 
 module.exports = Server;

@@ -1,48 +1,42 @@
 'use strict';
 
-const inspect = Symbol.for('nodejs.util.inspect.custom');
-
-const listeners = Symbol.for('Room.listeners');
 const parent = Symbol.for('Room.parent');
-const id = Symbol.for('Room.id');
-
-const Listeners = require('./Listeners.js');
-const Room = require('./Room.js');
 
 class Rooms {
 	constructor(path) {
 		this.path = path;
-		this.rooms = new Map();
-		this[listeners] = new Listeners();
+		this.rooms = [];
+		this.roomsById = new Map();
 	}
-	on(k, cb) {
-		this[listeners].on(k, cb);
+
+	has(room) {
+		return this.rooms.indexOf(room) !== -1;
 	}
-	has(id) {
-		return this.rooms.has(id);
-	}
+
 	get(id) {
-		return this.rooms.get(id);
+		return this.roomsById.get(id);
 	}
-	keys() {
-		return this.rooms.keys();
-	}
-	create(id, socket) {
-		let room = new Room(this, id, socket);
-		this.rooms.set(id, room);
 
-		this[listeners].events.create && this[listeners].events.create(this, room, socket);
+	create(room) {
+		this.rooms.push(room);
+		this.roomsById.set(room.id, room);
 
-		return room;
+		room[parent] = this;
 	}
-	delete(room, socket) {
-		this.rooms.delete(room[id]);
-		this[listeners].events.delete && this[listeners].events.delete(this, room, socket);
+	delete(room) {
+		let index = this.rooms.indexOf(room);
+		if (index !== -1) this.rooms.splice(index, 1);
+
+		this.roomsById.delete(room.id);
 	}
+	toJSON() {
+		return this.rooms;
+	}
+
 	emit(k, v) {
 		let d = [k, v];
 
-		for (let [id, room] of this.rooms) {
+		for (let room of this.rooms) {
 			for (let socket of room.users) {
 				socket.emit(d);
 			}
@@ -51,7 +45,7 @@ class Rooms {
 	once(k, v) {
 		let d = [k, v];
 
-		for (let [id, room] of this.rooms) {
+		for (let room of this.rooms) {
 			for (let socket of room.users) {
 				socket.once(d);
 			}
@@ -60,7 +54,7 @@ class Rooms {
 	broadcast(me, k, v) {
 		let d = [k, v];
 
-		for (let [id, room] of this.rooms) {
+		for (let room of this.rooms) {
 			for (let socket of room.users) {
 				if (me != socket) {
 					socket.emit(d);
@@ -71,7 +65,7 @@ class Rooms {
 	broadcastOnce(me, k, v) {
 		let d = [k, v];
 
-		for (let [id, room] of this.rooms) {
+		for (let room of this.rooms) {
 			for (let socket of room.users) {
 				if (me != socket) {
 					socket.once(d);

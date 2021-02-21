@@ -140,8 +140,6 @@ const server = new Server({
 | `broadcastOnce(sender, key, [value])` | Function | emits to the sockets except sender and replace if exists a pending message with the same `key` |
 | `sockets`                             | Set      | a Set() with all the current connected sockets                                                 |
 
-Server implements an iterator of its sockets, you may do `for(let socket of Server) console.log(socket)` to list the connected sockets
-
 ### Socket Object
 
 The `socket` object is given to you by a listener

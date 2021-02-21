@@ -56,6 +56,7 @@ class Client {
 
 		if (this.debug) console.log('ws instantiated');
 
+		// to try to close the connection nicely
 		window.addEventListener('unload', () => this.disconnect(true), true);
 
 		// to send messages without waiting for the connection
@@ -74,7 +75,7 @@ class Client {
 					(url.indexOf('?') === -1 ? url + '?' : url + '&') +
 					'angelia.io=' +
 					encodeURIComponent(JSON.stringify(this.messages));
-				if (url.length <= 2048) {
+				if (url.length < 2048) {
 					this.messages = [];
 				} else {
 					url = this.url;

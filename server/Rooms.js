@@ -17,6 +17,10 @@ class Rooms {
 		return this.roomsById.get(id);
 	}
 
+	add(room) {
+		this.create(room);
+	}
+
 	create(room) {
 		if (!this.has(room)) {
 			this.rooms.push(room);

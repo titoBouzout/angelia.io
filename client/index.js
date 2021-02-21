@@ -38,6 +38,7 @@ class Client {
 
 			reconnect: true,
 			isReconnect: false,
+			didConnect: true,
 
 			listeners: { '': [this.oncallback.bind(this)] },
 			callbacks: [() => {}],
@@ -144,7 +145,10 @@ class Client {
 
 	// private API
 	onopen() {
+		this.didConnect = true;
+
 		Promise.resolve().then(this.nextTick);
+
 		if (this.isReconnect) {
 			if (this.debug) console.log('ws reconnected');
 			this.dispatch('reconnect');
@@ -178,12 +182,22 @@ class Client {
 				break;
 			}
 		}
-		this.dispatch('disconnect');
+
+		if (this.didConnect) {
+			this.didConnect = false;
+			this.dispatch('disconnect');
+		}
+
 		this.connect();
 	}
-	// this happens when trying to connect while the server or the connection is down
+	// this happens when trying to connect while the server or
+	// the internet connection is down
 	onerror() {
-		this.dispatch('disconnect');
+		if (this.didConnect) {
+			this.didConnect = false;
+			this.dispatch('disconnect');
+		}
+
 		this.connect();
 	}
 	onmessage(e) {

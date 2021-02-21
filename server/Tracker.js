@@ -86,7 +86,7 @@ class Tracker {
 					oldValue.value !== undefined &&
 					oldValue.value !== null
 				) {
-					oldValue.value[leave](socket);
+					oldValue.value[leave](socket.proxy);
 
 					// console.log('leave room', oldValue.value);
 				}
@@ -105,7 +105,7 @@ class Tracker {
 						this.roomsTrack[path].create(newValue.value);
 						newValue.value.create && newValue.value.create();
 					}
-					newValue.value[join](socket);
+					newValue.value[join](socket.proxy);
 
 					// console.log('joined room', newValue.value);
 				}

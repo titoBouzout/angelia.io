@@ -8,7 +8,7 @@ class Room {
 	constructor() {
 		this.users = [];
 	}
-	has() {
+	has(socket) {
 		return this.users.indexOf(socket) !== -1;
 	}
 	[join](socket) {

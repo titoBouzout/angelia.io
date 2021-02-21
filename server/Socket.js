@@ -90,7 +90,7 @@ class Socket {
 		this.server.sockets.delete(this);
 
 		for (let room of this.rooms) {
-			room[leave](this);
+			room[leave](this.proxy);
 		}
 
 		this.server.events.disconnect && this.server.events.disconnect(this.proxy, code, message);

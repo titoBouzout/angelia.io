@@ -86,13 +86,13 @@ const server = new Server({
 });
 ```
 
-| name             | kind   | default   | description                                         |
-| ---------------- | ------ | --------- | --------------------------------------------------- |
-| `hostname`       | String | null      | the hostname if any                                 |
-| `port`           | Number | 3001      | the port to use for this server                     |
-| `maxMessageSize` | Number | 5         | max size in mb of a message received                |
-| `cert`           | String | undefined | path to the cert file for using https fullchain.pem |
-| `key`            | String | undefined | path to the key file for using https privkey.pem    |
+| name             | kind   | default | description                                         |
+| ---------------- | ------ | ------- | --------------------------------------------------- |
+| `hostname`       | String | null    | the hostname if any                                 |
+| `port`           | Number | 3001    | the port to use for this server                     |
+| `maxMessageSize` | Number | 5       | max size in mb of a message received                |
+| `cert`           | String | ''      | path to the cert file for using https fullchain.pem |
+| `key`            | String | ''      | path to the key file for using https privkey.pem    |
 
 ### Server Object
 
@@ -116,27 +116,31 @@ const server = new Server({
 
 #### Server Properties
 
-| signature            | kind     | description                                                                            |
-| -------------------- | -------- | -------------------------------------------------------------------------------------- |
-| `since`              | Number   | timestamp of initialization                                                            |
-| `port`               | Number   | port used by this server                                                               |
-| `maxMessageSize`     | Number   | maximum message size in mb                                                             |
-| `timeout`            | Number   | after how long the socket is considered gone, in ms                                    |
-| `connections`        | Number   | count of sockets connected                                                             |
-| `served`             | Number   | count of sockets ever connected                                                        |
-| `bytesSent`          | Number   | sum of bytes sent by the server                                                        |
-| `bytesReceived`      | Number   | sum of bytes the server has ever received                                              |
-| `messagesSent`       | Number   | count of messages ever sent                                                            |
-| `messagesReceived`   | Number   | count of messages ever received                                                        |
-| `events`             | Object   | ref to events, ex: server.events.typing() to dispatch typing to anyone listening to it |
-| `listeners`          | Array    | for debbuging: array of listeners as strings                                           |
-| `on(Class)`          | Function | attaches all methods of a `Class` as listeners                                         |
-| `on(Function)`       | Function | attaches a named `Function` as a listener                                              |
-| `on(Object)`         | Function | attaches all properties of an object that are of the type `Function` as listeners      |
-| `on(key, Function)`  | Function | attaches a `Function` as a listener for `key`                                          |
-| `emit(key, [value])` | Function | emits to all connected sockets                                                         |
-| `once(key, [value])` | Function | emits to the sockets and replace if exists a pending message with the same `key`       |
-| `sockets`            | Set      | a Set() with all the current connected sockets                                         |
+| signature                             | kind     | description                                                                                    |
+| ------------------------------------- | -------- | ---------------------------------------------------------------------------------------------- |
+| `since`                               | Number   | timestamp of initialization                                                                    |
+| `port`                                | Number   | port used by this server                                                                       |
+| `maxMessageSize`                      | Number   | maximum message size in mb                                                                     |
+| `timeout`                             | Number   | after how long the socket is considered gone, in ms                                            |
+| `connections`                         | Number   | count of sockets connected                                                                     |
+| `served`                              | Number   | count of sockets ever connected                                                                |
+| `bytesSent`                           | Number   | sum of bytes sent by the server                                                                |
+| `bytesReceived`                       | Number   | sum of bytes the server has ever received                                                      |
+| `messagesSent`                        | Number   | count of messages ever sent                                                                    |
+| `messagesReceived`                    | Number   | count of messages ever received                                                                |
+| `events`                              | Object   | ref to events, ex: server.events.typing() to dispatch typing to anyone listening to it         |
+| `listeners`                           | Array    | for debbuging: array of listeners as strings                                                   |
+| `on(Class)`                           | Function | attaches all methods of a `Class` as listeners                                                 |
+| `on(Function)`                        | Function | attaches a named `Function` as a listener                                                      |
+| `on(Object)`                          | Function | attaches all properties of an object that are of the type `Function` as listeners              |
+| `on(key, Function)`                   | Function | attaches a `Function` as a listener for `key`                                                  |
+| `emit(key, [value])`                  | Function | emits to all connected sockets                                                                 |
+| `once(key, [value])`                  | Function | emits to the sockets and replace if exists a pending message with the same `key`               |
+| `broadcast(sender, key, [value])`     | Function | emits to all connected sockets except sender                                                   |
+| `broadcastOnce(sender, key, [value])` | Function | emits to the sockets except sender and replace if exists a pending message with the same `key` |
+| `sockets`                             | Set      | a Set() with all the current connected sockets                                                 |
+
+Server implements an iterator of its sockets, you may do `for(let socket of Server) console.log(socket)` to list the connected sockets
 
 ### Socket Object
 
@@ -160,23 +164,24 @@ new Server({
 
 #### Socket Properties
 
-| signature                   | kind     | description                                                                      |
-| --------------------------- | -------- | -------------------------------------------------------------------------------- |
-| `server`                    | Object   | reference to the server                                                          |
-| `ip`                        | String   | ip of the socket                                                                 |
-| `userAgent`                 | String   | user agent of the socket                                                         |
-| `params`                    | Object   | the params sent via the client constructor                                       |
-| `since`                     | Number   | timestamp of first seen                                                          |
-| `seen`                      | Number   | timestamp of last received message                                               |
-| `ping`                      | Number   | delay with the socket in milliseconds (full round trip)                          |
-| `timedout`                  | Boolean  | whether we lost connection with this socket                                      |
-| `bytesSent`                 | Number   | sum of bytes sent to this socket                                                 |
-| `bytesReceived`             | Number   | sum of bytes received from this socket                                           |
-| `messagesSent`              | Number   | count of messages sent to this socket                                            |
-| `messagesReceived`          | Number   | count of messages received from this socket                                      |
-| `emit(key, [value])`        | Function | emits to this socket                                                             |
-| `once(key, [value])`        | Function | emits to this socket and replace if exists a pending message with the same `key` |
-| `disconnect([noReconnect])` | Function | disconnects the socket from the server, pass `true` to prevent re-connections    |
+| signature                   | kind     | description                                                                   |
+| --------------------------- | -------- | ----------------------------------------------------------------------------- |
+| `server`                    | Object   | reference to the server                                                       |
+| `ip`                        | String   | ip of the socket                                                              |
+| `userAgent`                 | String   | user agent of the socket                                                      |
+| `params`                    | Object   | the params sent via the client constructor                                    |
+| `since`                     | Number   | timestamp of first seen                                                       |
+| `seen`                      | Number   | timestamp of last received message                                            |
+| `ping`                      | Number   | delay with the socket in milliseconds (full round trip)                       |
+| `timedout`                  | Boolean  | whether we lost connection with this socket                                   |
+| `bytesSent`                 | Number   | sum of bytes sent to this socket                                              |
+| `bytesReceived`             | Number   | sum of bytes received from this socket                                        |
+| `messagesSent`              | Number   | count of messages sent to this socket                                         |
+| `messagesReceived`          | Number   | count of messages received from this socket                                   |
+| `rooms`                     | Set      | a set with the rooms where this socket is in                                  |
+| `emit(key, [value])`        | Function | emits to client                                                               |
+| `once(key, [value])`        | Function | replace if exists a pending message with the same `key` from emit queue       |
+| `disconnect([noReconnect])` | Function | disconnects the socket from the server, pass `true` to prevent re-connections |
 
 ### Listeners
 
@@ -377,6 +382,16 @@ The client API is similar to regular event handling
 | `off(key, callback)`           | Function | turns off listening for an event                                   |
 | `emit(key, [value, callback])` | Function | emits data to the server                                           |
 
+#### List of Predefined Events
+
+As in `socket.on('connect', () => console.log('connect happened!'))`
+
+| signature    | description                                                                                             |
+| ------------ | ------------------------------------------------------------------------------------------------------- |
+| `connect`    | **this happens only once** when we connect to the server, any future connection is a `reconnect`        |
+| `reconnect`  | if we were connected at least once, then any reconnection will dispatch this event instead of `connect` |
+| `disconnect` | when we disconnect from the server                                                                      |
+
 ## Authors
 
 - Tito Bouzout https://github.com/titoBouzout
@@ -384,5 +399,5 @@ The client API is similar to regular event handling
 
 ## URLs
 
-https://github.com/titoBouzout/angelia.io
-https://www.npmjs.com/package/angelia.io
+- https://github.com/titoBouzout/angelia.io
+- https://www.npmjs.com/package/angelia.io

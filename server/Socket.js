@@ -169,6 +169,9 @@ class Socket {
 			bytesReceived: this.bytesReceived,
 			messagesSent: this.messagesSent,
 			messagesReceived: this.messagesReceived,
+
+			rooms: this.rooms,
+
 			// functions
 			emit: this.emit,
 			once: this.once,

@@ -37,9 +37,6 @@ class Rooms {
 			this.roomsById.delete(room.id);
 		}
 	}
-	toJSON() {
-		return this.rooms;
-	}
 
 	emit(k, v) {
 		let d = [k, v];
@@ -80,6 +77,14 @@ class Rooms {
 				}
 			}
 		}
+	}
+
+	toJSON() {
+		return this.rooms;
+	}
+
+	[Symbol.iterator]() {
+		return this.rooms;
 	}
 }
 

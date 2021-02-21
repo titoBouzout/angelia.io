@@ -40,6 +40,7 @@ class Room {
 			this.delete && this.delete();
 		}
 	}
+
 	emit(k, v) {
 		let d = [k, v];
 
@@ -67,6 +68,10 @@ class Room {
 		for (let socket of this.users) {
 			if (me != socket) socket.once(d);
 		}
+	}
+
+	[Symbol.iterator]() {
+		return this.users;
 	}
 }
 

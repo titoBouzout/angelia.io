@@ -33,7 +33,7 @@ class Room {
 		this.leave && this.leave(socket);
 
 		// check removal
-		if (this.users.length === 0) {
+		if (this.users.length === 0 && !this.persistent) {
 			// remove room from list
 			this[parent].delete(this);
 			// dispatch that the room has been deleted

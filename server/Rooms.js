@@ -18,16 +18,20 @@ class Rooms {
 	}
 
 	create(room) {
-		this.rooms.push(room);
-		this.roomsById.set(room.id, room);
+		if (!this.has(room)) {
+			this.rooms.push(room);
+			this.roomsById.set(room.id, room);
 
-		room[parent] = this;
+			room[parent] = this;
+		}
 	}
 	delete(room) {
-		let index = this.rooms.indexOf(room);
-		if (index !== -1) this.rooms.splice(index, 1);
+		if (!room.persistent) {
+			let index = this.rooms.indexOf(room);
+			if (index !== -1) this.rooms.splice(index, 1);
 
-		this.roomsById.delete(room.id);
+			this.roomsById.delete(room.id);
+		}
 	}
 	toJSON() {
 		return this.rooms;

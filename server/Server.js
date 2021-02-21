@@ -146,12 +146,25 @@ class Server {
 			socket.once(d);
 		}
 	}
+	broadcast(me, k, v) {
+		let d = [k, v];
+		for (let socket of this.sockets) {
+			if (me != socket) socket.emit(d);
+		}
+	}
+	broadcastOnce(me, k, v) {
+		let d = [k, v];
+		for (let socket of this.sockets) {
+			if (me != socket) socket.once(d);
+		}
+	}
 
 	// tracker
 
 	track(path) {
 		return Tracker.track(path);
 	}
+
 	// PRIVATE API
 
 	onconnect(socket, request) {
@@ -397,6 +410,6 @@ class Server {
 Server.on = Server.prototype.on;
 Server.track = Server.prototype.track;
 
-Server.Room = Room;
+Server.Room = Server.prototype.Room = Room;
 
 module.exports = Server;

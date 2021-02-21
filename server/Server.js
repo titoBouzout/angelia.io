@@ -325,10 +325,15 @@ class Server {
 			// listeners
 			events: this.events,
 			listeners: this.listeners,
+
 			// functions
 			on: this.on,
+			// track: this.track,
+
 			emit: this.emit,
 			once: this.once,
+			broadcast: this.broadcast,
+			broadcastOnce: this.broadcastOnce,
 			// data
 			sockets: this.sockets,
 		};

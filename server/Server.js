@@ -46,6 +46,7 @@ class Server {
 			listeners: Listeners,
 			events: Listeners.events,
 
+			rooms: Tracker.roomsTrack,
 			sockets: new Set(),
 
 			cacheIds: Symbol('cache'),
@@ -335,6 +336,7 @@ class Server {
 			broadcast: this.broadcast,
 			broadcastOnce: this.broadcastOnce,
 			// data
+			rooms: this.rooms,
 			sockets: this.sockets,
 		};
 	}

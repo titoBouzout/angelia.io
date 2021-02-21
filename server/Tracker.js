@@ -52,11 +52,11 @@ class Tracker {
 
 					// if new value is object need to be set to proxy too to not lose track of changes
 					if (typeof value === 'object' && value !== null) {
-						if (!value[proxied]) {
+						/*if (!value[proxied]) {
 							// console.log('proxy1 setting for', path + '.' + id, value);
 							value = this.proxy(value, path + '.' + id, socket);
 							value[proxied] = true;
-						}
+						}*/
 					}
 
 					let refOldValue = { value: target[id] };
@@ -95,10 +95,10 @@ class Tracker {
 				// we wont join undefined and null
 				if (typeof newValue.value === 'object' && newValue.value !== null) {
 					// setup proxy
-					if (!newValue.value[proxied]) {
+					/*if (!newValue.value[proxied]) {
 						newValue.value = this.proxy(newValue.value, path, socket);
 						newValue.value[proxied] = true;
-					}
+					}*/
 
 					// create room if doesnt exists
 					if (!this.roomsTrack[path].has(newValue.value)) {

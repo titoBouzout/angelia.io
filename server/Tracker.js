@@ -43,6 +43,7 @@ class Tracker {
 	}
 
 	proxy(target, path, socket) {
+		// target[proxied] = true;
 		return new Proxy(target, {
 			set: (target, id, value, receiver) => {
 				// if not Symbol and path in track
@@ -63,7 +64,6 @@ class Tracker {
 					let refNewValue = { value: value };
 
 					this.check(socket, path + '.' + id, path, target, refOldValue, refNewValue, receiver);
-
 					return Reflect.set(target, id, refNewValue.value, receiver);
 				} else {
 					return Reflect.set(target, id, value, receiver);
@@ -111,14 +111,16 @@ class Tracker {
 				}
 				// console.log('full list of rooms', this.roomsTrack);
 			} else {
-				// console.log('value didnt change', path);
+				// console.log('value didnt change', path, target === receiver);
 			}
 		} else {
 			// console.log('not tracking path', path);
 		}
 
+		/*
+		we dont go deep for now
 		for (let id in this.paths[path]) {
-			// console.log('tracking subpaths ', path, id);
+			console.log('tracking subpaths ', path, id);
 			this.check(
 				socket,
 				path + '.' + id,
@@ -154,7 +156,7 @@ class Tracker {
 						: oldValue.value
 					: undefined,
 			);
-		}
+		}*/
 	}
 }
 const tracker = new Tracker();

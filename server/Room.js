@@ -15,11 +15,11 @@ class Room {
 		// add user
 		this.users.push(socket);
 
-		// dispatch join
-		this.join && this.join(socket);
-
 		// to be able to list rooms for socket
 		socket.rooms.add(this);
+
+		// dispatch join
+		this.join && this.join(socket);
 	}
 	[leave](socket) {
 		// remove user
@@ -29,9 +29,6 @@ class Room {
 		// to be able to list rooms for socket
 		socket.rooms.delete(this);
 
-		// dispatch leave
-		this.leave && this.leave(socket);
-
 		// check removal
 		if (this.users.length === 0 && !this.persistent) {
 			// remove room from list
@@ -39,6 +36,9 @@ class Room {
 			// dispatch that the room has been deleted
 			this.delete && this.delete();
 		}
+
+		// dispatch leave
+		this.leave && this.leave(socket);
 	}
 
 	emit(k, v) {

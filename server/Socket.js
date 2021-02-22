@@ -1,10 +1,10 @@
-'use strict';
+'use strict'
 
-const inspect = Symbol.for('nodejs.util.inspect.custom');
+const inspect = Symbol.for('nodejs.util.inspect.custom')
 
-const Tracker = require('./Tracker.js');
+const Tracker = require('./Tracker.js')
 
-const leave = Symbol.for('Room.leave');
+const leave = Symbol.for('Room.leave')
 
 class Socket {
 	constructor(socket, server) {
@@ -34,97 +34,105 @@ class Socket {
 			io: socket,
 			proxy: Tracker.watch(this),
 			rooms: new Set(),
-		});
-		this.toJSON = this.inspect;
+		})
+		this.toJSON = this.inspect
 
 		Object.assign(socket, {
 			[inspect]: this.inspect,
 			toJSON: this.inspect,
-		});
+		})
 	}
 
 	emit(k, v) {
 		if (!this.messages.length) {
-			this.server.nextMessages(this);
+			this.server.nextMessages(this)
 		}
 
-		this.messages.push(typeof k !== 'string' ? k : [k, v]);
+		this.messages.push(typeof k !== 'string' ? k : [k, v])
 	}
 	once(k, v) {
 		if (!this.messages.length) {
-			this.emit(k, v);
+			this.emit(k, v)
 		} else {
 			if (typeof k !== 'string') {
 				for (let m of this.messages) {
 					if (m[0] === k[0]) {
-						m[1] = k[1];
-						return;
+						m[1] = k[1]
+						return
 					}
 				}
 			} else {
 				for (let m of this.messages) {
 					if (m[0] === k) {
-						m[1] = v;
-						return;
+						m[1] = v
+						return
 					}
 				}
 			}
-			this.emit(k, v);
+			this.emit(k, v)
 		}
 	}
 
 	disconnect(noReconnect) {
 		if (noReconnect) {
-			this.emit(['disconnect', true]);
+			this.emit(['disconnect', true])
 		} else {
-			this.io.close();
+			this.io.close()
 		}
 	}
 	// private API
 	listen() {
-		this.io.on('close', this.onclose);
-		this.io.on('error', this.onerror);
-		this.io.on('message', this.onmessage);
+		this.io.on('close', this.onclose)
+		this.io.on('error', this.onerror)
+		this.io.on('message', this.onmessage)
 	}
 	onclose(code, message) {
-		this.server.sockets.delete(this);
+		this.server.sockets.delete(this)
 
 		for (let room of this.rooms) {
-			room[leave](this.proxy);
+			room[leave](this.proxy)
 		}
 
-		this.server.events.disconnect && this.server.events.disconnect(this.proxy, code, message);
+		this.server.events.disconnect &&
+			this.server.events.disconnect(this.proxy, code, message)
 	}
 	onerror(err) {
-		console.error('Socket.onerror', err, this.inspect());
+		console.error('Socket.onerror', err, this.inspect())
 	}
 	oncallback(k, ...v) {
-		this.emit('', [k, v]);
+		this.emit('', [k, v])
 	}
 	onmessage(e) {
 		if (e === '') {
-			this.server.pong(this);
+			this.server.pong(this)
 		} else {
-			this.seen = this.server.now;
+			this.seen = this.server.now
 
-			this.server.bytesReceived += e.length;
-			this.bytesReceived += e.length;
+			this.server.bytesReceived += e.length
+			this.bytesReceived += e.length
 
-			let messages = JSON.parse(e);
+			let messages = JSON.parse(e)
 			if (Array.isArray(messages)) {
-				this.server.messagesReceived += messages.length;
-				this.messagesReceived += messages.length;
+				this.server.messagesReceived += messages.length
+				this.messagesReceived += messages.length
 
-				this.server.events.incoming && this.server.events.incoming(this.proxy, messages);
+				this.server.events.incoming &&
+					this.server.events.incoming(this.proxy, messages)
 				for (let m of messages) {
 					if (this.server.events[m[0]]) {
-						this.server.events[m[0]](this.proxy, m[1], m[2] && this.oncallback.bind(null, m[2]));
+						this.server.events[m[0]](
+							this.proxy,
+							m[1],
+							m[2] && this.oncallback.bind(null, m[2]),
+						)
 					} else {
-						this.server.events.garbage && this.server.events.garbage(this.proxy, m);
+						this.server.events.garbage &&
+							this.server.events.garbage(this.proxy, m)
 					}
 				}
 			} else {
-				this.server.events.garbage && this.server.events.garbage(this.proxy, messages);
+				this.server.events.garbage &&
+					this.server.events.garbage(this.proxy, messages)
 			}
 		}
 	}
@@ -132,23 +140,24 @@ class Socket {
 		if (this.io.readyState === 1) {
 			// regular
 			if (this.messages.length) {
-				this.server.events.outgoing && this.server.events.outgoing(this.proxy, this.messages);
+				this.server.events.outgoing &&
+					this.server.events.outgoing(this.proxy, this.messages)
 
-				let messages = this.server.cacheMessages(this.messages);
-				this.io.send(messages);
+				let messages = this.server.cacheMessages(this.messages)
+				this.io.send(messages)
 
-				this.server.bytesSent += messages.length;
-				this.bytesSent += messages.length;
+				this.server.bytesSent += messages.length
+				this.bytesSent += messages.length
 
-				this.server.messagesSent += this.messages.length;
-				this.messagesSent += this.messages.length;
+				this.server.messagesSent += this.messages.length
+				this.messagesSent += this.messages.length
 			}
 		}
-		this.messages = [];
+		this.messages = []
 	}
 
 	[inspect]() {
-		return Object.assign({}, this.toJSON ? this.toJSON() : {}, this.inspect());
+		return Object.assign({}, this.toJSON ? this.toJSON() : {}, this.inspect())
 	}
 	inspect() {
 		return {
@@ -176,8 +185,8 @@ class Socket {
 			emit: this.emit,
 			once: this.once,
 			disconnect: this.disconnect,
-		};
+		}
 	}
 }
 
-module.exports = Socket;
+module.exports = Socket

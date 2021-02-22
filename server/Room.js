@@ -1,78 +1,78 @@
-'use strict';
+'use strict'
 
-const join = Symbol.for('Room.join');
-const leave = Symbol.for('Room.leave');
-const parent = Symbol.for('Room.parent');
+const join = Symbol.for('Room.join')
+const leave = Symbol.for('Room.leave')
+const parent = Symbol.for('Room.parent')
 
 class Room {
 	constructor() {
-		this.users = [];
+		this.users = []
 	}
 	has(socket) {
-		return this.users.indexOf(socket) !== -1;
+		return this.users.indexOf(socket) !== -1
 	}
 	[join](socket) {
 		// add user
-		this.users.push(socket);
+		this.users.push(socket)
 
 		// to be able to list rooms for socket
-		socket.rooms.add(this);
+		socket.rooms.add(this)
 
 		// dispatch join
-		this.join && this.join(socket);
+		this.join && this.join(socket)
 	}
 	[leave](socket) {
 		// remove user
-		let index = this.users.indexOf(socket);
-		if (index !== -1) this.users.splice(index, 1);
+		let index = this.users.indexOf(socket)
+		if (index !== -1) this.users.splice(index, 1)
 
 		// to be able to list rooms for socket
-		socket.rooms.delete(this);
+		socket.rooms.delete(this)
 
 		// check removal
 		if (this.users.length === 0 && !this.persistent) {
 			// remove room from list
-			this[parent].delete(this);
+			this[parent].delete(this)
 			// dispatch that the room has been deleted
-			this.delete && this.delete();
+			this.delete && this.delete()
 		}
 
 		// dispatch leave
-		this.leave && this.leave(socket);
+		this.leave && this.leave(socket)
 	}
 
 	emit(k, v) {
-		let d = [k, v];
+		let d = [k, v]
 
 		for (let socket of this.users) {
-			socket.emit(d);
+			socket.emit(d)
 		}
 	}
 	once(k, v) {
-		let d = [k, v];
+		let d = [k, v]
 
 		for (let socket of this.users) {
-			socket.once(d);
+			socket.once(d)
 		}
 	}
 	broadcast(me, k, v) {
-		let d = [k, v];
+		let d = [k, v]
 
 		for (let socket of this.users) {
-			if (me != socket) socket.emit(d);
+			if (me != socket) socket.emit(d)
 		}
 	}
 	broadcastOnce(me, k, v) {
-		let d = [k, v];
+		let d = [k, v]
 
 		for (let socket of this.users) {
-			if (me != socket) socket.once(d);
+			if (me != socket) socket.once(d)
 		}
 	}
 
 	[Symbol.iterator]() {
-		return this.users;
+		return this.users
 	}
 }
 
-module.exports = Room;
+module.exports = Room

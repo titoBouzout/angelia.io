@@ -1,9 +1,11 @@
-'use strict';
+'use strict'
 
 class Listeners {
 	constructor() {
-		this.classes = Object.create(null);
-		this.events = Object.create(null);
+		Object.assign(this, {
+			classes: Object.create(null),
+			events: Object.create(null),
+		})
 	}
 	on(listener, asCallback) {
 		// Listeners.on('connect', function(){ console.log('connected as callback')})
@@ -14,7 +16,7 @@ class Listeners {
 				!this.isObject(asCallback) &&
 				this.isFunction(asCallback)
 			) {
-				return this.addFunction(asCallback, listener);
+				return this.addFunction(asCallback, listener)
 			} else {
 				throw new Error(
 					`\nCall to Listeners.on(key, callback) with unsupported types. Named listeners only support strings as name, and functions as callbacks. \nExample: Listeners.on("connect", ()=>{console.log("connected")}) \nData you passed: \nName: "${listener}" ${
@@ -22,69 +24,72 @@ class Listeners {
 							? 'OK'
 							: 'FAIL should be of the type "string" when a callback is passed'
 					} \nCallback: "${asCallback}" ${
-						typeof asCallback === 'function' ? 'OK' : 'FAIL should be of the type "function"'
+						typeof asCallback === 'function'
+							? 'OK'
+							: 'FAIL should be of the type "function"'
 					}\n`,
-				);
+				)
 			}
 		} else if (this.isClass(listener)) {
-			return this.addClass(listener);
+			return this.addClass(listener)
 		} else if (this.isObject(listener)) {
-			return this.addObject(listener);
+			return this.addObject(listener)
 		} else if (this.isFunction(listener)) {
-			return this.addFunction(listener);
+			return this.addFunction(listener)
 		} else {
 			throw new Error(
 				'angelia.io - Call to Listeners.on with unsupported type:',
 				listener,
 				className || '',
 				'\n',
-			);
+			)
 		}
 	}
 	addClass(listener, className) {
-		className = className || listener.name || 'Class';
+		className = className || listener.name || 'Class'
 
-		let instance = new listener();
-		return this.addProperties(instance, className);
+		let instance = new listener()
+		return this.addProperties(instance, className)
 	}
 	addObject(listener, className) {
-		className = className || listener.name || 'Object';
+		className = className || listener.name || 'Object'
 
 		function Listener(methods) {
-			Object.assign(this, methods);
+			Object.assign(this, methods)
 		}
 
-		let instance = new Listener(listener);
-		return this.addProperties(instance, className);
+		let instance = new Listener(listener)
+		return this.addProperties(instance, className)
 	}
 	addFunction(listener, className) {
-		className = className || listener.name.replace(/bound /g, '');
+		className = className || listener.name.replace(/bound /g, '')
 
 		return this.addObject(
 			{
 				[className]: listener,
 			},
 			'Function',
-		);
+		)
 	}
 	addProperties(instance, className) {
 		let methods = [
 			...Object.getOwnPropertyNames(instance.__proto__),
 			...Object.getOwnPropertyNames(instance),
-		];
+		]
 
 		for (let m of methods) {
 			// '' listener is reserved
 			if (m !== 'constructor' && m !== '') {
 				if (this.isFunction(instance[m])) {
-					let method = instance[m].bind(instance);
-					method.__className = className;
+					let method = instance[m].bind(instance)
+					method.__className = className
 
-					this.events[m] = this.events[m] || this.Template();
-					this.events[m].fns.push(method);
+					this.events[m] = this.events[m] || this.Template()
+					this.events[m].fns.push(method)
 
-					this.classes[className] = this.classes[className] || Object.create(null);
-					this.classes[className][m] = method;
+					this.classes[className] =
+						this.classes[className] || Object.create(null)
+					this.classes[className][m] = method
 				}
 			}
 		}
@@ -94,91 +99,91 @@ class Listeners {
 			configurable: false,
 			enumerable: false,
 			writable: false,
-		});
+		})
 		Object.defineProperty(instance, 'events', {
 			value: this.events,
 			configurable: false,
 			enumerable: false,
 			writable: false,
-		});
-		return instance;
+		})
+		return instance
 	}
 
 	Template() {
 		function Listener(...args) {
 			for (let fn of this.fns) {
 				// console.log('calling listener', fn.name);
-				fn(...args);
+				fn(...args)
 			}
 		}
-		let fns = [];
-		Listener.fns = fns;
-		Listener = Listener.bind(Listener);
-		Listener.fns = fns;
+		let fns = []
+		Listener.fns = fns
+		Listener = Listener.bind(Listener)
+		Listener.fns = fns
 
-		return Listener;
+		return Listener
 	}
 
 	isFunction(o) {
-		return o && o.bind;
+		return o && o.bind
 	}
 	// isobject <https://github.com/jonschlinkert/isobject>
 	// MIT license - Copyright (c) 2014-2017, Jon Schlinkert.
 	isObject(o) {
-		return o != null && typeof o === 'object' && Array.isArray(o) === false;
+		return o != null && typeof o === 'object' && Array.isArray(o) === false
 	}
 	// is-class <https://github.com/miguelmota/is-class>
 	// MIT license - Copyright (C) 2014 Miguel Mota
 	isClass() {
-		(function(root) {
-			const toString = Function.prototype.toString;
+		;(function(root) {
+			const toString = Function.prototype.toString
 
 			function fnBody(fn) {
 				return toString
 					.call(fn)
 					.replace(/^[^{]*{\s*/, '')
-					.replace(/\s*}[^}]*$/, '');
+					.replace(/\s*}[^}]*$/, '')
 			}
 
 			function isClass(fn) {
 				if (typeof fn !== 'function') {
-					return false;
+					return false
 				}
 
 				if (/^class[\s{]/.test(toString.call(fn))) {
-					return true;
+					return true
 				}
 
 				// babel.js classCallCheck() & inlined
-				const body = fnBody(fn);
+				const body = fnBody(fn)
 				return (
 					/classCallCheck\(/.test(body) ||
 					/TypeError\("Cannot call a class as a function"\)/.test(body)
-				);
+				)
 			}
 
-			root.isClass = isClass;
-		})(Listeners.prototype);
+			root.isClass = isClass
+		})(Listeners.prototype)
 	}
 	toJSON() {
-		return this.inspect();
+		return this.inspect()
 	}
 	inspect() {
-		let listeners = [];
+		let listeners = []
 		for (let m in this.events) {
 			if (Array.isArray(this.events[m].fns)) {
 				for (let fn of this.events[m].fns) {
-					let className = fn.__className;
-					let method = fn.name.replace('bound ', '');
-					method = method != m ? method + ' as ' + m : method;
-					listeners.push(className + '.' + method);
+					let className = fn.__className
+					let method = fn.name.replace('bound ', '')
+					method = method != m ? method + ' as ' + m : method
+					listeners.push(className + '.' + method)
 				}
 			}
 		}
-		return listeners.sort();
+		return listeners.sort()
 	}
 }
 
-Listeners.prototype.isClass();
+Listeners.prototype.isClass()
 
-module.exports = Listeners;
+module.exports = Listeners

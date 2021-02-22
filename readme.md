@@ -75,7 +75,7 @@ Configurable options used by the constructor
 
 ```javascript
 // server.js (node.js)
-import Server from 'angelia.io/server';
+import Server from 'angelia.io/server'
 
 const server = new Server({
 	hostname: 'localhost',
@@ -83,7 +83,7 @@ const server = new Server({
 	maxMessageSize: 5,
 	cert: '/path/to/cert/fullchain.pem',
 	key: '/path/to/key/privkey.pem',
-});
+})
 ```
 
 | name             | kind   | default | description                                         |
@@ -100,18 +100,18 @@ The `server` object can be accessed from everywhere
 
 ```javascript
 // server.js (node.js)
-import Server from 'angelia.io/server';
+import Server from 'angelia.io/server'
 
 class _ {
 	connect(socket, request) {
-		console.log(this.server, 'also', socket.server);
+		console.log(this.server, 'also', socket.server)
 	}
 }
-Server.on(_);
+Server.on(_)
 
 const server = new Server({
 	port: 3001,
-});
+})
 ```
 
 #### Server Properties
@@ -146,18 +146,18 @@ The `socket` object is given to you by a listener
 
 ```javascript
 // server.js (node.js)
-import Server from 'angelia.io/server';
+import Server from 'angelia.io/server'
 
 class _ {
 	connect(socket, request) {
-		console.log(socket, data, callback);
+		console.log(socket, data, callback)
 	}
 }
-Server.on(_);
+Server.on(_)
 
 new Server({
 	port: 3001,
-});
+})
 ```
 
 #### Socket Properties
@@ -249,49 +249,49 @@ Listeners have the following alternative syntax if you feel like
 
 ```javascript
 // server.js (node.js)
-import Server from 'angelia.io/server';
+import Server from 'angelia.io/server'
 
 // listen via the names of methods of a class
 Server.on(
 	class Connection {
 		async connect(socket, request) {
-			console.log('connect in Class');
+			console.log('connect in Class')
 		}
 		async something(socket, data, callback) {
-			console.log('something is dispatched');
+			console.log('something is dispatched')
 		}
 	},
-);
+)
 
 // listen via the name of a function
 Server.on(function connect(socket, request) {
-	console.log('connect in Function');
-});
+	console.log('connect in Function')
+})
 
 // listen via the properties of an object to all of the functions of it
 Server.on({
 	connect: function(socket, request) {
-		console.log('connect in Object');
-		this.works();
+		console.log('connect in Object')
+		this.works()
 	},
 	works: function() {
-		console.log('this works yep');
+		console.log('this works yep')
 	},
-});
+})
 
 // named listener with callback
 Server.on('connect', (socket, request) => {
-	console.log('connect in arrow function');
-});
+	console.log('connect in arrow function')
+})
 
 // named listener with a random named callback (the callback name doesnt matter)
 Server.on('connect', function fancyConnect(socket, request) {
-	onsole.log('connect in named function');
-});
+	onsole.log('connect in named function')
+})
 
 const server = new Server({
 	port: 3001,
-});
+})
 ```
 
 ### Predefined Events
@@ -351,7 +351,7 @@ const socket = new Client({
 	url: 'ws://localhost:3001',
 	debug: true,
 	params: { fast: 'data', test: 'a space' },
-});
+})
 ```
 
 | property        | kind    | default                                     | description                                                                                                                                                               |
@@ -364,7 +364,7 @@ const socket = new Client({
 You may also do like this if you don't need any option
 
 ```javascript
-const socket = new Client('ws://localhost:3001');
+const socket = new Client('ws://localhost:3001')
 ```
 
 ### API

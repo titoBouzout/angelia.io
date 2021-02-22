@@ -1,45 +1,45 @@
-'use strict';
+'use strict'
 
-const join = Symbol.for('Room.join');
-const leave = Symbol.for('Room.leave');
+const join = Symbol.for('Room.join')
+const leave = Symbol.for('Room.leave')
 
-const proxied = Symbol.for('Tracker.proxied');
+const proxied = Symbol.for('Tracker.proxied')
 
-const Rooms = require('./Rooms.js');
+const Rooms = require('./Rooms.js')
 
 class Tracker {
 	constructor() {
 		// to keep track of paths
-		this.tracking = {}; // full path
-		this.paths = {}; // path tree as string
-		this.pathsObject = {}; // path tree as object
+		this.tracking = {} // full path
+		this.paths = {} // path tree as string
+		this.pathsObject = {} // path tree as object
 
 		// to keep track of rooms
-		this.roomsTrack = {};
+		this.roomsTrack = {}
 	}
 	track(path) {
-		let root = '.' + path;
+		let root = '.' + path
 
-		this.tracking[root] = true;
+		this.tracking[root] = true
 
 		// index for fast access
-		let paths = '';
-		let pathsObject = this.pathsObject;
+		let paths = ''
+		let pathsObject = this.pathsObject
 		for (let child of path.split('.')) {
-			paths += '.' + child;
-			pathsObject = pathsObject[child] = pathsObject[child] || {};
-			this.paths[paths] = pathsObject;
+			paths += '.' + child
+			pathsObject = pathsObject[child] = pathsObject[child] || {}
+			this.paths[paths] = pathsObject
 		}
 
-		this.roomsTrack[root] = this.roomsTrack[root] || new Rooms(root);
+		this.roomsTrack[root] = this.roomsTrack[root] || new Rooms(root)
 
 		// console.log('new path to track "' + path + '"', this.paths);
 
-		return this.roomsTrack[root];
+		return this.roomsTrack[root]
 	}
 
 	watch(socket) {
-		return this.proxy(socket, '', socket);
+		return this.proxy(socket, '', socket)
 	}
 
 	proxy(target, path, socket) {
@@ -60,16 +60,24 @@ class Tracker {
 						}*/
 					}
 
-					let refOldValue = { value: target[id] };
-					let refNewValue = { value: value };
+					let refOldValue = { value: target[id] }
+					let refNewValue = { value: value }
 
-					this.check(socket, path + '.' + id, path, target, refOldValue, refNewValue, receiver);
-					return Reflect.set(target, id, refNewValue.value, receiver);
+					this.check(
+						socket,
+						path + '.' + id,
+						path,
+						target,
+						refOldValue,
+						refNewValue,
+						receiver,
+					)
+					return Reflect.set(target, id, refNewValue.value, receiver)
 				} else {
-					return Reflect.set(target, id, value, receiver);
+					return Reflect.set(target, id, value, receiver)
 				}
 			},
-		});
+		})
 	}
 	check(socket, path, parent, target, oldValue, newValue, receiver) {
 		// console.log('changed', path, 'from', oldValue.value, 'to', newValue.value);
@@ -86,7 +94,7 @@ class Tracker {
 					oldValue.value !== undefined &&
 					oldValue.value !== null
 				) {
-					oldValue.value[leave](socket.proxy);
+					oldValue.value[leave](socket.proxy)
 
 					// console.log('leave room', oldValue.value);
 				}
@@ -102,10 +110,10 @@ class Tracker {
 
 					// create room if doesnt exists
 					if (!this.roomsTrack[path].has(newValue.value)) {
-						this.roomsTrack[path].create(newValue.value);
-						newValue.value.create && newValue.value.create();
+						this.roomsTrack[path].create(newValue.value)
+						newValue.value.create && newValue.value.create()
 					}
-					newValue.value[join](socket.proxy);
+					newValue.value[join](socket.proxy)
 
 					// console.log('joined room', newValue.value);
 				}
@@ -159,5 +167,5 @@ class Tracker {
 		}*/
 	}
 }
-const tracker = new Tracker();
-module.exports = tracker;
+const tracker = new Tracker()
+module.exports = tracker

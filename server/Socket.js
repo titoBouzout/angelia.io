@@ -147,7 +147,8 @@ class Socket {
 					this.server.events.outgoing(this.proxy, this.messages)
 
 				let messages = this.server.cacheMessages(this.messages)
-				this.io.send(messages)
+				// this.io.send(messages)
+				for (let m of messages) this.io._socket.write(m)
 
 				this.server.bytesSent += messages.length
 				this.bytesSent += messages.length

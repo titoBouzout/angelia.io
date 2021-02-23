@@ -54,6 +54,15 @@ class ServerSingleton {
 
 			URL: require('url'),
 			Socket: require('./Socket.js'),
+			WebSocket: require('ws'),
+			WebSocketFrame: {
+				readOnly: false,
+				mask: false,
+				rsv1: false,
+				opcode: 1,
+				fin: true,
+			},
+			pingData: [],
 		})
 
 		Object.defineProperties(this.listeners, {
@@ -64,6 +73,11 @@ class ServerSingleton {
 				enumerable: false,
 			},
 		})
+
+		this.pingData = this.WebSocket.Sender.frame(
+			Buffer.from(''),
+			this.WebSocketFrame,
+		)
 	}
 
 	listen(options) {
@@ -100,8 +114,7 @@ class ServerSingleton {
 			server = require('http').createServer()
 		}
 
-		let ws = require('ws')
-		let io = new ws.Server({
+		let io = new this.WebSocket.Server({
 			server: server,
 			perMessageDeflate: false,
 			maxPayload: this.maxMessageSize * 1024 * 1024,
@@ -249,7 +262,10 @@ class ServerSingleton {
 			id += m[this.cacheIds] + ','
 		}
 		if (!this.cache[id]) {
-			this.cache[id] = JSON.stringify(messages)
+			this.cache[id] = this.WebSocket.Sender.frame(
+				Buffer.from(JSON.stringify(messages)),
+				this.WebSocketFrame,
+			)
 		} else {
 			this.messagesCached++
 		}
@@ -279,7 +295,8 @@ class ServerSingleton {
 		this.updateNow()
 		socket.contacted = this.now
 		if (socket.io.readyState === 1) {
-			socket.io.send('')
+			// socket.io.send('')
+			for (let m of this.pingData) socket.io._socket.write(m)
 		}
 	}
 	pong(socket) {

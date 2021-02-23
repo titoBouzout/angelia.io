@@ -1,5 +1,7 @@
 'use strict'
 
+const inspect = Symbol.for('nodejs.util.inspect.custom')
+
 class Listeners {
 	constructor() {
 		Object.assign(this, {
@@ -94,18 +96,21 @@ class Listeners {
 			}
 		}
 
-		Object.defineProperty(instance, 'classes', {
-			value: this.classes,
-			configurable: false,
-			enumerable: false,
-			writable: false,
+		Object.defineProperties(instance, {
+			classes: {
+				value: this.classes,
+				writable: false,
+				configurable: false,
+				enumerable: false,
+			},
+			events: {
+				value: this.events,
+				writable: false,
+				configurable: false,
+				enumerable: false,
+			},
 		})
-		Object.defineProperty(instance, 'events', {
-			value: this.events,
-			configurable: false,
-			enumerable: false,
-			writable: false,
-		})
+
 		return instance
 	}
 
@@ -145,7 +150,7 @@ class Listeners {
 					.replace(/\s*}[^}]*$/, '')
 			}
 
-			function isClass(fn) {
+			root.isClass = function isClass(fn) {
 				if (typeof fn !== 'function') {
 					return false
 				}
@@ -161,9 +166,10 @@ class Listeners {
 					/TypeError\("Cannot call a class as a function"\)/.test(body)
 				)
 			}
-
-			root.isClass = isClass
 		})(Listeners.prototype)
+	}
+	[inspect]() {
+		return this.inspect()
 	}
 	toJSON() {
 		return this.inspect()

@@ -2,14 +2,16 @@
 
 const inspect = Symbol.for('nodejs.util.inspect.custom')
 
-const Tracker = require('./Tracker.js')
-
-const leave = Symbol.for('Room.leave')
+const { leave } = require('./rooms/constants.js')
 
 class Socket {
 	constructor(socket, server) {
 		Object.assign(this, {
 			server: server,
+
+			ip: '',
+			userAgent: '',
+			params: {},
 
 			messages: [],
 
@@ -32,7 +34,7 @@ class Socket {
 			inspect: this.inspect.bind(this),
 
 			io: socket,
-			proxy: Tracker.watch(this),
+			proxy: server.observe(this),
 			rooms: new Set(),
 		})
 		this.toJSON = this.inspect
@@ -45,7 +47,7 @@ class Socket {
 
 	emit(k, v) {
 		if (!this.messages.length) {
-			this.server.nextMessages(this)
+			this.server.nextQueue(this)
 		}
 
 		this.messages.push(typeof k !== 'string' ? k : [k, v])
@@ -76,6 +78,7 @@ class Socket {
 	disconnect(noReconnect) {
 		if (noReconnect) {
 			this.emit(['disconnect', true])
+			this.io.close()
 		} else {
 			this.io.close()
 		}
@@ -136,7 +139,7 @@ class Socket {
 			}
 		}
 	}
-	processMessages() {
+	processQueue() {
 		if (this.io.readyState === 1) {
 			// regular
 			if (this.messages.length) {
@@ -161,7 +164,6 @@ class Socket {
 	}
 	inspect() {
 		return {
-			// data
 			readyState: this.io.readyState,
 
 			since: this.since,

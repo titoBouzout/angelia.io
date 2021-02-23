@@ -88,7 +88,7 @@ const server = new Server({
 
 | name             | kind   | default | description                                         |
 | ---------------- | ------ | ------- | --------------------------------------------------- |
-| `hostname`       | String | null    | the hostname if any                                 |
+| `hostname`       | String | ''      | the hostname if any                                 |
 | `port`           | Number | 3001    | the port to use for this server                     |
 | `maxMessageSize` | Number | 5       | max size in mb of a message received                |
 | `cert`           | String | ''      | path to the cert file for using https fullchain.pem |
@@ -338,7 +338,7 @@ const server = new Server({
 | --------- | -------------------------------------------------------------------------------------------------------------------- |
 | `server`  | reference to server object                                                                                           |
 | `events`  | reference to event dispatcher, ex: `this.events.typing()` will dispatch the `typing` event to anyone listening to it |
-| `classes` | EXPERIMENTAL reference to all functions that have been attached as listeners , ex: `this.classes.MyFancyChat.typing` |
+| `classes` | reference to all functions that have been attached as listeners , ex: `this.classes.MyFancyChat.typing`              |
 
 ## Client API (Browser)
 

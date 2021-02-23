@@ -1,8 +1,6 @@
 'use strict'
 
-const join = Symbol.for('Room.join')
-const leave = Symbol.for('Room.leave')
-const parent = Symbol.for('Room.parent')
+const { join, leave, parent } = require('./constants.js')
 
 class Room {
 	constructor() {
@@ -11,12 +9,23 @@ class Room {
 	has(socket) {
 		return this.users.indexOf(socket) !== -1
 	}
-	[join](socket) {
+	[join](roomList, socket) {
+		// add to list of room list
+		if (!this[parent]) {
+			this[parent] = roomList
+			this[parent].add(this)
+		}
+
 		// add user
 		this.users.push(socket)
 
 		// to be able to list rooms for socket
 		socket.rooms.add(this)
+
+		if (this.users.length === 1) {
+			// dispatch create
+			this.create && this.create(socket)
+		}
 
 		// dispatch join
 		this.join && this.join(socket)
@@ -33,12 +42,16 @@ class Room {
 		if (this.users.length === 0 && !this.persistent) {
 			// remove room from list
 			this[parent].delete(this)
-			// dispatch that the room has been deleted
-			this.delete && this.delete()
-		}
 
-		// dispatch leave
-		this.leave && this.leave(socket)
+			// dispatch leave
+			this.leave && this.leave(socket)
+
+			// dispatch that the room has been deleted
+			this.delete && this.delete(socket)
+		} else {
+			// dispatch leave
+			this.leave && this.leave(socket)
+		}
 	}
 
 	emit(k, v) {

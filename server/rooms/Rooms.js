@@ -1,12 +1,14 @@
 'use strict'
 
-const parent = Symbol.for('Room.parent')
+const { parent } = require('./constants.js')
 
 class Rooms {
 	constructor(path) {
-		this.path = path
-		this.rooms = []
-		this.roomsById = new Map()
+		Object.assign(this, {
+			path: path,
+			rooms: [],
+			roomsById: new Map(),
+		})
 	}
 
 	has(room) {
@@ -18,22 +20,15 @@ class Rooms {
 	}
 
 	add(room) {
-		this.create(room)
-	}
-
-	create(room) {
 		if (!this.has(room)) {
 			this.rooms.push(room)
 			this.roomsById.set(room.id, room)
-
-			room[parent] = this
 		}
 	}
 	delete(room) {
 		if (!room.persistent) {
 			let index = this.rooms.indexOf(room)
 			if (index !== -1) this.rooms.splice(index, 1)
-
 			this.roomsById.delete(room.id)
 		}
 	}

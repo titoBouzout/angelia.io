@@ -2,29 +2,26 @@
 
 const inspect = Symbol.for('nodejs.util.inspect.custom')
 
-const URL = require('url')
+const Listeners = new (require('./Listeners.js'))()
+const Manager = require('./rooms/Manager.js')
+
 const toFastProperties = require('to-fast-properties')
 
-const Listeners = new (require('./Listeners.js'))()
-Listeners[inspect] = function() {
-	return this.inspect()
-}
-
-const Socket = require('./Socket.js')
-const Room = require('./Room.js')
-const Tracker = require('./Tracker.js')
-
-class Server {
-	constructor(options) {
+class ServerSingleton {
+	constructor() {
 		Object.assign(this, {
-			port: +options.port > 0 && +options.port <= 65535 ? +options.port : 3001,
-			maxMessageSize: +options.maxMessageSize > 0 ? +options.maxMessageSize : 5,
-			timeout: 30 * 1000,
+			hostname: '',
+			port: 3001,
+			timeout: 60 * 1000,
+			maxMessageSize: 5,
 
-			messages: [],
+			cert: '',
+			key: '',
 
-			since: Date.now(),
-			now: Date.now(),
+			queue: [],
+
+			since: 0,
+			now: 0,
 
 			served: 0,
 			bytesSent: 0,
@@ -39,30 +36,50 @@ class Server {
 			onconnect: this.onconnect.bind(this),
 			onerror: this.onerror.bind(this),
 
-			processMessages: this.processMessages.bind(this),
-
-			inspect: this.inspect.bind(this),
+			processQueue: this.processQueue.bind(this),
 
 			listeners: Listeners,
 			events: Listeners.events,
 
-			rooms: Tracker.roomsTrack,
 			sockets: new Set(),
+
+			track: Manager.track,
+			rooms: Manager.rooms,
+			Room: require('./rooms/Room.js'),
+			observe: Manager.observe,
 
 			cacheIds: Symbol('cache'),
 			cacheId: 1,
 			cache: Object.create(null),
+
+			URL: require('url'),
+			Socket: require('./Socket.js'),
 		})
 
-		this[inspect] = this.toJSON = this.inspect
-
-		this.listeners.server = this
 		Object.defineProperties(this.listeners, {
 			server: {
+				value: this,
 				writable: false,
 				configurable: false,
 				enumerable: false,
 			},
+		})
+	}
+
+	listen(options) {
+		Object.assign(this, {
+			port:
+				+options.port > 0 && +options.port <= 65535 ? +options.port : this.port,
+			hostname: options.hostname || this.hostname,
+			maxMessageSize:
+				+options.maxMessageSize > 0
+					? +options.maxMessageSize
+					: this.maxMessageSize,
+			cert: options.cert || this.cert,
+			key: options.key || this.key,
+
+			since: Date.now(),
+			now: Date.now(),
 		})
 
 		this.ensureFastProperties()
@@ -71,13 +88,13 @@ class Server {
 		setInterval(this.ping, this.timeout / 2)
 		setInterval(this.updateNow, 500)
 
-		// fire the server
+		// fires the server
 		let server
-		if (options.cert && options.key) {
+		if (this.cert && this.key) {
 			let fs = require('fs')
 			server = require('https').createServer({
-				cert: fs.readFileSync(options.cert), // fullchain.pem
-				key: fs.readFileSync(options.key), // privkey.pem
+				cert: fs.readFileSync(this.cert), // fullchain.pem
+				key: fs.readFileSync(this.key), // privkey.pem
 			})
 		} else {
 			server = require('http').createServer()
@@ -95,9 +112,9 @@ class Server {
 		io.on('connection', this.onconnect)
 		io.on('error', this.onerror)
 
-		server.listen(this.port, options.hostname || null)
+		server.listen(this.port, this.hostname || null)
 
-		for (let m of ['RESTART', 'SIGINT', 'SIGTERM']) {
+		for (let m of ['RESTART', 'SIGINT', 'SIGTERM', 'SIGBREAK']) {
 			process.on(m, () => {
 				if (!io.closing) {
 					io.closing = true
@@ -109,8 +126,9 @@ class Server {
 
 		console.log('Server Started Listening On Port ' + this.port)
 		this.events.listen && this.events.listen()
-	}
 
+		return this
+	}
 	// count of connections
 
 	get connections() {
@@ -120,17 +138,17 @@ class Server {
 	// listen for an event
 
 	on(k, cb) {
-		let instance = Listeners.on(k, cb)
-		Object.defineProperty(instance, 'server', {
-			get: function() {
-				return Listeners.server
+		let instance = this.listeners.on(k, cb)
+		Object.defineProperties(instance, {
+			server: {
+				value: this,
+				writable: false,
+				configurable: false,
+				enumerable: false,
 			},
-			configurable: false,
-			enumerable: false,
 		})
-		if (this && this.ensureFastProperties) {
-			this.ensureFastProperties()
-		}
+
+		this.ensureFastProperties()
 	}
 
 	// emits to everyone connected to the server
@@ -160,21 +178,15 @@ class Server {
 		}
 	}
 
-	// tracker
-
-	track(path) {
-		return Tracker.track(path)
-	}
-
 	// PRIVATE API
 
 	onconnect(socket, request) {
 		this.updateNow()
 
-		socket = new Socket(socket, this)
+		socket = new this.Socket(socket, this)
 
 		// set the ip, userAgent and params
-		let params = URL.parse(request.url, true).query
+		let params = this.URL.parse(request.url, true).query
 		let angeliaParams = params['angelia.io']
 		delete params['angelia.io']
 
@@ -209,20 +221,20 @@ class Server {
 		console.error('Server.onerror', err)
 	}
 
-	// messages
+	// queue
 
-	nextMessages(socket) {
-		if (!this.messages.length) {
-			process.nextTick(this.processMessages)
+	nextQueue(socket) {
+		if (!this.queue.length) {
+			process.nextTick(this.processQueue)
 		}
-		this.messages.push(socket)
+		this.queue.push(socket)
 	}
 
-	processMessages() {
-		let messages = this.messages
-		this.messages = []
-		for (let socket of messages) {
-			socket.processMessages()
+	processQueue() {
+		let queue = this.queue
+		this.queue = []
+		for (let socket of queue) {
+			socket.processQueue()
 		}
 		// clear cache
 		this.cache = Object.create(null)
@@ -312,38 +324,50 @@ class Server {
 		}
 	}
 	// console.log and toJSON
+	[inspect]() {
+		return this.inspect()
+	}
+	toJSON() {
+		return this.inspect()
+	}
 	inspect() {
 		return {
 			// started
 			since: this.since,
 			now: this.now,
+
 			// options
+			hostname: this.hostname,
 			port: this.port,
-			maxMessageSize: this.maxMessageSize,
 			timeout: this.timeout,
+			maxMessageSize: this.maxMessageSize,
+
 			// stats
 			connections: this.connections,
+
 			served: this.served,
 			bytesSent: this.bytesSent,
 			bytesReceived: this.bytesReceived,
 			messagesSent: this.messagesSent,
 			messagesReceived: this.messagesReceived,
 			messagesCached: this.messagesCached,
+
 			// listeners
-			events: this.events,
 			listeners: this.listeners,
+			events: this.events,
 
 			// functions
 			on: this.on,
-			// track: this.track,
-
 			emit: this.emit,
 			once: this.once,
 			broadcast: this.broadcast,
 			broadcastOnce: this.broadcastOnce,
 			// data
-			rooms: this.rooms,
 			sockets: this.sockets,
+			// rooms
+			track: this.track,
+			rooms: this.rooms,
+			Room: this.Room,
 		}
 	}
 	// fast properties
@@ -423,9 +447,6 @@ class Server {
 	}
 }
 
-Server.on = Server.prototype.on
-Server.track = Server.prototype.track
-
-Server.Room = Server.prototype.Room = Room
+const Server = new ServerSingleton()
 
 module.exports = Server

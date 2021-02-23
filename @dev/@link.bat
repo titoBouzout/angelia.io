@@ -1,5 +1,5 @@
 
-cd ../
+cd ..
 CMD /C npm link
 
 cd ../client/

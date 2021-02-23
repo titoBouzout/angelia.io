@@ -133,6 +133,9 @@ class ServerSingleton {
 					io.closing = true
 					console.log('Server Shutting Down\n', this)
 					io.close()
+					if (options.debug) {
+						process.exit()
+					}
 				}
 			})
 		}

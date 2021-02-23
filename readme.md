@@ -42,7 +42,7 @@ class FancyChat {
 }
 Server.on(FancyChat);
 
-const server = new Server({
+const server = new Server.listen({
 	port: 3001,
 });
 ```
@@ -71,13 +71,13 @@ socket.emit('chatMessage', 'Hi there server, Im client', (data) =>{
 
 ### Options
 
-Configurable options used by the constructor
+A call to `Server.listen` starts the server. `Server` is a singleton and can only have running 1 server.
 
 ```javascript
 // server.js (node.js)
 import Server from 'angelia.io/server'
 
-const server = new Server({
+const server = new Server.listen({
 	hostname: 'localhost',
 	port: 3001,
 	maxMessageSize: 5,
@@ -109,7 +109,7 @@ class _ {
 }
 Server.on(_)
 
-const server = new Server({
+const server = new Server.listen({
 	port: 3001,
 })
 ```
@@ -155,7 +155,7 @@ class _ {
 }
 Server.on(_)
 
-new Server({
+new Server.listen({
 	port: 3001,
 })
 ```
@@ -218,7 +218,7 @@ class Connection {
 }
 Server.on(Connection);
 
-const server = new Server({
+const server = new Server.listen({
 	port: 3001,
 });
 
@@ -268,7 +268,7 @@ Server.on(function connect(socket, request) {
 	console.log('connect in Function')
 })
 
-// listen via the properties of an object to all of the functions of it
+// listen via the properties of an object to all the functions of it
 Server.on({
 	connect: function(socket, request) {
 		console.log('connect in Object')
@@ -284,12 +284,12 @@ Server.on('connect', (socket, request) => {
 	console.log('connect in arrow function')
 })
 
-// named listener with a random named callback (the callback name doesnt matter)
+// named listener with a random named callback (the callback name doesn't matter)
 Server.on('connect', function fancyConnect(socket, request) {
 	onsole.log('connect in named function')
 })
 
-const server = new Server({
+const server = new Server.listen({
 	port: 3001,
 })
 ```
@@ -314,7 +314,7 @@ class _ {
 
 Server.on(_);
 
-const server = new Server({
+const server = new Server.listen({
 	port: 3001,
 });
 ```
@@ -350,16 +350,16 @@ Configurable options used by the constructor
 const socket = new Client({
 	url: 'ws://localhost:3001',
 	debug: true,
-	params: { fast: 'data', test: 'a space' },
+	params: function (){ return { fast: 'data', test: 'a space' })
 })
 ```
 
-| property        | kind    | default                                     | description                                                                                                                                                               |
-| --------------- | ------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`           | string  | 'ws(s)://\${window.location.hostname}:3001' | url of the socket server, example 'ws://localhost:3001'                                                                                                                   |
-| `params`        | Object  | {}                                          | to send data while connecting, accesible via `socket.params` server side                                                                                                  |
-| `debug`         | boolean | false                                       | to console.log some messages                                                                                                                                              |
-| `longLiveFlash` | boolean | false                                       | browsers throw when calling swf functions via ExternalInterface after events like WebSocket.onmesssage; setting this to `true` fix it by dispatching them in a setTimeout |
+| property        | kind     | default                                     | description                                                                                                                                                               |
+| --------------- | -------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`           | string   | 'ws(s)://\${window.location.hostname}:3001' | url of the socket server, example 'ws://localhost:3001'                                                                                                                   |
+| `params`        | Function | {}                                          | to send data while connecting, accesible via `socket.params` server side                                                                                                  |
+| `debug`         | boolean  | false                                       | to console.log some messages                                                                                                                                              |
+| `longLiveFlash` | boolean  | false                                       | browsers throw when calling swf functions via ExternalInterface after events like WebSocket.onmesssage; setting this to `true` fix it by dispatching them in a setTimeout |
 
 You may also do like this if you don't need any option
 

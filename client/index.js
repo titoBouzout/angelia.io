@@ -18,6 +18,9 @@ class Client {
 		options.url = new URL(options.url)
 
 		let params = options.params || {}
+		if (!params.connid) {
+			params.connid = this.generateId()
+		}
 
 		for (let [k, v] of options.url.searchParams.entries()) {
 			if (!params.hasOwnProperty(k)) {
@@ -151,7 +154,15 @@ class Client {
 			this.messages.push([k])
 		}
 	}
-
+	generateId() {
+		var id = ''
+		while (!id) {
+			id = Math.random()
+				.toString(36)
+				.substr(2, 10)
+		}
+		return id
+	}
 	// private API
 	onopen() {
 		this.didConnect = true

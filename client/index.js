@@ -18,7 +18,7 @@ class Client {
 		Object.assign(this, {
 			debug: options.debug,
 			url: options.url,
-			parms: options.params,
+			params: options.params,
 			connid: this.generateId(),
 
 			reconnect: true,

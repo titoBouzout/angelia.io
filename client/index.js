@@ -15,29 +15,11 @@ class Client {
 			options.url = protocol + '://' + options.url
 		}
 
-		options.url = new URL(options.url)
-
-		let params = options.params || {}
-		if (!params.connid) {
-			params.connid = this.generateId()
-		}
-
-		for (let [k, v] of options.url.searchParams.entries()) {
-			if (!params.hasOwnProperty(k)) {
-				params[k] = v
-			}
-		}
-
-		options.url.search = Object.entries(params)
-			.filter(([k, v]) => {
-				return k !== undefined && k !== null && v !== undefined && v !== null
-			})
-			.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-			.join('&')
-
 		Object.assign(this, {
 			debug: options.debug,
-			url: options.url.toString(),
+			url: options.url,
+			parms: options.params,
+			connid: this.generateId(),
 
 			reconnect: true,
 			isReconnect: false,
@@ -46,6 +28,7 @@ class Client {
 			listeners: { '': [this.oncallback.bind(this)] },
 			callbacks: [() => {}],
 			messages: [],
+			buffered: [],
 
 			onopen: this.onopen.bind(this),
 			onclose: this.onclose.bind(this),
@@ -63,7 +46,7 @@ class Client {
 		// to try to close the connection nicely
 		window.addEventListener('unload', () => this.disconnect(true), true)
 
-		// to send messages without waiting for the connection
+		// to send messages fast without waiting for the connection
 		Promise.resolve().then(() => this.connect())
 	}
 	// public API
@@ -73,8 +56,33 @@ class Client {
 			this.reconnect &&
 			(!this.io || this.io.readyState === WebSocket.CLOSED)
 		) {
-			let url = this.url
-			if (this.messages.length) {
+			let url = new URL(this.url)
+
+			// parms creation
+			let params = typeof this.params === 'function' ? this.params() || {} : {}
+			if (!params.connid) {
+				params.connid = this.connid
+			}
+			for (let [k, v] of url.searchParams.entries()) {
+				if (!params.hasOwnProperty(k)) {
+					params[k] = v
+				}
+			}
+			url.search = Object.entries(params)
+				.filter(([k, v]) => {
+					return !(
+						k === undefined ||
+						k === null ||
+						v === undefined ||
+						v === null
+					)
+				})
+				.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+				.join('&')
+
+			// append buffered messages
+			let oURL = url
+			if (this.messages.length && !this.isReconnect) {
 				url =
 					(url.indexOf('?') === -1 ? url + '?' : url + '&') +
 					'angelia.io=' +
@@ -82,9 +90,15 @@ class Client {
 				if (url.length < 2048) {
 					this.messages = []
 				} else {
-					url = this.url
+					url = oURL
 				}
+			} else if (this.messages.length && this.isReconnect) {
+				for (let m of this.messages) {
+					this.buffered.push(m)
+				}
+				this.messages = []
 			}
+
 			this.io = new WebSocket(url)
 			Object.assign(this.io, {
 				onopen: this.onopen,
@@ -240,16 +254,14 @@ class Client {
 		return i
 	}
 	dispatch(k, v) {
-		if (this.longLiveFlash) {
-			setTimeout(() => {
-				if (this.listeners[k]) {
+		if (this.listeners[k]) {
+			if (this.longLiveFlash) {
+				setTimeout(() => {
 					for (let event of this.listeners[k]) {
 						event(v)
 					}
-				}
-			})
-		} else {
-			if (this.listeners[k]) {
+				})
+			} else {
 				for (let event of this.listeners[k]) {
 					event(v)
 				}
@@ -257,13 +269,15 @@ class Client {
 		}
 	}
 	nextTick() {
-		if (
-			this.io &&
-			this.io.readyState === WebSocket.OPEN &&
-			this.messages.length
-		) {
-			this.io.send(JSON.stringify(this.messages))
-			this.messages = []
+		if (this.io && this.io.readyState === WebSocket.OPEN) {
+			if (this.messages.length) {
+				this.io.send(JSON.stringify(this.messages))
+				this.messages = []
+			}
+			if (this.buffered.length) {
+				this.io.send(JSON.stringify(this.buffered))
+				this.buffered = []
+			}
 		}
 	}
 	pong() {

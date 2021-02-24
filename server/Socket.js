@@ -77,11 +77,9 @@ class Socket {
 
 	disconnect(noReconnect) {
 		if (noReconnect) {
-			this.emit(['disconnect', true])
-			this.io.close()
-		} else {
-			this.io.close()
+			for (let m of this.server.disconnectData) this.io._socket.write(m)
 		}
+		this.io.close()
 	}
 	// private API
 	listen() {
@@ -100,6 +98,7 @@ class Socket {
 			this.server.events.disconnect(this.proxy, code, message)
 	}
 	onerror(err) {
+		this.server.socketErrors++
 		console.error('Socket.onerror', err, this.inspect())
 	}
 	oncallback(k, ...v) {
@@ -129,11 +128,13 @@ class Socket {
 							m[2] && this.oncallback.bind(null, m[2]),
 						)
 					} else {
+						this.server.messagesGarbage++
 						this.server.events.garbage &&
 							this.server.events.garbage(this.proxy, m)
 					}
 				}
 			} else {
+				this.server.messagesGarbage++
 				this.server.events.garbage &&
 					this.server.events.garbage(this.proxy, messages)
 			}
@@ -146,15 +147,12 @@ class Socket {
 				this.server.events.outgoing &&
 					this.server.events.outgoing(this.proxy, this.messages)
 
-				let messages = this.server.cacheMessages(this.messages)
-				// this.io.send(messages)
-				for (let m of messages) this.io._socket.write(m)
-
-				this.server.bytesSent += messages.length
-				this.bytesSent += messages.length
-
 				this.server.messagesSent += this.messages.length
 				this.messagesSent += this.messages.length
+
+				let messages = this.server.cacheMessages(this.messages, this)
+				// this.io.send(messages)
+				for (let m of messages) this.io._socket.write(m)
 			}
 		}
 		this.messages = []

@@ -25,7 +25,10 @@ class Client {
 			isReconnect: false,
 			didConnect: true,
 
-			listeners: { '': [this.oncallback.bind(this)] },
+			listeners: {
+				'': [this.oncallback.bind(this)],
+				'disconnect': [this.disconnect.bind(this)],
+			},
 			callbacks: [() => {}],
 			messages: [],
 			buffered: [],

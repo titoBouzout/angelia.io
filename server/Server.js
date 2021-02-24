@@ -26,9 +26,12 @@ class ServerSingleton {
 			served: 0,
 			bytesSent: 0,
 			bytesReceived: 0,
-			messagesSent: 0,
 			messagesReceived: 0,
-			messagesCached: 0,
+			messagesSent: 0,
+			messagesSentCached: 0,
+			messagesGarbage: 0,
+			serverErrors: 0,
+			socketErrors: 0,
 
 			ping: this.ping.bind(this),
 			updateNow: this.updateNow.bind(this),
@@ -63,6 +66,7 @@ class ServerSingleton {
 				fin: true,
 			},
 			pingData: [],
+			disconnectData: [],
 		})
 
 		Object.defineProperties(this.listeners, {
@@ -76,6 +80,10 @@ class ServerSingleton {
 
 		this.pingData = this.WebSocket.Sender.frame(
 			Buffer.from(''),
+			this.WebSocketFrame,
+		)
+		this.disconnectData = this.WebSocket.Sender.frame(
+			Buffer.from(JSON.stringify([['disconnect', true]])),
 			this.WebSocketFrame,
 		)
 	}
@@ -234,6 +242,7 @@ class ServerSingleton {
 		this.pingSocket.bind(this, socket)
 	}
 	onerror(err) {
+		this.serverErrors++
 		console.error('Server.onerror', err)
 	}
 
@@ -256,7 +265,7 @@ class ServerSingleton {
 		this.cache = Object.create(null)
 	}
 
-	cacheMessages(messages) {
+	cacheMessages(messages, socket) {
 		let id = ''
 		for (let m of messages) {
 			if (!m[this.cacheIds]) {
@@ -265,12 +274,15 @@ class ServerSingleton {
 			id += m[this.cacheIds] + ','
 		}
 		if (!this.cache[id]) {
+			let json = JSON.stringify(messages)
+			this.bytesSent += json.length
+			socket.bytesSent += json.length
 			this.cache[id] = this.WebSocket.Sender.frame(
-				Buffer.from(JSON.stringify(messages)),
+				Buffer.from(json),
 				this.WebSocketFrame,
 			)
 		} else {
-			this.messagesCached++
+			this.messagesSentCached++
 		}
 		return this.cache[id]
 	}
@@ -368,9 +380,12 @@ class ServerSingleton {
 			served: this.served,
 			bytesSent: this.bytesSent,
 			bytesReceived: this.bytesReceived,
-			messagesSent: this.messagesSent,
 			messagesReceived: this.messagesReceived,
-			messagesCached: this.messagesCached,
+			messagesSent: this.messagesSent,
+			messagesSentCached: this.messagesSentCached,
+			messagesGarbage: this.messagesGarbage,
+			serverErrors: this.serverErrors,
+			socketErrors: this.socketErrors,
 
 			// listeners
 			listeners: this.listeners,

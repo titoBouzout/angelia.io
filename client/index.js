@@ -210,6 +210,10 @@ class ClientWebWorker {
 	}
 }
 
+if (typeof window !== 'undefined') {
+	window.ClientWebWorker = ClientWebWorker
+}
+
 class Client {
 	constructor(options) {
 		if (!options || typeof options === 'string') {

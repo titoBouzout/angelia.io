@@ -1,8 +1,9 @@
 'use strict'
 
-/*#__NOINLINE__*/
+const ClientWebWorker = `
 class ClientWebWorker {
 	constructor() {
+		if (typeof window !== 'undefined') return
 		Object.assign(this, {
 			connid: this.generateId(),
 
@@ -65,7 +66,7 @@ class ClientWebWorker {
 						v === null
 					)
 				})
-				.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+				.map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v))
 				.join('&')
 
 			// append buffered messages
@@ -209,11 +210,7 @@ class ClientWebWorker {
 		}
 		return id
 	}
-}
-
-if (typeof window !== 'undefined') {
-	window.ClientWebWorker = ClientWebWorker
-}
+}`
 
 class Client {
 	constructor(options) {
@@ -232,9 +229,7 @@ class Client {
 
 		const io = new Worker(
 			'data:application/javascript,' +
-				encodeURIComponent(
-					"'use strict';new (" + ClientWebWorker.toString() + ')',
-				),
+				encodeURIComponent("'use strict';new (" + ClientWebWorker + ')'),
 		)
 
 		Object.assign(this, {
@@ -400,13 +395,11 @@ class Client {
 			exports = module.exports = Client
 		}
 		exports.Client = Client
-		exports.ClientWebWorker = ClientWebWorker
 	} else if (typeof define === 'function' && define.amd) {
 		define([], function() {
 			return Client
 		})
 	} else {
 		root.Client = Client
-		root.ClientWebWorker = ClientWebWorker
 	}
 })(this)

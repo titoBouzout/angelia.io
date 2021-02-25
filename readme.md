@@ -55,7 +55,6 @@ import Client from 'angelia.io/client';
 
 const socket = new Client({
 	url: 'ws://localhost:3001',
-	debug: true,
 });
 
 socket.on('chatMessage', (message) => {
@@ -349,7 +348,6 @@ Configurable options used by the constructor
 ```javascript
 const socket = new Client({
 	url: 'ws://localhost:3001',
-	debug: true,
 	params: function (){ return { fast: 'data', test: 'a space' })
 })
 ```
@@ -358,7 +356,6 @@ const socket = new Client({
 | --------------- | -------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `url`           | string   | 'ws(s)://\${window.location.hostname}:3001' | url of the socket server, example 'ws://localhost:3001'                                                                                                                   |
 | `params`        | Function | {}                                          | to send data while connecting, accesible via `socket.params` server side                                                                                                  |
-| `debug`         | boolean  | false                                       | to console.log some messages                                                                                                                                              |
 | `longLiveFlash` | boolean  | false                                       | browsers throw when calling swf functions via ExternalInterface after events like WebSocket.onmesssage; setting this to `true` fix it by dispatching them in a setTimeout |
 
 You may also do like this if you don't need any option
@@ -373,8 +370,8 @@ The client API is similar to regular event handling
 
 | signature                      | kind     | description                                                        |
 | ------------------------------ | -------- | ------------------------------------------------------------------ |
-| `connect()`                    | Function | connects to the server, it auto-connects on disconnection          |
 | `connected`                    | Boolean  | `true` when the socket is connected else `false`                   |
+| `connect()`                    | Function | connects to the server, it auto-connects on disconnection          |
 | `disconnect([noReconnect])`    | Function | disconnects from the server, pass `true` to prevent re-connections |
 | `on(key, callback)`            | Function | listens for an event, returns an `off` function to stop listening  |
 | `off(key, callback)`           | Function | turns off listening for an event                                   |

@@ -1,5 +1,6 @@
 'use strict'
 
+/*@__INLINE__*/
 class ClientWebWorker {
 	constructor() {
 		self.onmessage = function(e) {

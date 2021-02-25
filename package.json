@@ -1,6 +1,6 @@
 {
 	"name": "angelia.io",
-	"version": "1.43.0",
+	"version": "1.44.0",
 	"description": "WebSockets Server and Client API for node.js and the browser, with rooms support.",
 	"homepage": "https://github.com/titoBouzout/angelia.io",
 	"repository": {

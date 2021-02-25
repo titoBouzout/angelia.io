@@ -1,25 +1,8 @@
 'use strict'
 
-/*@__INLINE__*/
+/*#__NOINLINE__*/
 class ClientWebWorker {
 	constructor() {
-		self.onmessage = function(e) {
-			switch (e.data[0]) {
-				case 'connect': {
-					this.connect(e.data[1])
-					break
-				}
-				case 'disconnect': {
-					this.disconnect(e.data[1])
-					break
-				}
-				case 'emit': {
-					this.emit(e.data[1])
-					break
-				}
-			}
-		}.bind(this)
-
 		Object.assign(this, {
 			connid: this.generateId(),
 
@@ -37,6 +20,23 @@ class ClientWebWorker {
 
 			postMessage: self.postMessage.bind(self),
 		})
+
+		self.onmessage = function(e) {
+			switch (e.data[0]) {
+				case 'connect': {
+					this.connect(e.data[1])
+					break
+				}
+				case 'disconnect': {
+					this.disconnect(e.data[1])
+					break
+				}
+				case 'emit': {
+					this.emit(e.data[1])
+					break
+				}
+			}
+		}.bind(this)
 	}
 
 	connect(options) {

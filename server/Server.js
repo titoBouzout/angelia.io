@@ -398,7 +398,7 @@ class ServerSingleton {
 			broadcast: this.broadcast,
 			broadcastOnce: this.broadcastOnce,
 			// data
-			sockets: this.sockets,
+			// sockets: this.sockets,
 			// rooms
 			track: this.track,
 			rooms: this.rooms,

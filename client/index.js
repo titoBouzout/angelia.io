@@ -395,11 +395,13 @@ class Client {
 			exports = module.exports = Client
 		}
 		exports.Client = Client
+		exports.ClientWebWorker = ClientWebWorker
 	} else if (typeof define === 'function' && define.amd) {
 		define([], function() {
 			return Client
 		})
 	} else {
 		root.Client = Client
+		root.ClientWebWorker = ClientWebWorker
 	}
 })(this)

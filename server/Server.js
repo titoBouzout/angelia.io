@@ -239,7 +239,8 @@ class ServerSingleton {
 			socket.onmessage(angeliaParams)
 		}
 
-		this.pingSocket(socket)
+		// ping on connect is usually high
+		setTimeout(() => this.pingSocket(socket), 500)
 	}
 	onerror(err) {
 		this.serverErrors++

@@ -240,7 +240,7 @@ class ServerSingleton {
 		}
 
 		// ping on connect is usually high
-		setTimeout(() => this.pingSocket(socket), 500)
+		setTimeout(this.pingSocket.bind(this, socket), 100)
 	}
 	onerror(err) {
 		this.serverErrors++

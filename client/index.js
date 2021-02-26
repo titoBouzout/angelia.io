@@ -128,24 +128,24 @@ class ClientWebWorker {
 		switch (event.code) {
 			// normal close
 			case 1000:
-				console.log('ws - normal close', event.code, event.reason)
+				/*console.log('ws - normal close', event.code, event.reason)*/
 				break
 			// closed by client
 			case 1005:
-				console.log(
+				/*console.log(
 					'ws - we called socket.disconnect()',
 					event.code,
 					event.reason,
-				)
+				)*/
 				break
 			// closed by server or
 			// connection never opened and failed to connect
 			case 1006: {
-				console.log(
+				/*console.log(
 					'ws - server killed the connection, or we failed to connect to server',
 					event.code,
 					event.reason,
-				)
+				)*/
 				break
 			}
 			default: {
@@ -230,8 +230,12 @@ class Client {
 		}
 
 		const io = new Worker(
-			'data:application/javascript,' +
-				encodeURIComponent("'use strict';new (" + ClientWebWorker + ')'),
+			URL.createObjectURL(
+				new Blob(["'use strict';new (" + ClientWebWorker + ')']),
+				{
+					type: 'application/javascript; charset=utf-8',
+				},
+			),
 		)
 
 		Object.assign(this, {

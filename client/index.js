@@ -3,7 +3,7 @@
 const ClientWebWorker = `
 class ClientWebWorker {
 	constructor() {
-		if (typeof window !== 'undefined') return
+
 		Object.assign(this, {
 			connid: this.generateId(),
 
@@ -41,7 +41,7 @@ class ClientWebWorker {
 	}
 
 	connect(options) {
-		if (
+ 		if (
 			this.reconnect &&
 			(!this.io || this.io.readyState === WebSocket.CLOSED)
 		) {
@@ -68,6 +68,8 @@ class ClientWebWorker {
 				})
 				.map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v))
 				.join('&')
+
+			url = url.toString()
 
 			// append buffered messages
 			let oURL = url

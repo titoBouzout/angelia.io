@@ -239,7 +239,7 @@ class ServerSingleton {
 			socket.onmessage(angeliaParams)
 		}
 
-		this.pingSocket.bind(this, socket)
+		this.pingSocket(socket)
 	}
 	onerror(err) {
 		this.serverErrors++

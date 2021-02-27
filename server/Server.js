@@ -112,14 +112,21 @@ class ServerSingleton {
 
 		// fires the server
 		let server
+		function handle(req, res) {
+			res.writeHead(200, { 'Content-Type': 'text/plain' })
+			res.end()
+		}
 		if (this.cert && this.key) {
 			let fs = require('fs')
-			server = require('https').createServer({
-				cert: fs.readFileSync(this.cert), // fullchain.pem
-				key: fs.readFileSync(this.key), // privkey.pem
-			})
+			server = require('https').createServer(
+				{
+					cert: fs.readFileSync(this.cert), // fullchain.pem
+					key: fs.readFileSync(this.key), // privkey.pem
+				},
+				handle,
+			)
 		} else {
-			server = require('http').createServer()
+			server = require('http').createServer(handle)
 		}
 
 		let io = new this.WebSocket.Server({
@@ -251,7 +258,7 @@ class ServerSingleton {
 
 	nextQueue(socket) {
 		if (!this.queue.length) {
-			process.nextTick(this.processQueue)
+			setImmediate(this.processQueue)
 		}
 		this.queue.push(socket)
 	}

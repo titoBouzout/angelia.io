@@ -1,218 +1,218 @@
 'use strict'
 
 const ClientWebWorker = `
-class ClientWebWorker {
-	constructor() {
+	class ClientWebWorker {
+		constructor() {
+			Object.assign(this, {
+				connid: this.generateId(),
 
-		Object.assign(this, {
-			connid: this.generateId(),
+				connected: true,
+				reconnect: true,
+				isReconnect: false,
 
-			connected: true,
-			reconnect: true,
-			isReconnect: false,
+				messages: [],
+				buffered: [],
 
-			messages: [],
-			buffered: [],
+				onopen: this.onopen.bind(this),
+				onclose: this.onclose.bind(this),
+				onerror: this.onerror.bind(this),
+				onmessage: this.onmessage.bind(this),
 
-			onopen: this.onopen.bind(this),
-			onclose: this.onclose.bind(this),
-			onerror: this.onerror.bind(this),
-			onmessage: this.onmessage.bind(this),
-
-			postMessage: self.postMessage.bind(self),
-		})
-
-		self.onmessage = function(e) {
-			switch (e.data[0]) {
-				case 'connect': {
-					this.connect(e.data[1])
-					break
-				}
-				case 'disconnect': {
-					this.disconnect(e.data[1])
-					break
-				}
-				case 'emit': {
-					this.emit(e.data[1])
-					break
-				}
-			}
-		}.bind(this)
-	}
-
-	connect(options) {
- 		if (
-			this.reconnect &&
-			(!this.io || this.io.readyState === WebSocket.CLOSED)
-		) {
-			let url = new URL(options.url)
-
-			// parms creation
-			let params = options.params
-			if (!params.connid) {
-				params.connid = this.connid
-			}
-			for (let [k, v] of url.searchParams.entries()) {
-				if (!params.hasOwnProperty(k)) {
-					params[k] = v
-				}
-			}
-			url.search = Object.entries(params)
-				.filter(([k, v]) => {
-					return !(
-						k === undefined ||
-						k === null ||
-						v === undefined ||
-						v === null
-					)
-				})
-				.map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v))
-				.join('&')
-
-			url = url.toString()
-
-			// append buffered messages
-			let oURL = url
-			if (this.messages.length && !this.isReconnect) {
-				url =
-					(url.indexOf('?') === -1 ? url + '?' : url + '&') +
-					'angelia.io=' +
-					encodeURIComponent(JSON.stringify(this.messages))
-				if (url.length < 2048) {
-					this.messages = []
-				} else {
-					url = oURL
-				}
-			} else if (this.messages.length && this.isReconnect) {
-				for (let m of this.messages) {
-					this.buffered.push(m)
-				}
-				this.messages = []
-			}
-			this.io = new WebSocket(url)
-			Object.assign(this.io, {
-				onopen: this.onopen,
-				onclose: this.onclose,
-				onerror: this.onerror,
-				onmessage: this.onmessage,
+				postMessage: self.postMessage.bind(self),
 			})
-		}
-	}
 
-	disconnect(noReconnect) {
-		if (noReconnect) this.reconnect = false
-
-		if (
-			this.io &&
-			this.io.readyState !== WebSocket.CLOSING &&
-			this.io.readyState !== WebSocket.CLOSED
-		) {
-			this.io.close()
-		}
-	}
-
-	onopen() {
-		this.connected = true
-		this.postMessage(['connected', true])
-
-		if (this.isReconnect) {
-			this.postMessage(['dispatch', 'reconnect'])
-		} else {
-			this.isReconnect = true
-			this.postMessage(['dispatch', 'connect'])
+			self.onmessage = function(e) {
+				switch (e.data[0]) {
+					case 'connect': {
+						this.connect(e.data[1])
+						break
+					}
+					case 'disconnect': {
+						this.disconnect(e.data[1])
+						break
+					}
+					case 'emit': {
+						this.emit(e.data[1])
+						break
+					}
+				}
+			}.bind(this)
 		}
 
-		this.sendMessages()
-	}
-	onclose(event) {
-		switch (event.code) {
-			// normal close
-			case 1000:
-				/*console.log('ws - normal close', event.code, event.reason)*/
-				break
-			// closed by client
-			case 1005:
-				/*console.log(
+		connect(options) {
+			if (
+				this.reconnect &&
+				(!this.io || this.io.readyState === WebSocket.CLOSED)
+			) {
+				let url = new URL(options.url)
+
+				// parms creation
+				let params = options.params
+				if (!params.connid) {
+					params.connid = this.connid
+				}
+				for (let [k, v] of url.searchParams.entries()) {
+					if (!params.hasOwnProperty(k)) {
+						params[k] = v
+					}
+				}
+				url.search = Object.entries(params)
+					.filter(([k, v]) => {
+						return !(
+							k === undefined ||
+							k === null ||
+							v === undefined ||
+							v === null
+						)
+					})
+					.map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v))
+					.join('&')
+
+				url = url.toString()
+
+				// append buffered messages
+				let oURL = url
+				if (this.messages.length && !this.isReconnect) {
+					url =
+						(url.indexOf('?') === -1 ? url + '?' : url + '&') +
+						'angelia.io=' +
+						encodeURIComponent(JSON.stringify(this.messages))
+					if (url.length < 2048) {
+						this.messages = []
+					} else {
+						url = oURL
+					}
+				} else if (this.messages.length && this.isReconnect) {
+					for (let m of this.messages) {
+						this.buffered.push(m)
+					}
+					this.messages = []
+				}
+				this.io = new WebSocket(url)
+				Object.assign(this.io, {
+					onopen: this.onopen,
+					onclose: this.onclose,
+					onerror: this.onerror,
+					onmessage: this.onmessage,
+				})
+			}
+		}
+
+		disconnect(noReconnect) {
+			if (noReconnect) this.reconnect = false
+
+			if (
+				this.io &&
+				this.io.readyState !== WebSocket.CLOSING &&
+				this.io.readyState !== WebSocket.CLOSED
+			) {
+				this.io.close()
+			}
+		}
+
+		onopen() {
+			this.connected = true
+			this.postMessage(['connected', true])
+
+			if (this.isReconnect) {
+				this.postMessage(['dispatch', 'reconnect'])
+			} else {
+				this.isReconnect = true
+				this.postMessage(['dispatch', 'connect'])
+			}
+
+			this.sendMessages()
+		}
+		onclose(event) {
+			switch (event.code) {
+				// normal close
+				case 1000:
+					/*console.log('ws - normal close', event.code, event.reason)*/
+					break
+				// closed by client
+				case 1005:
+					/*console.log(
 					'ws - we called socket.disconnect()',
 					event.code,
 					event.reason,
 				)*/
-				break
-			// closed by server or
-			// connection never opened and failed to connect
-			case 1006: {
-				/*console.log(
+					break
+				// closed by server or
+				// connection never opened and failed to connect
+				case 1006: {
+					/*console.log(
 					'ws - server killed the connection, or we failed to connect to server',
 					event.code,
 					event.reason,
 				)*/
-				break
+					break
+				}
+				default: {
+					console.log('ws - unknown close', event.code, event.reason)
+					break
+				}
 			}
-			default: {
-				console.log('ws - unknown close', event.code, event.reason)
-				break
-			}
-		}
 
-		if (this.connected) {
-			this.connected = false
-			this.postMessage(['connected', false])
-			this.postMessage(['dispatch', 'disconnect'])
-		}
-
-		if (this.reconnect) this.postMessage(['connect'])
-	}
-	// this happens when trying to connect while the server or
-	// the internet connection is down
-	onerror() {
-		if (this.connected) {
-			this.connected = false
-			this.postMessage(['connected', false])
-			this.postMessage(['dispatch', 'disconnect'])
-		}
-
-		if (this.reconnect) this.postMessage(['connect'])
-	}
-	onmessage(e) {
-		if (e.data === '') {
-			this.pong()
-		} else {
-			this.postMessage(['messages', JSON.parse(e.data)])
-		}
-	}
-	emit(messages) {
-		for (let m of messages) {
-			this.messages.push(m)
-		}
-		this.sendMessages()
-	}
-	sendMessages() {
-		if (this.io && this.io.readyState === WebSocket.OPEN) {
-			if (this.messages.length) {
-				this.io.send(JSON.stringify(this.messages))
-				this.messages = []
+			if (this.connected) {
+				this.connected = false
+				this.postMessage(['connected', false])
+				this.postMessage(['dispatch', 'disconnect'])
 			}
-			if (this.buffered.length) {
-				this.io.send(JSON.stringify(this.buffered))
-				this.buffered = []
+
+			if (this.reconnect) this.postMessage(['connect'])
+		}
+		// this happens when trying to connect while the server or
+		// the internet connection is down
+		onerror() {
+			if (this.connected) {
+				this.connected = false
+				this.postMessage(['connected', false])
+				this.postMessage(['dispatch', 'disconnect'])
+			}
+
+			if (this.reconnect) this.postMessage(['connect'])
+		}
+		onmessage(e) {
+			if (e.data === '') {
+				this.pong()
+			} else {
+				this.postMessage(['messages', JSON.parse(e.data)])
 			}
 		}
-	}
-	pong() {
-		if (this.io && this.io.readyState === WebSocket.OPEN) {
-			this.io.send('')
+		emit(messages) {
+			for (let m of messages) {
+				this.messages.push(m)
+			}
+			this.sendMessages()
+		}
+		sendMessages() {
+			if (this.io && this.io.readyState === WebSocket.OPEN) {
+				if (this.messages.length) {
+					this.io.send(JSON.stringify(this.messages))
+					this.messages = []
+				}
+				if (this.buffered.length) {
+					this.io.send(JSON.stringify(this.buffered))
+					this.buffered = []
+				}
+			}
+		}
+		pong() {
+			if (this.io && this.io.readyState === WebSocket.OPEN) {
+				this.io.send('')
+			}
+		}
+		generateId() {
+			var id = ''
+			while (!id) {
+				id = Math.random()
+					.toString(36)
+					.substr(2, 10)
+			}
+			return id
 		}
 	}
-	generateId() {
-		var id = ''
-		while (!id) {
-			id = Math.random()
-				.toString(36)
-				.substr(2, 10)
-		}
-		return id
-	}
-}`
+`
 
 class Client {
 	constructor(options) {
@@ -255,6 +255,7 @@ class Client {
 			disconnect: this.disconnect.bind(this),
 
 			sendMessages: this.sendMessages.bind(this),
+			null: Object.create(null),
 		})
 
 		io.onmessage = this.onworkermessage
@@ -326,7 +327,7 @@ class Client {
 		if (c) {
 			this.messages.push([k, v, this.callback(c)])
 		} else if (typeof v === 'function') {
-			this.messages.push([k, {}, this.callback(v)])
+			this.messages.push([k, this.null, this.callback(v)])
 		} else if (v !== null && v !== undefined) {
 			this.messages.push([k, v])
 		} else {
@@ -351,7 +352,14 @@ class Client {
 				for (let e of d) {
 					if (this.listeners[e[0]]) {
 						for (let fn of this.listeners[e[0]]) {
-							fn(e[1])
+							fn(
+								e[1],
+								e[2]
+									? (...d) => {
+											this.emit('', [e[2], d])
+									  }
+									: null,
+							)
 						}
 					}
 				}
@@ -360,7 +368,14 @@ class Client {
 			for (let e of d) {
 				if (this.listeners[e[0]]) {
 					for (let fn of this.listeners[e[0]]) {
-						fn(e[1])
+						fn(
+							e[1],
+							e[2]
+								? (...d) => {
+										this.emit('', [e[2], d])
+								  }
+								: null,
+						)
 					}
 				}
 			}

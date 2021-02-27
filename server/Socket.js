@@ -14,6 +14,7 @@ class Socket {
 			params: {},
 
 			messages: [],
+			callbacks: [() => {}],
 
 			bytesSent: 0,
 			bytesReceived: 0,
@@ -29,13 +30,15 @@ class Socket {
 			onclose: this.onclose.bind(this),
 			onerror: this.onerror.bind(this),
 			onmessage: this.onmessage.bind(this),
-			oncallback: this.oncallback.bind(this),
+			doreply: this.doreply.bind(this),
 
 			inspect: this.inspect.bind(this),
 
 			io: socket,
 			proxy: server.observe(this),
 			rooms: new Set(),
+
+			null: Object.create(null),
 		})
 		this.toJSON = this.inspect
 
@@ -44,13 +47,26 @@ class Socket {
 			toJSON: this.inspect,
 		})
 	}
-
-	emit(k, v) {
+	callback(c) {
+		let i = this.callbacks.length
+		this.callbacks[i] = c
+		return i
+	}
+	oncallback(d) {
+		this.callbacks[d[0]](...d[1])
+		this.callbacks[d[0]] = null
+	}
+	emit(k, v, cb) {
 		if (!this.messages.length) {
 			this.server.nextQueue(this)
 		}
-
-		this.messages.push(typeof k !== 'string' ? k : [k, v])
+		if (typeof v === 'function') {
+			this.messages.push([k, this.null, this.callback(v)])
+		} else if (cb) {
+			this.messages.push([k, v, this.callback(cb)])
+		} else {
+			this.messages.push(typeof k !== 'string' ? k : [k, v])
+		}
 	}
 	once(k, v) {
 		if (!this.messages.length) {
@@ -101,7 +117,7 @@ class Socket {
 		this.server.socketErrors++
 		console.error('Socket.onerror', err, this.inspect())
 	}
-	oncallback(k, ...v) {
+	doreply(k, ...v) {
 		this.emit('', [k, v])
 	}
 	onmessage(e) {
@@ -121,11 +137,13 @@ class Socket {
 				this.server.events.incoming &&
 					this.server.events.incoming(this.proxy, messages)
 				for (let m of messages) {
-					if (this.server.events[m[0]]) {
+					if (m[0] === '') {
+						this.oncallback(m[1])
+					} else if (this.server.events[m[0]]) {
 						this.server.events[m[0]](
 							this.proxy,
 							m[1],
-							m[2] && this.oncallback.bind(null, m[2]),
+							m[2] && this.doreply.bind(null, m[2]),
 						)
 					} else {
 						this.server.messagesGarbage++

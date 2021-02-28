@@ -35,7 +35,7 @@ class Socket {
 			inspect: this.inspect.bind(this),
 
 			io: socket,
-			proxy: server.observe(this),
+			proxy: server.tracking ? server.observe(this) : this,
 			rooms: new Set(),
 
 			null: Object.create(null),

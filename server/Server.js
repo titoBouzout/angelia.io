@@ -46,7 +46,7 @@ class ServerSingleton {
 
 			sockets: new Set(),
 
-			track: Manager.track,
+			_track: Manager.track,
 			rooms: Manager.rooms,
 			Room: require('./rooms/Room.js'),
 			observe: Manager.observe,
@@ -209,6 +209,13 @@ class ServerSingleton {
 		}
 	}
 
+	track(path) {
+		this.tracking = true
+		for (let socket of this.sockets) {
+			socket.proxy = this.observe(socket)
+		}
+		return this._track(path)
+	}
 	// PRIVATE API
 
 	onconnect(socket, request) {

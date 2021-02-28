@@ -52,9 +52,13 @@ class Socket {
 		this.callbacks[i] = c
 		return i
 	}
-	oncallback(d) {
-		this.callbacks[d[0]](...d[1])
-		this.callbacks[d[0]] = null
+	oncallback(d, m) {
+		if (!this.callbacks[d[0]]) {
+			console.log(m, this)
+		} else {
+			this.callbacks[d[0]](...d[1])
+			this.callbacks[d[0]] = null
+		}
 	}
 	emit(k, v, cb) {
 		if (!this.messages.length) {
@@ -138,7 +142,7 @@ class Socket {
 					this.server.events.incoming(this.proxy, messages)
 				for (let m of messages) {
 					if (m[0] === '') {
-						this.oncallback(m[1])
+						this.oncallback(m[1], m)
 					} else if (this.server.events[m[0]]) {
 						this.server.events[m[0]](
 							this.proxy,

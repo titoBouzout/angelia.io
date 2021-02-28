@@ -28,7 +28,7 @@ class ServerSingleton {
 			bytesReceived: 0,
 			messagesReceived: 0,
 			messagesSent: 0,
-			messagesSentCached: 0,
+			messagesSentCacheHit: 0,
 			messagesGarbage: 0,
 			serverErrors: 0,
 			socketErrors: 0,
@@ -106,8 +106,8 @@ class ServerSingleton {
 
 		this.ensureFastProperties()
 
-		// ping
-		setInterval(this.ping, this.timeout / 2)
+		// ping, updates ping and checks for disconnections
+		setInterval(this.ping, (this.timeout / 2) | 0)
 		setInterval(this.updateNow, 500)
 
 		// fires the server
@@ -297,7 +297,7 @@ class ServerSingleton {
 				this.WebSocketFrame,
 			)
 		} else {
-			this.messagesSentCached++
+			this.messagesSentCacheHit++
 		}
 		return this.cache[id]
 	}
@@ -397,7 +397,7 @@ class ServerSingleton {
 			bytesReceived: this.bytesReceived,
 			messagesReceived: this.messagesReceived,
 			messagesSent: this.messagesSent,
-			messagesSentCached: this.messagesSentCached,
+			messagesSentCacheHit: this.messagesSentCacheHit,
 			messagesGarbage: this.messagesGarbage,
 			serverErrors: this.serverErrors,
 			socketErrors: this.socketErrors,

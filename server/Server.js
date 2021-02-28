@@ -265,7 +265,7 @@ class ServerSingleton {
 
 	nextQueue(socket) {
 		if (!this.queue.length) {
-			setImmediate(this.processQueue)
+			process.nextTick(this.processQueue)
 		}
 		this.queue.push(socket)
 	}

@@ -236,7 +236,7 @@ class ServerSingleton {
 				) ||
 				request.connection.remoteAddress ||
 				(request.headers['x-forwarded-for'] || '').split(/\s*,\s*/)[0]
-			).replace(/'^::ffff:'/, ''),
+			).replace(/^::ffff:/, ''),
 			userAgent: request.headers['user-agent'] || '',
 			params: params,
 		})

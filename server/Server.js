@@ -107,7 +107,7 @@ class ServerSingleton {
 		this.ensureFastProperties()
 
 		// ping, updates ping and checks for disconnections
-		setInterval(this.ping, (this.timeout / 2) | 0)
+		setInterval(this.ping, 30 * 1000) // twice a minute more than enough
 		setInterval(this.updateNow, 500)
 
 		// fires the server
@@ -254,7 +254,7 @@ class ServerSingleton {
 		}
 
 		// ping on connect is usually high
-		setTimeout(this.pingSocket.bind(this, socket), 100)
+		setTimeout(this.pingSocket.bind(this, socket), 200)
 	}
 	onerror(err) {
 		this.serverErrors++

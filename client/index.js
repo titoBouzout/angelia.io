@@ -84,7 +84,8 @@ const ClientWebWorker = `
 					}
 				} else if (this.messages.length && this.isReconnect) {
 					for (let m of this.messages) {
-						this.buffered.push(m)
+						// dont buffer callbacks, they are gone for new connections
+						if(m[0] !== '') this.buffered.push(m)
 					}
 					this.messages = []
 				}
@@ -410,14 +411,14 @@ class Client {
 	}
 }
 
-;(function(root) {
+;(function (root) {
 	if (typeof exports !== 'undefined') {
 		if (typeof module !== 'undefined' && module.exports) {
 			exports = module.exports = Client
 		}
 		exports.Client = Client
 	} else if (typeof define === 'function' && define.amd) {
-		define([], function() {
+		define([], function () {
 			return Client
 		})
 	} else {

@@ -133,7 +133,13 @@ class Socket {
 			this.server.bytesReceived += e.length
 			this.bytesReceived += e.length
 
-			let messages = JSON.parse(e)
+			try {
+				let messages = JSON.parse(e)
+			} catch (m) {
+				console.log(e, m)
+				return
+			}
+
 			if (Array.isArray(messages)) {
 				this.server.messagesReceived += messages.length
 				this.messagesReceived += messages.length

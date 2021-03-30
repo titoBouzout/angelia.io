@@ -106,8 +106,8 @@ class ServerSingleton {
 
 		this.ensureFastProperties()
 
-		// ping, updates ping and checks for disconnections
-		setInterval(this.ping, 30 * 1000) // twice a minute more than enough
+		// updates ping and checks for disconnections
+		setInterval(this.ping, 30 * 1000)
 		setInterval(this.updateNow, 500)
 
 		// fires the server
@@ -160,14 +160,13 @@ class ServerSingleton {
 
 		return this
 	}
-	// count of connections
 
+	// count of connections
 	get connections() {
 		return this.sockets.size
 	}
 
 	// listen for an event
-
 	on(k, cb) {
 		let instance = this.listeners.on(k, cb)
 		Object.defineProperties(instance, {
@@ -183,7 +182,6 @@ class ServerSingleton {
 	}
 
 	// emits to everyone connected to the server
-
 	emit(k, v) {
 		let d = [k, v]
 		for (let socket of this.sockets) {
@@ -216,8 +214,8 @@ class ServerSingleton {
 		}
 		return this._track(path)
 	}
-	// PRIVATE API
 
+	// PRIVATE API
 	onconnect(socket, request) {
 		this.updateNow()
 
@@ -262,21 +260,18 @@ class ServerSingleton {
 	}
 
 	// queue
-
 	nextQueue(socket) {
 		if (!this.queue.length) {
 			process.nextTick(this.processQueue)
 		}
 		this.queue.push(socket)
 	}
-
 	processQueue() {
 		let queue = this.queue
 		this.queue = []
 		for (let socket of queue) {
 			socket.processQueue()
 		}
-		// clear cache
 		this.cache = Object.create(null)
 	}
 
@@ -325,7 +320,6 @@ class ServerSingleton {
 		this.updateNow()
 		socket.contacted = this.now
 		if (socket.io.readyState === 1) {
-			// socket.io.send('')
 			for (let m of this.pingData) socket.io._socket.write(m)
 		}
 	}
@@ -391,7 +385,6 @@ class ServerSingleton {
 
 			// stats
 			connections: this.connections,
-
 			served: this.served,
 			bytesSent: this.bytesSent,
 			bytesReceived: this.bytesReceived,
@@ -412,8 +405,10 @@ class ServerSingleton {
 			once: this.once,
 			broadcast: this.broadcast,
 			broadcastOnce: this.broadcastOnce,
+
 			// data
 			// sockets: this.sockets,
+
 			// rooms
 			track: this.track,
 			rooms: this.rooms,

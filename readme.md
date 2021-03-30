@@ -269,11 +269,11 @@ Server.on(function connect(socket, request) {
 
 // listen via the properties of an object to all the functions of it
 Server.on({
-	connect: function(socket, request) {
+	connect: function (socket, request) {
 		console.log('connect in Object')
 		this.works()
 	},
-	works: function() {
+	works: function () {
 		console.log('this works yep')
 	},
 })
@@ -376,6 +376,7 @@ The client API is similar to regular event handling
 | `on(key, callback)`            | Function | listens for an event, returns an `off` function to stop listening  |
 | `off(key, callback)`           | Function | turns off listening for an event                                   |
 | `emit(key, [value, callback])` | Function | emits data to the server                                           |
+| `decode(data)`                 | Function | for decoding binary data, returns a promise                        |
 
 #### List of Predefined Events
 

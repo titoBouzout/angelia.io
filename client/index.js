@@ -2,14 +2,14 @@
 
 const ClientWebWorker = `class ClientWebWorker {
 	constructor() {
-		Blob.prototype.toJSON = function () {
+		Blob.prototype.toJSON = function(){
 			return {
-				b: new FileReaderSync().readAsDataURL(this),
+				b: new FileReaderSync().readAsDataURL(this)
 			}
 		}
-		ArrayBuffer.prototype.toJSON = function () {
+		ArrayBuffer.prototype.toJSON = function(){
 			return {
-				a: new FileReaderSync().readAsDataURL(this),
+				a: new FileReaderSync().readAsDataURL(this)
 			}
 		}
 
@@ -419,10 +419,10 @@ class Client {
 			}
 		}
 	}
-	decode(s) {
+	decode(s){
 		if (s.b) {
 			return fetch(s.b).then(r => r.blob())
-		} else if (s.a) {
+		} else if(s.a) {
 			return fetch(s.a).then(r => r.arrayBuffer())
 		}
 	}

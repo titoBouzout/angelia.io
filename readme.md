@@ -85,13 +85,14 @@ const server = new Server.listen({
 })
 ```
 
-| name             | kind   | default | description                                         |
-| ---------------- | ------ | ------- | --------------------------------------------------- |
-| `hostname`       | String | ''      | the hostname if any                                 |
-| `port`           | Number | 3001    | the port to use for this server                     |
-| `maxMessageSize` | Number | 5       | max size in mb of a message received                |
-| `cert`           | String | ''      | path to the cert file for using https fullchain.pem |
-| `key`            | String | ''      | path to the key file for using https privkey.pem    |
+| name                 | kind    | default | description                                         |
+| -------------------- | ------- | ------- | --------------------------------------------------- |
+| `hostname`           | String  | ''      | the hostname if any                                 |
+| `port`               | Number  | 3001    | the port to use for this server                     |
+| `maxMessageSize`     | Number  | 5       | max size in mb of a message received                |
+| `skipUTF8Validation` | Boolean | false   | allows to skip utf8 validation                      |
+| `cert`               | String  | ''      | path to the cert file for using https fullchain.pem |
+| `key`                | String  | ''      | path to the key file for using https privkey.pem    |
 
 ### Server Object
 

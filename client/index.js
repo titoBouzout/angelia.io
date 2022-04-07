@@ -240,20 +240,18 @@ class Client {
 		}
 
 		const io = new Worker(
-			URL.createObjectURL(
-				new Blob(["'use strict';new (" + ClientWebWorker + ')']),
-				{
-					type: 'application/javascript; charset=utf-8',
-				},
-			),
+			URL.createObjectURL(new Blob(["'use strict';new (" + ClientWebWorker + ')']), {
+				type: 'application/javascript; charset=utf-8',
+			}),
 		)
+		let shouldConnect = options.dontConnect !== undefined ? !options.dontConnect : true
 
 		Object.assign(this, {
 			url: options.url,
 			params: options.params,
 			longLiveFlash: options.longLiveFlash,
-
-			connected: true,
+			shouldConnect: shouldConnect,
+			connected: shouldConnect,
 			messages: [],
 			listeners: {
 				'': [this.oncallback.bind(this)],
@@ -277,7 +275,7 @@ class Client {
 		window.addEventListener('unload', () => this.disconnect(true), true)
 
 		// to send messages fast without waiting for the connection
-		Promise.resolve().then(() => this.connect())
+		shouldConnect && Promise.resolve().then(() => this.connect())
 	}
 
 	// public API
@@ -317,28 +315,16 @@ class Client {
 			this.listeners[k].push(v)
 			return () => this.off(k, v)
 		} else {
-			console.error(
-				'ws - socket.on("' +
-					k +
-					'", callback) key and callback cannot be empty',
-			)
+			console.error('ws - socket.on("' + k + '", callback) key and callback cannot be empty')
 		}
 	}
 	off(k, v) {
 		if (!this.listeners[k]) {
-			console.error(
-				'ws - socket.off("' + k + '", callback)',
-				k,
-				'key not found',
-			)
+			console.error('ws - socket.off("' + k + '", callback)', k, 'key not found')
 		} else {
 			let i = this.listeners[k].indexOf(v)
 			if (i === -1) {
-				console.error(
-					'ws - socket.off("' + k + '", callback)',
-					v,
-					'callback not found',
-				)
+				console.error('ws - socket.off("' + k + '", callback)', v, 'callback not found')
 			} else {
 				this.listeners[k].splice(i, 1)
 			}
@@ -410,7 +396,7 @@ class Client {
 				break
 			}
 			case 'connect': {
-				this.connect()
+				if (this.shouldConnect) this.connect()
 				break
 			}
 			case 'connected': {
@@ -419,10 +405,10 @@ class Client {
 			}
 		}
 	}
-	decode(s){
+	decode(s) {
 		if (s.b) {
 			return fetch(s.b).then(r => r.blob())
-		} else if(s.a) {
+		} else if (s.a) {
 			return fetch(s.a).then(r => r.arrayBuffer())
 		}
 	}

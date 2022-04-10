@@ -1,6 +1,6 @@
 {
 	"name": "angelia.io",
-	"version": "2.4.68",
+	"version": "2.4.69",
 	"description": "WebSockets Server and Client API for node.js and the browser, with rooms support.",
 	"homepage": "https://github.com/titoBouzout/angelia.io",
 	"repository": {
@@ -68,11 +68,16 @@
 			"allowImportExportEverywhere": false,
 			"codeFrame": false
 		},
-		"plugins": ["react"],
+		"plugins": [
+			"react"
+		],
 		"rules": {
 			"comma-dangle": "off",
 			"indent": "off",
-			"linebreak-style": ["error", "unix"],
+			"linebreak-style": [
+				"error",
+				"unix"
+			],
 			"no-cond-assign": "off",
 			"no-console": "off",
 			"no-empty": "off",

@@ -141,7 +141,11 @@ class ServerSingleton {
 			process.on(m, () => {
 				if (!io.closing) {
 					io.closing = true
-					console.log('Server Shutting Down\n', this)
+					if (options.debug) {
+						console.log('Server Shutting Down\n', this)
+					} else {
+						console.log('Server Shutting Down\n')
+					}
 					io.close()
 					if (options.debug) {
 						process.exit()
@@ -150,7 +154,7 @@ class ServerSingleton {
 			})
 		}
 
-		console.log('Server Started Listening On Port ' + this.port)
+		console.log('Socket Server Started Listening On Port ', this.port)
 		this.events.listen && this.events.listen()
 
 		return this

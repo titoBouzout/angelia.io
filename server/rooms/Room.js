@@ -9,6 +9,10 @@ class Room {
 	has(socket) {
 		return this.sockets.has(socket)
 	}
+	get size() {
+		return this.sockets.size
+	}
+	// private
 	[join](roomList, socket) {
 		// add to list of room list
 		if (!this[parent]) {

@@ -14,7 +14,9 @@ class Rooms {
 	get(id) {
 		return this.roomsById.get(id)
 	}
-
+	get size() {
+		return this.rooms.size
+	}
 	// private
 	[add](room) {
 		if (!this.rooms.has(room)) {

@@ -1,6 +1,6 @@
 # angelia.io
 
-WebSockets Server and Client API for node.js and the browser, with rooms support.
+WebSockets Server and Client API for node.js and the browser, (with rooms support in development).
 
 The goal of this project is to provide a developer friendly API that just works™.
 
@@ -11,185 +11,6 @@ Install on node.js/browser `npm install angelia.io`
 If you fancy for Client side a regular JavaScript file, then use https://github.com/titoBouzout/angelia.io/blob/master/client/index.js and include it as a regular script tag.
 
 ## Simple Example
-
-### Server (Node.js)
-
-```JavaScript
-// server.js (node.js)
-import Server from 'angelia.io/server';
-
-class Connection {
-	async listen() {
-		console.log('-'.repeat(60));
-		console.log('Server started listening on port ' + this.server.port);
-		console.log(this.server);
-	}
-	async connect(socket, request) {
-		console.log('socket connected', socket)
-	}
-	async disconnect(socket, code, message) {
-		console.log('socket disconnected', code, message, socket);
-	}
-}
-Server.on(Connection);
-
-class FancyChat {
-	async chatMessage(socket, message, callback) {
-		console.log('socket sent', message)
-		socket.emit('chatMessage', 'Hi client nice to meet you')
-		callback('yes, got it')
-	}
-}
-Server.on(FancyChat);
-
-const server = new Server.listen({
-	port: 3001,
-});
-```
-
-### Client (Browser)
-
-```JavaScript
-// index.js (browser)
-import Client from 'angelia.io/client';
-
-const socket = new Client({
-	url: 'ws://localhost:3001',
-});
-
-socket.on('chatMessage', (message) => {
-	console.log('Server sent', message)
-})
-
-socket.emit('chatMessage', 'Hi there server, Im client', (data) =>{
-	console.log('you got it?', data)
-})
-```
-
-## Server (Node.js)
-
-### Options
-
-A call to `Server.listen` starts the server. `Server` is a singleton and can only have running 1 server.
-
-```javascript
-// server.js (node.js)
-import Server from 'angelia.io/server'
-
-const server = new Server.listen({
-	hostname: 'localhost',
-	port: 3001,
-	maxMessageSize: 5,
-	cert: '/path/to/cert/fullchain.pem',
-	key: '/path/to/key/privkey.pem',
-})
-```
-
-| name                 | kind    | default | description                                         |
-| -------------------- | ------- | ------- | --------------------------------------------------- |
-| `hostname`           | String  | ''      | the hostname if any                                 |
-| `port`               | Number  | 3001    | the port to use for this server                     |
-| `maxMessageSize`     | Number  | 5       | max size in mb of a message received                |
-| `skipUTF8Validation` | Boolean | false   | allows to skip utf8 validation                      |
-| `cert`               | String  | ''      | path to the cert file for using https fullchain.pem |
-| `key`                | String  | ''      | path to the key file for using https privkey.pem    |
-
-### Server Object
-
-The `server` object can be accessed from everywhere
-
-```javascript
-// server.js (node.js)
-import Server from 'angelia.io/server'
-
-class _ {
-	connect(socket, request) {
-		console.log(this.server, 'also', socket.server)
-	}
-}
-Server.on(_)
-
-const server = new Server.listen({
-	port: 3001,
-})
-```
-
-#### Server Properties
-
-| signature                             | kind     | description                                                                                    |
-| ------------------------------------- | -------- | ---------------------------------------------------------------------------------------------- |
-| `since`                               | Number   | timestamp of initialization                                                                    |
-| `port`                                | Number   | port used by this server                                                                       |
-| `maxMessageSize`                      | Number   | maximum message size in mb                                                                     |
-| `timeout`                             | Number   | after how long the socket is considered gone, in ms                                            |
-| `connections`                         | Number   | count of sockets connected                                                                     |
-| `served`                              | Number   | count of sockets ever connected                                                                |
-| `bytesSent`                           | Number   | sum of bytes sent by the server                                                                |
-| `bytesReceived`                       | Number   | sum of bytes the server has ever received                                                      |
-| `messagesSent`                        | Number   | count of messages ever sent                                                                    |
-| `messagesReceived`                    | Number   | count of messages ever received                                                                |
-| `events`                              | Object   | ref to events, ex: server.events.typing() to dispatch typing to anyone listening to it         |
-| `listeners`                           | Array    | for debbuging: array of listeners as strings                                                   |
-| `on(Class)`                           | Function | attaches all methods of a `Class` as listeners                                                 |
-| `on(Function)`                        | Function | attaches a named `Function` as a listener                                                      |
-| `on(Object)`                          | Function | attaches all properties of an object that are of the type `Function` as listeners              |
-| `on(key, Function)`                   | Function | attaches a `Function` as a listener for `key`                                                  |
-| `emit(key, [value])`                  | Function | emits to all connected sockets                                                                 |
-| `once(key, [value])`                  | Function | emits to the sockets and replace if exists a pending message with the same `key`               |
-| `broadcast(sender, key, [value])`     | Function | emits to all connected sockets except sender                                                   |
-| `broadcastOnce(sender, key, [value])` | Function | emits to the sockets except sender and replace if exists a pending message with the same `key` |
-| `sockets`                             | Set      | a Set() with all the current connected sockets                                                 |
-
-### Socket Object
-
-The `socket` object is given to you by a listener
-
-```javascript
-// server.js (node.js)
-import Server from 'angelia.io/server'
-
-class _ {
-	connect(socket, request) {
-		console.log(socket, data, callback)
-	}
-}
-Server.on(_)
-
-new Server.listen({
-	port: 3001,
-})
-```
-
-#### Socket Properties
-
-| signature                   | kind     | description                                                                   |
-| --------------------------- | -------- | ----------------------------------------------------------------------------- |
-| `server`                    | Object   | reference to the server                                                       |
-| `ip`                        | String   | ip of the socket                                                              |
-| `userAgent`                 | String   | user agent of the socket                                                      |
-| `params`                    | Object   | the params sent via the client constructor                                    |
-| `since`                     | Number   | timestamp of first seen                                                       |
-| `seen`                      | Number   | timestamp of last received message                                            |
-| `ping`                      | Number   | delay with the socket in milliseconds (full round trip)                       |
-| `timedout`                  | Boolean  | whether we lost connection with this socket                                   |
-| `bytesSent`                 | Number   | sum of bytes sent to this socket                                              |
-| `bytesReceived`             | Number   | sum of bytes received from this socket                                        |
-| `messagesSent`              | Number   | count of messages sent to this socket                                         |
-| `messagesReceived`          | Number   | count of messages received from this socket                                   |
-| `rooms`                     | Set      | a set with the rooms where this socket is in                                  |
-| `emit(key, [value])`        | Function | emits to client                                                               |
-| `once(key, [value])`        | Function | replace if exists a pending message with the same `key` from emit queue       |
-| `disconnect([noReconnect])` | Function | disconnects the socket from the server, pass `true` to prevent re-connections |
-
-### Listeners
-
-To listen for a client message/event you may do the familiar way `Server.on('connect', (socket) => {console.log('socket connected!', socket)})`
-
-However, to ease organization and development you may listen to an event by creating a class with any name, and give to methods the name of the things you want to listen to. You then add your class to the listeners as `Server.on(MyClass);` and you are done.
-
-On user defined listeners, the listener receives three things as sent by the client: `socket`, `data` and a `callback`; Example `class FancyChat { async typing(socket, data, callback) {console.log(socket, data);callback('got it')}}`.
-
-If you are building a chat you may write something like this
 
 ```JavaScript
 // server.js (node.js)
@@ -218,16 +39,14 @@ class Connection {
 }
 Server.on(Connection);
 
-const server = new Server.listen({
+Server.listen({
 	port: 3001,
 });
 
 // index.js (browser)
 import Client from 'angelia.io/client';
 
-const socket = new Client({
-	url: 'ws://localhost:3001',
-});
+const socket = new Client('ws://localhost:3001');
 
 socket.emit('typing', true)
 
@@ -243,9 +62,145 @@ socket.on('gotIt', (message) => {
 })
 ```
 
+## Server Documentation (Node.js)
+
+A call to `Server.listen` starts the server. `Server` is a singleton and can only have running 1 server.
+
+```javascript
+// server.js (node.js)
+import Server from 'angelia.io/server'
+
+Server.listen({
+	hostname: 'localhost',
+	port: 3001,
+	maxMessageSize: 5,
+	cert: '/path/to/cert/fullchain.pem',
+	key: '/path/to/key/privkey.pem',
+})
+```
+
+### `Server` Options
+
+| name                 | kind    | default | description                                         |
+| -------------------- | ------- | ------- | --------------------------------------------------- |
+| `hostname`           | String  | ''      | the hostname if any                                 |
+| `port`               | Number  | 3001    | the port to use for this server                     |
+| `maxMessageSize`     | Number  | 5       | max size in mb of a message received                |
+| `skipUTF8Validation` | Boolean | false   | allows to skip utf8 validation                      |
+| `cert`               | String  | ''      | path to the cert file for using https fullchain.pem |
+| `key`                | String  | ''      | path to the key file for using https privkey.pem    |
+
+### Server Object
+
+The `server` object can be accessed from everywhere
+
+```javascript
+// server.js (node.js)
+import Server from 'angelia.io/server'
+
+class _ {
+	connect(socket, request) {
+		console.log(this.server, 'also', socket.server)
+	}
+}
+Server.on(_)
+
+Server.listen({
+	port: 3001,
+})
+```
+
+#### List of `Server` Object Properties
+
+<details>
+<summary><b>Expand</b></summary>
+
+| signature                             | kind     | description                                                                                    |
+| ------------------------------------- | -------- | ---------------------------------------------------------------------------------------------- |
+| `since`                               | Number   | timestamp of initialization                                                                    |
+| `port`                                | Number   | port used by this server                                                                       |
+| `maxMessageSize`                      | Number   | maximum message size in mb                                                                     |
+| `timeout`                             | Number   | after how long the socket is considered gone, in ms                                            |
+| `connections`                         | Number   | count of sockets connected                                                                     |
+| `served`                              | Number   | count of sockets ever connected                                                                |
+| `bytesSent`                           | Number   | sum of bytes sent by the server                                                                |
+| `bytesReceived`                       | Number   | sum of bytes the server has ever received                                                      |
+| `messagesSent`                        | Number   | count of messages ever sent                                                                    |
+| `messagesReceived`                    | Number   | count of messages ever received                                                                |
+| `events`                              | Object   | ref to events, ex: server.events.typing() to dispatch typing to anyone listening to it         |
+| `listeners`                           | Array    | for debbuging: array of listeners as strings                                                   |
+| `on(Class)`                           | Function | attaches all methods of a `Class` as listeners                                                 |
+| `on(Function)`                        | Function | attaches a named `Function` as a listener                                                      |
+| `on(Object)`                          | Function | attaches all properties of an object that are of the type `Function` as listeners              |
+| `on(key, Function)`                   | Function | attaches a `Function` as a listener for `key`                                                  |
+| `emit(key, [value])`                  | Function | emits to all connected sockets                                                                 |
+| `once(key, [value])`                  | Function | emits to the sockets and replace if exists a pending message with the same `key`               |
+| `broadcast(sender, key, [value])`     | Function | emits to all connected sockets except sender                                                   |
+| `broadcastOnce(sender, key, [value])` | Function | emits to the sockets except sender and replace if exists a pending message with the same `key` |
+| `sockets`                             | Set      | a Set() with all the current connected sockets                                                 |
+
+</details>
+
+### `Socket` Object
+
+The `socket` object is given to you by a listener
+
+```javascript
+// server.js (node.js)
+import Server from 'angelia.io/server'
+
+class _ {
+	connect(socket, request) {
+		console.log(socket, data, callback)
+	}
+}
+Server.on(_)
+
+Server.listen({
+	port: 3001,
+})
+```
+
+#### List of `Socket` Object Properties
+
+<details>
+<summary><b>Expand</b></summary>
+
+| signature                   | kind     | description                                                                   |
+| --------------------------- | -------- | ----------------------------------------------------------------------------- |
+| `server`                    | Object   | reference to the server                                                       |
+| `ip`                        | String   | ip of the socket                                                              |
+| `userAgent`                 | String   | user agent of the socket                                                      |
+| `params`                    | Object   | the params sent via the client constructor                                    |
+| `since`                     | Number   | timestamp of first seen                                                       |
+| `seen`                      | Number   | timestamp of last received message                                            |
+| `ping`                      | Number   | delay with the socket in milliseconds (full round trip)                       |
+| `timedout`                  | Boolean  | whether we lost connection with this socket                                   |
+| `bytesSent`                 | Number   | sum of bytes sent to this socket                                              |
+| `bytesReceived`             | Number   | sum of bytes received from this socket                                        |
+| `messagesSent`              | Number   | count of messages sent to this socket                                         |
+| `messagesReceived`          | Number   | count of messages received from this socket                                   |
+| `rooms`                     | Set      | a set with the rooms where this socket is in                                  |
+| `emit(key, [value])`        | Function | emits to client                                                               |
+| `once(key, [value])`        | Function | replace if exists a pending message with the same `key` from emit queue       |
+| `disconnect([noReconnect])` | Function | disconnects the socket from the server, pass `true` to prevent re-connections |
+
+</details>
+
+### Listeners
+
+To listen for a client message/event you may do the familiar way `Server.on('connect', (socket) => {console.log('socket connected!', socket)})`
+
+However, to ease organization and development you may listen to an event by creating a class with any name, and give to methods the name of the things you want to listen to. You then add your class to the listeners as `Server.on(MyClass);` and you are done.
+
+On user defined listeners, the listener receives three things as sent by the client: `socket`, `data` and a `callback`; Example `class FancyChat { async typing(socket, data, callback) {console.log(socket, data);}}`.
+
 #### Syntax For Listeners
 
 Listeners have the following alternative syntax if you feel like
+
+<details>
+<summary><b>Expand</b></summary>
 
 ```javascript
 // server.js (node.js)
@@ -289,12 +244,14 @@ Server.on('connect', function fancyConnect(socket, request) {
 	onsole.log('connect in named function')
 })
 
-const server = new Server.listen({
+Server.listen({
 	port: 3001,
 })
 ```
 
-### Predefined Events
+</details>
+
+### Predefined `Server` Events
 
 There's a bunch of handy predefined events dispatched whenever you add listeners for them.
 
@@ -314,12 +271,15 @@ class _ {
 
 Server.on(_);
 
-const server = new Server.listen({
+Server.listen({
 	port: 3001,
 });
 ```
 
-#### List of Predefined Events
+#### List of Predefined `Server` Events
+
+<details>
+<summary><b>Expand</b></summary>
 
 | signature                           | description                                                                               |
 | ----------------------------------- | ----------------------------------------------------------------------------------------- |
@@ -340,16 +300,20 @@ const server = new Server.listen({
 | `events`  | reference to event dispatcher, ex: `this.events.typing()` will dispatch the `typing` event to anyone listening to it |
 | `classes` | reference to all functions that have been attached as listeners , ex: `this.classes.MyFancyChat.typing`              |
 
+</details>
+
 ## Client API (Browser)
 
-### Options
+### `Client` Options
 
 Configurable options used by the constructor
 
 ```javascript
 const socket = new Client({
 	url: 'ws://localhost:3001',
-	params: function (){ return { fast: 'data', test: 'a space' })
+	params: function () {
+		return { fast: 'data', test: 'a space' }
+	},
 })
 ```
 
@@ -366,9 +330,12 @@ You may also do like this if you don't need any option
 const socket = new Client('ws://localhost:3001')
 ```
 
-### API
+### `Client` API
 
 The client API is similar to regular event handling
+
+<details>
+<summary><b>Expand</b></summary>
 
 | signature                      | kind     | description                                                        |
 | ------------------------------ | -------- | ------------------------------------------------------------------ |
@@ -380,15 +347,23 @@ The client API is similar to regular event handling
 | `emit(key, [value, callback])` | Function | emits data to the server                                           |
 | `decode(data)`                 | Function | for decoding binary data, returns a promise                        |
 
-#### List of Predefined Events
+</details>
+
+#### List of Predefined `Client` Events
 
 As in `socket.on('connect', () => console.log('connect happened!'))`
+
+<details>
+<summary><b>Expand</b></summary>
 
 | signature    | description                                                                                             |
 | ------------ | ------------------------------------------------------------------------------------------------------- |
 | `connect`    | **this happens only once** when we connect to the server, any future connection is a `reconnect`        |
 | `reconnect`  | if we were connected at least once, then any reconnection will dispatch this event instead of `connect` |
 | `disconnect` | when we disconnect from the server                                                                      |
+|              |
+
+</details>
 
 ## Authors
 

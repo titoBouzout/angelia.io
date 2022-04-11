@@ -91,7 +91,6 @@ const server = new Server.listen({
 | `port`               | Number  | 3001    | the port to use for this server                     |
 | `maxMessageSize`     | Number  | 5       | max size in mb of a message received                |
 | `skipUTF8Validation` | Boolean | false   | allows to skip utf8 validation                      |
-| `dontConnect`        | Boolean | false   | allows to instance the socket without connecting    |
 | `cert`               | String  | ''      | path to the cert file for using https fullchain.pem |
 | `key`                | String  | ''      | path to the key file for using https privkey.pem    |
 
@@ -359,6 +358,7 @@ const socket = new Client({
 | `url`           | string   | 'ws(s)://\${window.location.hostname}:3001' | url of the socket server, example 'ws://localhost:3001'                                                                                                                   |
 | `params`        | Function | {}                                          | to send data while connecting, accesible via `socket.params` server side                                                                                                  |
 | `longLiveFlash` | boolean  | false                                       | browsers throw when calling swf functions via ExternalInterface after events like WebSocket.onmesssage; setting this to `true` fix it by dispatching them in a setTimeout |
+| `dontConnect`   | Boolean  | false                                       | allows to instance the socket without connecting                                                                                                                          |
 
 You may also do like this if you don't need any option
 

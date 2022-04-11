@@ -31,7 +31,7 @@ class Rooms {
 		return this.rooms
 	}
 	[Symbol.iterator]() {
-		return this.rooms
+		return this.rooms[Symbol.iterator]()
 	}
 }
 

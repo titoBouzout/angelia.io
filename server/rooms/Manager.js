@@ -103,7 +103,7 @@ class ManagerSingleton {
 	}
 
 	[Symbol.iterator]() {
-		return this.rooms
+		return this.rooms[Symbol.iterator]()
 	}
 }
 

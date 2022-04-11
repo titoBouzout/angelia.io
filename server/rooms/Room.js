@@ -90,7 +90,7 @@ class Room {
 		return this.sockets
 	}
 	[Symbol.iterator]() {
-		return this.sockets
+		return this.sockets[Symbol.iterator]()
 	}
 }
 

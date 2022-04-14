@@ -81,14 +81,15 @@ Server.listen({
 
 ### `Server` Options
 
-| name                 | kind    | default | description                                         |
-| -------------------- | ------- | ------- | --------------------------------------------------- |
-| `hostname`           | String  | ''      | the hostname if any                                 |
-| `port`               | Number  | 3001    | the port to use for this server                     |
-| `maxMessageSize`     | Number  | 5       | max size in mb of a message received                |
-| `skipUTF8Validation` | Boolean | false   | allows to skip utf8 validation                      |
-| `cert`               | String  | ''      | path to the cert file for using https fullchain.pem |
-| `key`                | String  | ''      | path to the key file for using https privkey.pem    |
+| name                 | kind        | default | description                                                                                                  |
+| -------------------- | ----------- | ------- | ------------------------------------------------------------------------------------------------------------ |
+| `hostname`           | String      | ''      | the hostname if any                                                                                          |
+| `port`               | Number      | 3001    | the port to use for this server                                                                              |
+| `maxMessageSize`     | Number      | 5       | max size in mb of a message received                                                                         |
+| `skipUTF8Validation` | Boolean     | false   | allows to skip utf8 validation                                                                               |
+| `cert`               | String      | ''      | path to the cert file for using https fullchain.pem                                                          |
+| `key`                | String      | ''      | path to the key file for using https privkey.pem                                                             |
+| `http`               | node server | null    | in case you want to use your own server. Else one will be created, as in `require('http(s)').createServer()` |
 
 ### Server Object
 
@@ -115,29 +116,32 @@ Server.listen({
 <details>
 <summary><b>Expand</b></summary>
 
-| signature                             | kind     | description                                                                                    |
-| ------------------------------------- | -------- | ---------------------------------------------------------------------------------------------- |
-| `since`                               | Number   | timestamp of initialization                                                                    |
-| `port`                                | Number   | port used by this server                                                                       |
-| `maxMessageSize`                      | Number   | maximum message size in mb                                                                     |
-| `timeout`                             | Number   | after how long the socket is considered gone, in ms                                            |
-| `connections`                         | Number   | count of sockets connected                                                                     |
-| `served`                              | Number   | count of sockets ever connected                                                                |
-| `bytesSent`                           | Number   | sum of bytes sent by the server                                                                |
-| `bytesReceived`                       | Number   | sum of bytes the server has ever received                                                      |
-| `messagesSent`                        | Number   | count of messages ever sent                                                                    |
-| `messagesReceived`                    | Number   | count of messages ever received                                                                |
-| `events`                              | Object   | ref to events, ex: server.events.typing() to dispatch typing to anyone listening to it         |
-| `listeners`                           | Array    | for debbuging: array of listeners as strings                                                   |
-| `on(Class)`                           | Function | attaches all methods of a `Class` as listeners                                                 |
-| `on(Function)`                        | Function | attaches a named `Function` as a listener                                                      |
-| `on(Object)`                          | Function | attaches all properties of an object that are of the type `Function` as listeners              |
-| `on(key, Function)`                   | Function | attaches a `Function` as a listener for `key`                                                  |
-| `emit(key, [value])`                  | Function | emits to all connected sockets                                                                 |
-| `once(key, [value])`                  | Function | emits to the sockets and replace if exists a pending message with the same `key`               |
-| `broadcast(sender, key, [value])`     | Function | emits to all connected sockets except sender                                                   |
-| `broadcastOnce(sender, key, [value])` | Function | emits to the sockets except sender and replace if exists a pending message with the same `key` |
-| `sockets`                             | Set      | a Set() with all the current connected sockets                                                 |
+| signature                             | kind        | description                                                                                    |
+| ------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------- |
+| `since`                               | Number      | timestamp of initialization                                                                    |
+| `now`                                 | Number      | timestamp that updates every half a second                                                     |
+| `port`                                | Number      | port used by this server                                                                       |
+| `hostname`                            | String      | the hostname if any                                                                            |
+| `maxMessageSize`                      | Number      | maximum message size in mb                                                                     |
+| `timeout`                             | Number      | after how long the socket is considered gone, in ms                                            |
+| `connections`                         | Number      | count of sockets connected                                                                     |
+| `served`                              | Number      | count of sockets ever connected                                                                |
+| `bytesSent`                           | Number      | sum of bytes sent by the server                                                                |
+| `bytesReceived`                       | Number      | sum of bytes the server has ever received                                                      |
+| `messagesSent`                        | Number      | count of messages ever sent                                                                    |
+| `messagesReceived`                    | Number      | count of messages ever received                                                                |
+| `events`                              | Object      | ref to events, ex: server.events.typing() to dispatch typing to anyone listening to it         |
+| `listeners`                           | Array       | for debbuging: array of listeners as strings                                                   |
+| `on(Class)`                           | Function    | attaches all methods of a `Class` as listeners                                                 |
+| `on(Function)`                        | Function    | attaches a named `Function` as a listener                                                      |
+| `on(Object)`                          | Function    | attaches all properties of an object that are of the type `Function` as listeners              |
+| `on(key, Function)`                   | Function    | attaches a `Function` as a listener for `key`                                                  |
+| `emit(key, [value])`                  | Function    | emits to all connected sockets                                                                 |
+| `once(key, [value])`                  | Function    | emits to the sockets and replace if exists a pending message with the same `key`               |
+| `broadcast(sender, key, [value])`     | Function    | emits to all connected sockets except sender                                                   |
+| `broadcastOnce(sender, key, [value])` | Function    | emits to the sockets except sender and replace if exists a pending message with the same `key` |
+| `sockets`                             | Set         | a Set() with all the current connected sockets                                                 |
+| `http`                                | node server | the underlying http(s) server                                                                  |
 
 </details>
 

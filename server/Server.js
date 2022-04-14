@@ -17,6 +17,7 @@ class ServerSingleton {
 
 			cert: '',
 			key: '',
+			http: null,
 
 			queue: [],
 
@@ -92,6 +93,7 @@ class ServerSingleton {
 			maxMessageSize: +options.maxMessageSize > 0 ? +options.maxMessageSize : this.maxMessageSize,
 			cert: options.cert || this.cert,
 			key: options.key || this.key,
+			http: options.http || this.http,
 
 			since: Date.now(),
 			now: Date.now(),
@@ -104,26 +106,27 @@ class ServerSingleton {
 		setInterval(this.updateNow, 500)
 
 		// fires the server
-		let server
-		function handle(req, res) {
-			res.writeHead(200, { 'Content-Type': 'text/plain' })
-			res.end()
-		}
-		if (this.cert && this.key) {
-			let fs = require('fs')
-			server = require('https').createServer(
-				{
-					cert: fs.readFileSync(this.cert), // fullchain.pem
-					key: fs.readFileSync(this.key), // privkey.pem
-				},
-				handle,
-			)
-		} else {
-			server = require('http').createServer(handle)
+		if (!this.http) {
+			function handle(req, res) {
+				res.writeHead(200, { 'Content-Type': 'text/plain' })
+				res.end()
+			}
+			if (this.cert && this.key) {
+				let fs = require('fs')
+				this.http = require('https').createServer(
+					{
+						cert: fs.readFileSync(this.cert), // fullchain.pem
+						key: fs.readFileSync(this.key), // privkey.pem
+					},
+					handle,
+				)
+			} else {
+				this.http = require('http').createServer(handle)
+			}
 		}
 
 		let io = new this.WebSocket.Server({
-			server: server,
+			server: this.http,
 			perMessageDeflate: false,
 			maxPayload: this.maxMessageSize * 1024 * 1024,
 			clientTracking: false,
@@ -135,7 +138,7 @@ class ServerSingleton {
 		io.on('connection', this.onconnect)
 		io.on('error', this.onerror)
 
-		server.listen(this.port, this.hostname || null)
+		this.http.listen(this.port, this.hostname || null)
 
 		for (let m of ['RESTART', 'SIGINT', 'SIGTERM', 'SIGBREAK']) {
 			process.on(m, () => {
@@ -156,8 +159,6 @@ class ServerSingleton {
 
 		console.log('Socket Server Started Listening On Port ', this.port)
 		this.events.listen && this.events.listen()
-
-		return this
 	}
 
 	// count of connections

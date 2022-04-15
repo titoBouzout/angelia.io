@@ -155,7 +155,7 @@ import Server from 'angelia.io/server'
 
 class _ {
 	connect(socket, request) {
-		console.log(socket, data, callback)
+		console.log(socket, request)
 	}
 }
 Server.on(_)
@@ -365,7 +365,6 @@ As in `socket.on('connect', () => console.log('connect happened!'))`
 | `connect`    | **this happens only once** when we connect to the server, any future connection is a `reconnect`        |
 | `reconnect`  | if we were connected at least once, then any reconnection will dispatch this event instead of `connect` |
 | `disconnect` | when we disconnect from the server                                                                      |
-|              |
 
 </details>
 

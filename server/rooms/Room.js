@@ -51,7 +51,7 @@ class Room {
 			this[parent][remove](this)
 
 			// dispatch leave
-			this.onLeave && this.onLeave(socket)
+			// this.onLeave && this.onLeave(socket)
 
 			// dispatch that the room has been deleted
 			this.onDelete && this.onDelete(socket)

@@ -97,12 +97,14 @@ class ServerSingleton {
 
 			since: Date.now(),
 			now: Date.now(),
+			timeout: +options.timeout >= 10000 ? +options.timeout : this.timeout,
 		})
+		this.timeoutCheck = this.timeout / 2
 
 		this.ensureFastProperties()
 
 		// updates ping and checks for disconnections
-		setInterval(this.ping, 30 * 1000)
+		setInterval(this.ping, this.timeoutCheck)
 		setInterval(this.updateNow, 500)
 
 		// fires the server
@@ -217,8 +219,6 @@ class ServerSingleton {
 
 	// PRIVATE API
 	onconnect(socket, request) {
-		this.updateNow()
-
 		socket = new this.Socket(socket, this)
 
 		// set the ip, userAgent and params
@@ -305,8 +305,18 @@ class ServerSingleton {
 				socket.timedout = true
 				this.events.timeout && this.events.timeout(socket.proxy, delay)
 				socket.io.terminate()
-			} else {
-				// ping
+			} else if (delay > this.timeoutCheck - 5000) {
+				/*
+				in an example:
+				if timeout is set to 60 seeconds
+				then we check for timed out sockets every 30 seconds
+				if the socket was last seen 29 seconds ago
+				then the next check will be in another 30 seconds
+				that means that if the socket doesnt sends any message
+				then the last seen will be 59 seconds the next time
+				this gives very little amount of time to check
+				for this reason we remove 5 seconds on the condition
+				*/
 				this.pingSocket(socket)
 			}
 		}

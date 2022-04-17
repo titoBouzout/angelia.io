@@ -90,6 +90,7 @@ Server.listen({
 | `cert`               | String      | ''      | path to the cert file for using https fullchain.pem                                                          |
 | `key`                | String      | ''      | path to the key file for using https privkey.pem                                                             |
 | `http`               | node server | null    | in case you want to use your own server. Else one will be created, as in `require('http(s)').createServer()` |
+| `timeout`            | Number      | 60000   | time in milliseconds after a socket is considered gone, minimun value is 10000                               |
 
 ### Server Object
 

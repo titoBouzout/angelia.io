@@ -147,9 +147,9 @@ class ServerSingleton {
 				if (!io.closing) {
 					io.closing = true
 					if (options.debug) {
-						console.log('Server Shutting Down\n', this)
+						console.log('Socket Server Shutting Down\n', this)
 					} else {
-						console.log('Server Shutting Down\n')
+						console.log('Socket Server Shutting Down\n')
 					}
 					io.close()
 					if (options.debug) {

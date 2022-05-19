@@ -275,7 +275,7 @@ class Client {
 		window.addEventListener('unload', () => this.disconnect(true), true)
 
 		// to send messages fast without waiting for the connection
-		shouldConnect && Promise.resolve().then(() => this.connect())
+		shouldConnect && this.connect()
 	}
 
 	// public API

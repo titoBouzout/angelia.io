@@ -1,15 +1,15 @@
 'use strict'
 
-const ClientWebWorker = `class ClientWebWorker {
+class ClientWebWorker {
 	constructor() {
-		Blob.prototype.toJSON = function(){
+		Blob.prototype.toJSON = function () {
 			return {
-				b: new FileReaderSync().readAsDataURL(this)
+				b: new FileReaderSync().readAsDataURL(this),
 			}
 		}
-		ArrayBuffer.prototype.toJSON = function(){
+		ArrayBuffer.prototype.toJSON = function () {
 			return {
-				a: new FileReaderSync().readAsDataURL(this)
+				a: new FileReaderSync().readAsDataURL(this),
 			}
 		}
 
@@ -50,10 +50,7 @@ const ClientWebWorker = `class ClientWebWorker {
 	}
 
 	connect(options) {
-		if (
-			this.reconnect &&
-			(!this.io || this.io.readyState === WebSocket.CLOSED)
-		) {
+		if (this.reconnect && (!this.io || this.io.readyState === WebSocket.CLOSED)) {
 			let url = new URL(options.url)
 
 			// parms creation
@@ -68,12 +65,7 @@ const ClientWebWorker = `class ClientWebWorker {
 			}
 			url.search = Object.entries(params)
 				.filter(([k, v]) => {
-					return !(
-						k === undefined ||
-						k === null ||
-						v === undefined ||
-						v === null
-					)
+					return !(k === undefined || k === null || v === undefined || v === null)
 				})
 				.map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v))
 				.join('&')
@@ -222,7 +214,7 @@ const ClientWebWorker = `class ClientWebWorker {
 		}
 		return id
 	}
-}`
+}
 
 class Client {
 	constructor(options) {
@@ -240,7 +232,7 @@ class Client {
 		}
 
 		const io = new Worker(
-			URL.createObjectURL(new Blob(["'use strict';new (" + ClientWebWorker + ')']), {
+			URL.createObjectURL(new Blob(["'use strict';new (" + ClientWebWorker.toString() + ')']), {
 				type: 'application/javascript; charset=utf-8',
 			}),
 		)

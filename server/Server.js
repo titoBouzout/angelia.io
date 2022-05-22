@@ -142,23 +142,6 @@ class ServerSingleton {
 
 		this.http.listen(this.port, this.hostname || null)
 
-		for (let m of ['RESTART', 'SIGINT', 'SIGTERM', 'SIGBREAK']) {
-			process.on(m, () => {
-				if (!io.closing) {
-					io.closing = true
-					if (options.debug) {
-						console.log('Socket Server Shutting Down\n', this)
-					} else {
-						console.log('Socket Server Shutting Down\n')
-					}
-					io.close()
-					if (options.debug) {
-						process.exit()
-					}
-				}
-			})
-		}
-
 		console.log('Socket Server Started Listening On Port ', this.port)
 		this.events.listen && this.events.listen()
 	}

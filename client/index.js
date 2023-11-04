@@ -50,7 +50,10 @@ class ClientWebWorker {
 	}
 
 	connect(options) {
-		if (this.reconnect && (!this.io || this.io.readyState === WebSocket.CLOSED)) {
+		if (
+			this.reconnect &&
+			(!this.io || this.io.readyState === WebSocket.CLOSED)
+		) {
 			let url = new URL(options.url)
 
 			// parms creation
@@ -65,9 +68,17 @@ class ClientWebWorker {
 			}
 			url.search = Object.entries(params)
 				.filter(([k, v]) => {
-					return !(k === undefined || k === null || v === undefined || v === null)
+					return !(
+						k === undefined ||
+						k === null ||
+						v === undefined ||
+						v === null
+					)
 				})
-				.map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v))
+				.map(
+					([k, v]) =>
+						encodeURIComponent(k) + '=' + encodeURIComponent(v),
+				)
 				.join('&')
 
 			url = url.toString()
@@ -232,11 +243,17 @@ class Client {
 		}
 
 		const io = new Worker(
-			URL.createObjectURL(new Blob(["'use strict';new (" + ClientWebWorker.toString() + ')']), {
-				type: 'application/javascript; charset=utf-8',
-			}),
+			URL.createObjectURL(
+				new Blob(
+					["'use strict';new (" + ClientWebWorker.toString() + ')'],
+					{
+						type: 'application/javascript; charset=utf-8',
+					},
+				),
+			),
 		)
-		let shouldConnect = options.dontConnect !== undefined ? !options.dontConnect : true
+		let shouldConnect =
+			options.dontConnect !== undefined ? !options.dontConnect : true
 
 		Object.assign(this, {
 			url: options.url,
@@ -264,7 +281,11 @@ class Client {
 		this.on('disconnect', this.disconnect)
 
 		// to try to close the connection nicely
-		window.addEventListener('unload', () => this.disconnect(true), true)
+		window.addEventListener(
+			'unload',
+			() => this.disconnect(true),
+			true,
+		)
 
 		// to send messages fast without waiting for the connection
 		shouldConnect && this.connect()
@@ -277,7 +298,10 @@ class Client {
 			'connect',
 			{
 				url: this.url,
-				params: typeof this.params === 'function' ? this.params() || {} : {},
+				params:
+					typeof this.params === 'function'
+						? this.params() || {}
+						: {},
 			},
 		])
 	}
@@ -307,16 +331,28 @@ class Client {
 			this.listeners[k].push(v)
 			return () => this.off(k, v)
 		} else {
-			console.error('ws - socket.on("' + k + '", callback) key and callback cannot be empty')
+			console.error(
+				'ws - socket.on("' +
+					k +
+					'", callback) key and callback cannot be empty',
+			)
 		}
 	}
 	off(k, v) {
 		if (!this.listeners[k]) {
-			console.error('ws - socket.off("' + k + '", callback)', k, 'key not found')
+			console.error(
+				'ws - socket.off("' + k + '", callback)',
+				k,
+				'key not found',
+			)
 		} else {
 			let i = this.listeners[k].indexOf(v)
 			if (i === -1) {
-				console.error('ws - socket.off("' + k + '", callback)', v, 'callback not found')
+				console.error(
+					'ws - socket.off("' + k + '", callback)',
+					v,
+					'callback not found',
+				)
 			} else {
 				this.listeners[k].splice(i, 1)
 			}

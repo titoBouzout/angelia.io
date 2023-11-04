@@ -84,7 +84,8 @@ class Socket {
 	}
 	disconnect(noReconnect) {
 		if (noReconnect) {
-			for (let m of this.server.disconnectData) this.io._socket.write(m)
+			for (let m of this.server.disconnectData)
+				this.io._socket.write(m)
 		}
 		this.io.close()
 	}

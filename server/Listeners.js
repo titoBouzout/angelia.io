@@ -135,12 +135,14 @@ class Listeners {
 	// isobject <https://github.com/jonschlinkert/isobject>
 	// MIT license - Copyright (c) 2014-2017, Jon Schlinkert.
 	isObject(o) {
-		return o != null && typeof o === 'object' && Array.isArray(o) === false
+		return (
+			o != null && typeof o === 'object' && Array.isArray(o) === false
+		)
 	}
 	// is-class <https://github.com/miguelmota/is-class>
 	// MIT license - Copyright (C) 2014 Miguel Mota
 	isClass() {
-		;(function(root) {
+		;(function (root) {
 			const toString = Function.prototype.toString
 
 			function fnBody(fn) {
@@ -163,7 +165,9 @@ class Listeners {
 				const body = fnBody(fn)
 				return (
 					/classCallCheck\(/.test(body) ||
-					/TypeError\("Cannot call a class as a function"\)/.test(body)
+					/TypeError\("Cannot call a class as a function"\)/.test(
+						body,
+					)
 				)
 			}
 		})(Listeners.prototype)

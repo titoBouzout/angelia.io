@@ -79,7 +79,10 @@ class ServerSingleton {
 			},
 		})
 
-		this.pingData = this.WebSocket.Sender.frame(Buffer.from(''), this.WebSocketFrame)
+		this.pingData = this.WebSocket.Sender.frame(
+			Buffer.from(''),
+			this.WebSocketFrame,
+		)
 		this.disconnectData = this.WebSocket.Sender.frame(
 			Buffer.from(JSON.stringify([['disconnect', true]])),
 			this.WebSocketFrame,
@@ -88,16 +91,23 @@ class ServerSingleton {
 
 	listen(options) {
 		Object.assign(this, {
-			port: +options.port > 0 && +options.port <= 65535 ? +options.port : this.port,
+			port:
+				+options.port > 0 && +options.port <= 65535
+					? +options.port
+					: this.port,
 			hostname: options.hostname || this.hostname,
-			maxMessageSize: +options.maxMessageSize > 0 ? +options.maxMessageSize : this.maxMessageSize,
+			maxMessageSize:
+				+options.maxMessageSize > 0
+					? +options.maxMessageSize
+					: this.maxMessageSize,
 			cert: options.cert || this.cert,
 			key: options.key || this.key,
 			http: options.http || this.http,
 
 			since: Date.now(),
 			now: Date.now(),
-			timeout: +options.timeout >= 10000 ? +options.timeout : this.timeout,
+			timeout:
+				+options.timeout >= 10000 ? +options.timeout : this.timeout,
 		})
 		this.timeoutCheck = this.timeout / 2
 
@@ -134,7 +144,9 @@ class ServerSingleton {
 			clientTracking: false,
 			backlog: 1024,
 			skipUTF8Validation:
-				options.skipUTF8Validation !== undefined ? options.skipUTF8Validation : false,
+				options.skipUTF8Validation !== undefined
+					? options.skipUTF8Validation
+					: false,
 		})
 
 		io.on('connection', this.onconnect)
@@ -212,7 +224,11 @@ class ServerSingleton {
 		Object.assign(socket, {
 			ip: (
 				this.ip(request.connection.remoteAddress) ||
-				this.ip((request.headers['x-forwarded-for'] || '').split(/\s*,\s*/)[0]) ||
+				this.ip(
+					(request.headers['x-forwarded-for'] || '').split(
+						/\s*,\s*/,
+					)[0],
+				) ||
 				request.connection.remoteAddress ||
 				(request.headers['x-forwarded-for'] || '').split(/\s*,\s*/)[0]
 			).replace(/^::ffff:/, ''),
@@ -268,7 +284,10 @@ class ServerSingleton {
 			let json = JSON.stringify(messages)
 			this.bytesSent += json.length
 			socket.bytesSent += json.length
-			this.cache[id] = this.WebSocket.Sender.frame(Buffer.from(json), this.WebSocketFrame)
+			this.cache[id] = this.WebSocket.Sender.frame(
+				Buffer.from(json),
+				this.WebSocketFrame,
+			)
 		} else {
 			this.messagesSentCacheHit++
 		}
@@ -286,7 +305,8 @@ class ServerSingleton {
 			if (delay > this.timeout) {
 				// timedout
 				socket.timedout = true
-				this.events.timeout && this.events.timeout(socket.proxy, delay)
+				this.events.timeout &&
+					this.events.timeout(socket.proxy, delay)
 				socket.io.terminate()
 			} else if (delay > this.timeoutCheck - 5000) {
 				/*
@@ -335,11 +355,21 @@ class ServerSingleton {
 			}
 			default: {
 				if (
-					/^(::f{4}:)?10\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$/i.test(i) ||
-					/^(::f{4}:)?192\.168\.([0-9]{1,3})\.([0-9]{1,3})$/i.test(i) ||
-					/^(::f{4}:)?172\.(1[6-9]|2\d|30|31)\.([0-9]{1,3})\.([0-9]{1,3})$/i.test(i) ||
-					/^(::f{4}:)?127\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$/i.test(i) ||
-					/^(::f{4}:)?169\.254\.([0-9]{1,3})\.([0-9]{1,3})$/i.test(i) ||
+					/^(::f{4}:)?10\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$/i.test(
+						i,
+					) ||
+					/^(::f{4}:)?192\.168\.([0-9]{1,3})\.([0-9]{1,3})$/i.test(
+						i,
+					) ||
+					/^(::f{4}:)?172\.(1[6-9]|2\d|30|31)\.([0-9]{1,3})\.([0-9]{1,3})$/i.test(
+						i,
+					) ||
+					/^(::f{4}:)?127\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$/i.test(
+						i,
+					) ||
+					/^(::f{4}:)?169\.254\.([0-9]{1,3})\.([0-9]{1,3})$/i.test(
+						i,
+					) ||
 					/^f[cd][0-9a-f]{2}:/i.test(i) ||
 					/^fe80:/i.test(i)
 				)
@@ -441,7 +471,10 @@ class ServerSingleton {
 		// listeners
 		for (let l in this.events) {
 			// listener
-			console.log('this.events.' + l, this.HasFastProperties(this.events[l]))
+			console.log(
+				'this.events.' + l,
+				this.HasFastProperties(this.events[l]),
+			)
 			// methods
 			if (this.events[l].fns) {
 				for (let m in this.events[l].fns) {
@@ -454,9 +487,15 @@ class ServerSingleton {
 		}
 
 		// classes
-		console.log('this.events', this.HasFastProperties(this.events.classes))
+		console.log(
+			'this.events',
+			this.HasFastProperties(this.events.classes),
+		)
 		for (let m in this.events.classes) {
-			console.log('this.events.' + m, this.HasFastProperties(this.events.classes[m]))
+			console.log(
+				'this.events.' + m,
+				this.HasFastProperties(this.events.classes[m]),
+			)
 			// class
 			for (let f in this.events.classes[m]) {
 				// methods

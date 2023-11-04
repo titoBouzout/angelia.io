@@ -1,4 +1,4 @@
-module.exports = function() {
+module.exports = function () {
 	throw new Error(`
 Usage on Server:
 import Server from 'angelia.io/server'

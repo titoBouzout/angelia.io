@@ -35,16 +35,18 @@
 		"ws": "^7.x.x"
 	},
 	"prettier": {
-		"printWidth": 100,
+		"printWidth": 70,
 		"useTabs": true,
 		"semi": false,
 		"singleQuote": true,
+		"quoteProps": "as-needed",
 		"jsxSingleQuote": false,
 		"trailingComma": "all",
 		"bracketSpacing": true,
-		"jsxBracketSameLine": false,
+		"bracketSameLine": false,
 		"arrowParens": "avoid",
-		"quoteProps": "preserve",
-		"proseWrap": "preserve"
+		"proseWrap": "never",
+		"endOfLine": "lf",
+		"singleAttributePerLine": true
 	}
 }

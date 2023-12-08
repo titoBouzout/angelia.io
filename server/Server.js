@@ -13,7 +13,7 @@ import fs from 'node:fs'
 import * as http from 'http'
 import * as https from 'https'
 
-import WebSocket, { WebSocketServer } from 'ws'
+import WebSocket, { WebSocketServer, Sender } from 'ws'
 
 class ServerSingleton {
 	constructor() {
@@ -65,6 +65,7 @@ class ServerSingleton {
 			cache: Object.create(null),
 
 			URL: url,
+			Sender,
 			Socket,
 			WebSocket,
 			WebSocketServer,
@@ -88,11 +89,8 @@ class ServerSingleton {
 			},
 		})
 
-		this.pingData = this.WebSocket.Sender.frame(
-			Buffer.from(''),
-			this.WebSocketFrame,
-		)
-		this.disconnectData = this.WebSocket.Sender.frame(
+		this.pingData = this.Sender.frame(Buffer.from(''), this.WebSocketFrame)
+		this.disconnectData = this.Sender.frame(
 			Buffer.from(JSON.stringify([['disconnect', true]])),
 			this.WebSocketFrame,
 		)
@@ -292,7 +290,7 @@ class ServerSingleton {
 			let json = JSON.stringify(messages)
 			this.bytesSent += json.length
 			socket.bytesSent += json.length
-			this.cache[id] = this.WebSocket.Sender.frame(
+			this.cache[id] = this.Sender.frame(
 				Buffer.from(json),
 				this.WebSocketFrame,
 			)
@@ -520,6 +518,6 @@ class ServerSingleton {
 	}
 }
 
-const Server = new ServerSingleton()
+export const Server = new ServerSingleton()
 
-export { Server, Server as default }
+export { Room, Server as default }

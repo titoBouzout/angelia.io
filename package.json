@@ -2,6 +2,8 @@
 	"name": "angelia.io",
 	"version": "3.4.80",
 	"description": "WebSockets Server and Client API for node.js and the browser, with rooms support.",
+	"author": "@titoBouzout @boredofnames",
+	"license": "GPL",
 	"homepage": "https://github.com/titoBouzout/angelia.io",
 	"repository": {
 		"type": "git",
@@ -9,6 +11,22 @@
 	},
 	"type": "module",
 	"main": "index.js",
+	"dependencies": {
+		"bufferutil": "^4.0.3",
+		"is-class": "^0.0.9",
+		"isobject": "^4.0.0",
+		"to-fast-properties": "^3.0.1",
+		"utf-8-validate": "^6.x.x",
+		"ws": "^8.x.x"
+	},
+	"exports": {
+		"./server": {
+			"default": "./server/Server.js"
+		},
+		"./client": {
+			"default": "./client/index.js"
+		}
+	},
 	"keywords": [
 		"Client",
 		"Server",
@@ -25,16 +43,6 @@
 		"io",
 		"ws"
 	],
-	"author": "@titoBouzout @boredofnames",
-	"license": "GPL",
-	"dependencies": {
-		"bufferutil": "^4.0.3",
-		"is-class": "^0.0.9",
-		"isobject": "^4.0.0",
-		"to-fast-properties": "^3.0.1",
-		"utf-8-validate": "^5.0.4",
-		"ws": "^8.x.x"
-	},
 	"prettier": {
 		"printWidth": 70,
 		"useTabs": true,

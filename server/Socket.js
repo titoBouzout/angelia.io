@@ -94,7 +94,9 @@ export class Socket {
 		this.io.on('error', this.onerror)
 		this.io.on('message', this.onmessage)
 	}
-	onclose(code, message) {
+	onclose(code, message, isBinary) {
+		message = message.toString()
+
 		this.server.sockets.delete(this)
 
 		for (let room of this.rooms) {
@@ -136,7 +138,9 @@ export class Socket {
 			return false
 		}
 	}
-	onmessage(e) {
+	onmessage(e, isBinary) {
+		e = isBinary ? e.toString() : e
+
 		if (e === '') {
 			this.server.pong(this)
 		} else {

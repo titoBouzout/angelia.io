@@ -1,5 +1,4 @@
-module.exports = function () {
-	throw new Error(`
+throw new Error(`
 Usage on Server:
 import Server from 'angelia.io/server'
 
@@ -8,4 +7,3 @@ import Client from 'angelia.io/client'
 
 See readme: https://github.com/titoBouzout/angelia.io
 `)
-}

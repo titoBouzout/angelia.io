@@ -1,10 +1,8 @@
-'use strict'
-
 const inspect = Symbol.for('nodejs.util.inspect.custom')
 
-const { leave } = require('./rooms/constants.js')
+import { leave } from './rooms/constants.js'
 
-class Socket {
+export class Socket {
 	constructor(socket, server) {
 		Object.assign(this, {
 			server: server,
@@ -225,5 +223,3 @@ class Socket {
 		}
 	}
 }
-
-module.exports = Socket

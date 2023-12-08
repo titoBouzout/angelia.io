@@ -1,8 +1,6 @@
-'use strict'
+import { join, leave } from './constants.js'
 
-const { join, leave } = require('./constants.js')
-
-const Rooms = require('./Rooms.js')
+import { Rooms } from './Rooms.js'
 
 class ManagerSingleton {
 	constructor() {
@@ -107,6 +105,4 @@ class ManagerSingleton {
 	}
 }
 
-const Manager = new ManagerSingleton()
-
-module.exports = Manager
+export const Manager = new ManagerSingleton()

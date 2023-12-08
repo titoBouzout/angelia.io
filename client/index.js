@@ -227,7 +227,7 @@ class ClientWebWorker {
 	}
 }
 
-class Client {
+export class Client {
 	constructor(options) {
 		if (!options || typeof options === 'string') {
 			options = {
@@ -441,18 +441,3 @@ class Client {
 		}
 	}
 }
-
-;(function (root) {
-	if (typeof exports !== 'undefined') {
-		if (typeof module !== 'undefined' && module.exports) {
-			exports = module.exports = Client
-		}
-		exports.Client = Client
-	} else if (typeof define === 'function' && define.amd) {
-		define([], function () {
-			return Client
-		})
-	} else {
-		root.Client = Client
-	}
-})(this)

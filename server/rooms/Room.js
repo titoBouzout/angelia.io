@@ -1,8 +1,6 @@
-'use strict'
+import { join, leave, parent, add, remove } from './constants.js'
 
-const { join, leave, parent, add, remove } = require('./constants.js')
-
-class Room {
+export class Room {
 	constructor() {
 		this.sockets = new Set()
 	}
@@ -97,5 +95,3 @@ class Room {
 		return this.sockets[Symbol.iterator]()
 	}
 }
-
-module.exports = Room

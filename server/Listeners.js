@@ -1,5 +1,3 @@
-'use strict'
-
 const inspect = Symbol.for('nodejs.util.inspect.custom')
 
 class Listeners {
@@ -196,4 +194,6 @@ class Listeners {
 
 Listeners.prototype.isClass()
 
-module.exports = Listeners
+const listeners = new Listeners()
+
+export { listeners as Listeners }

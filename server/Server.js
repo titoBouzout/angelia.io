@@ -1,11 +1,19 @@
-'use strict'
-
 const inspect = Symbol.for('nodejs.util.inspect.custom')
 
-const Listeners = new (require('./Listeners.js'))()
-const Manager = require('./rooms/Manager.js')
+import { Listeners } from './Listeners.js'
 
-const toFastProperties = require('to-fast-properties')
+import { Manager } from './rooms/Manager.js'
+import { Room } from './rooms/Room.js'
+// const toFastProperties = require('to-fast-properties')
+import url from 'node:url'
+import { Socket } from './Socket.js'
+
+import fs from 'node:fs'
+
+import * as http from 'http'
+import * as https from 'https'
+
+import WebSocket, { WebSocketServer } from 'ws'
 
 class ServerSingleton {
 	constructor() {
@@ -49,16 +57,17 @@ class ServerSingleton {
 
 			_track: Manager.track,
 			rooms: Manager.rooms,
-			Room: require('./rooms/Room.js'),
+			Room,
 			observe: Manager.observe,
 
 			cacheIds: Symbol('cache'),
 			cacheId: 1,
 			cache: Object.create(null),
 
-			URL: require('url'),
-			Socket: require('./Socket.js'),
-			WebSocket: require('ws'),
+			URL: url,
+			Socket,
+			WebSocket,
+			WebSocketServer,
 			WebSocketFrame: {
 				readOnly: false,
 				mask: false,
@@ -111,7 +120,7 @@ class ServerSingleton {
 		})
 		this.timeoutCheck = this.timeout / 2
 
-		this.ensureFastProperties()
+		// this.ensureFastProperties()
 
 		// updates ping and checks for disconnections
 		setInterval(this.ping, this.timeoutCheck)
@@ -124,8 +133,7 @@ class ServerSingleton {
 				res.end()
 			}
 			if (this.cert && this.key) {
-				let fs = require('fs')
-				this.http = require('https').createServer(
+				this.http = https.createServer(
 					{
 						cert: fs.readFileSync(this.cert), // fullchain.pem
 						key: fs.readFileSync(this.key), // privkey.pem
@@ -133,11 +141,11 @@ class ServerSingleton {
 					handle,
 				)
 			} else {
-				this.http = require('http').createServer(handle)
+				this.http = http.createServer(handle)
 			}
 		}
 
-		let io = new this.WebSocket.Server({
+		let io = new this.WebSocketServer({
 			server: this.http,
 			perMessageDeflate: false,
 			maxPayload: this.maxMessageSize * 1024 * 1024,
@@ -175,7 +183,7 @@ class ServerSingleton {
 			},
 		})
 
-		this.ensureFastProperties()
+		// this.ensureFastProperties()
 	}
 
 	// emits to everyone connected to the server
@@ -514,4 +522,4 @@ class ServerSingleton {
 
 const Server = new ServerSingleton()
 
-module.exports = Server
+export { Server, Server as default }

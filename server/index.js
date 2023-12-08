@@ -1,3 +1,3 @@
-'use strict'
+export { Server as default } from './Server.js'
 
-module.exports = require('./Server.js')
+export * from './Server.js'

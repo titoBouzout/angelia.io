@@ -1,17 +1,6 @@
-const join = Symbol.for('Room.join')
-const leave = Symbol.for('Room.leave')
-const parent = Symbol.for('Room.parent')
+export const join = Symbol.for('Room.join')
+export const leave = Symbol.for('Room.leave')
+export const parent = Symbol.for('Room.parent')
 
-const add = Symbol.for('Rooms.add')
-const remove = Symbol.for('Rooms.remove')
-
-module.exports = {
-	// Room
-	join,
-	leave,
-	parent,
-
-	// Rooms
-	add,
-	remove,
-}
+export const add = Symbol.for('Rooms.add')
+export const remove = Symbol.for('Rooms.remove')

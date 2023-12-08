@@ -1,8 +1,6 @@
-'use strict'
+import { add, remove } from './constants.js'
 
-const { add, remove } = require('./constants.js')
-
-class Rooms {
+export class Rooms {
 	constructor(path) {
 		Object.assign(this, {
 			path: path,
@@ -36,5 +34,3 @@ class Rooms {
 		return this.rooms[Symbol.iterator]()
 	}
 }
-
-module.exports = Rooms

@@ -139,7 +139,7 @@ export class Socket {
 		}
 	}
 	onmessage(e, isBinary) {
-		e = isBinary ? e.toString() : e
+		e = e.toString()
 
 		if (e === '') {
 			this.server.pong(this)

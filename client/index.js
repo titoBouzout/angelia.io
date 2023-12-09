@@ -227,7 +227,7 @@ class ClientWebWorker {
 	}
 }
 
-export class Client {
+export default class Client {
 	constructor(options) {
 		if (!options || typeof options === 'string') {
 			options = {

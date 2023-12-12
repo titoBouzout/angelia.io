@@ -280,13 +280,6 @@ export default class Client {
 		// to force disconnect
 		this.on('disconnect', this.disconnect)
 
-		// to try to close the connection nicely
-		window.addEventListener(
-			'unload',
-			() => this.disconnect(true),
-			true,
-		)
-
 		// to send messages fast without waiting for the connection
 		shouldConnect && this.connect()
 	}

@@ -308,9 +308,13 @@ export default class Client {
 			Promise.resolve().then(this.send)
 		}
 		if (c) {
-			this.messages.push([k, v, this.callback(c)])
+			const { i, promise } = this.callback(c)
+			this.messages.push([k, v, i])
+			return promise
 		} else if (typeof v === 'function') {
-			this.messages.push([k, this.null, this.callback(v)])
+			const { i, promise } = this.callback(v)
+			this.messages.push([k, this.null, i])
+			return promise
 		} else if (v !== null && v !== undefined) {
 			this.messages.push([k, v])
 		} else {
@@ -355,9 +359,11 @@ export default class Client {
 	// PRIVATE API
 
 	callback(c) {
+		let resolve
+		const promise = new Promise(r => (resolve = r))
 		let i = this.callbacks.length
-		this.callbacks[i] = c
-		return i
+		this.callbacks[i] = (...args) => resolve(c(...args))
+		return { i, promise }
 	}
 	oncallback(d) {
 		this.callbacks[d[0]](...d[1])
@@ -374,7 +380,7 @@ export default class Client {
 								e[2]
 									? (...d) => {
 											this.emit('', [e[2], d])
-									  }
+										}
 									: null,
 							)
 						}
@@ -390,7 +396,7 @@ export default class Client {
 							e[2]
 								? (...d) => {
 										this.emit('', [e[2], d])
-								  }
+									}
 								: null,
 						)
 					}

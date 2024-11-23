@@ -66,7 +66,7 @@ export default new (class Server extends Emitter {
 	 * 	timeout?: number
 	 * }} [options]
 	 */
-	listen(options) {
+	listen(options = {}) {
 		this.hostname = options.hostname || this.hostname
 		this.port =
 			+options.port > 0 && +options.port <= 65535

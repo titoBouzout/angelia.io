@@ -211,6 +211,10 @@ As in `socket.on('connect', () => console.log('connect happened!'))`
    are created when the `id` of the room doesn't exists, and deleted
    when there are no sockets in the room and the room doesn't have the
    flag `persistent`
+4. a socket will leave automatically all rooms on disconnection
+5. `socket.rooms` is a set with all the rooms the socket joined
+6. a room list is an iterable that returns all of the sockets in the
+   room
 
 ```js
 import { Room, Rooms } from 'angelia.io/server'
@@ -243,6 +247,7 @@ class Connection {
 	connect(socket) {
 		game.join(socket, 'room id here')
 		socket.room.id === 'room id here'
+		console.log(socket.rooms)
 		game.leave(socket, 'room id here')
 
 		game.join(socket, 'a different room')

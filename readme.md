@@ -213,8 +213,7 @@ As in `socket.on('connect', () => console.log('connect happened!'))`
    flag `persistent`
 4. a socket will leave automatically all rooms on disconnection
 5. `socket.rooms` is a set with all the rooms the socket joined
-6. a room list is an iterable that returns all of the sockets in the
-   room
+6. `id` is assigned to the room on creation
 
 ```js
 import { Room, Rooms } from 'angelia.io/server'
@@ -245,14 +244,14 @@ const games = new Rooms(GameRoom)
 
 class Connection {
 	connect(socket) {
-		game.join(socket, 'room id here')
-		socket.room.id === 'room id here'
+		games.join(socket, 'room id here')
+		socket.game.id === 'room id here'
 		console.log(socket.rooms)
-		game.leave(socket, 'room id here')
+		games.leave(socket, 'room id here')
 
-		game.join(socket, 'a different room')
-		socket.room.id === 'a different room'
-		game.leave(socket, 'a different room')
+		games.join(socket, 'a different room')
+		socket.game.id === 'a different room'
+		games.leave(socket, 'a different room')
 	}
 }
 
@@ -261,6 +260,8 @@ Server.listen()
 ```
 
 ### `Room` Class
+
+Iterating `room` returns the sockets
 
 | signature                             | kind    | description                                      |
 | ------------------------------------- | ------- | ------------------------------------------------ |
@@ -276,6 +277,16 @@ Server.listen()
 | `broadcast(socket, key, [value])`     | method  | emits to other sockets in the room               |
 | `broadcastOnce(socket, key, [value])` | method  | emits once to other sockets in the room          |
 | `id`                                  | any     | the room id                                      |
+
+### `Rooms` Class
+
+Iterating `rooms` returns the rooms
+
+| signature             | kind   | description                    |
+| --------------------- | ------ | ------------------------------ |
+| `get(id)`             | method | returns room with such an `id` |
+| `join(socket, [id])`  | method | adds socket to room `id`       |
+| `leave(socket, [id])` | method | removes socket from room `id`  |
 
 ## Authors
 

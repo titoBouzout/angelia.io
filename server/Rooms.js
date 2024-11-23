@@ -1,14 +1,18 @@
 import { join, leave } from './constants.js'
 
 export class Rooms {
-	constructor(Room) {
-		this.Room = Room
+	/** @param {Object} RoomClass */
+	constructor(RoomClass) {
+		this.RoomClass = RoomClass
 		this.rooms = new Map()
+	}
+	get(id) {
+		return this.rooms.get(id)
 	}
 	join(socket, id = undefined) {
 		let room = this.rooms.get(id)
 		if (!room) {
-			room = new this.Room()
+			room = new this.RoomClass()
 			room.id = room.id || id
 			this.rooms.set(id, room)
 

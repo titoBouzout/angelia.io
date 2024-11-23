@@ -60,30 +60,30 @@ export class Room {
 	}
 
 	emit(k, v) {
-		let d = [k, v]
+		const d = [k, v]
 
-		for (let socket of this.sockets) {
+		for (const socket of this.sockets) {
 			socket.emit(d)
 		}
 	}
 	once(k, v) {
-		let d = [k, v]
+		const d = [k, v]
 
-		for (let socket of this.sockets) {
+		for (const socket of this.sockets) {
 			socket.once(d)
 		}
 	}
 	broadcast(me, k, v) {
-		let d = [k, v]
+		const d = [k, v]
 
-		for (let socket of this.sockets) {
+		for (const socket of this.sockets) {
 			if (me != socket) socket.emit(d)
 		}
 	}
 	broadcastOnce(me, k, v) {
-		let d = [k, v]
+		const d = [k, v]
 
-		for (let socket of this.sockets) {
+		for (const socket of this.sockets) {
 			if (me != socket) socket.once(d)
 		}
 	}

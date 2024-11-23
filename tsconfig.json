@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "outDir": "./types",
+
+    "allowJs": true,
+    "checkJs": true,
+    "strict": true,
+
+    "module": "NodeNext",
+    "target": "ESNext",
+    "lib": ["ESNext", "WebWorker"],
+    "moduleResolution": "NodeNext",
+
+    "declaration": true,
+    "declarationMap": false,
+    "emitDeclarationOnly": true,
+
+    "sourceMap": false,
+
+    /* "strictNullChecks": false,*/
+    "noImplicitAny": false
+  }
+}

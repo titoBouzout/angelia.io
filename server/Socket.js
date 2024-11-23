@@ -1,49 +1,42 @@
-const inspect = Symbol.for('nodejs.util.inspect.custom')
-
 import { leave } from './rooms/constants.js'
 
+import { fromEntries, inspect, isArray, parse } from './utils.js'
+
 export class Socket {
-	constructor(socket, server) {
-		Object.assign(this, {
-			server: server,
+	constructor(socket, server, request) {
+		this.server = server
+		this.io = socket
+		this.socket = socket._socket
 
-			ip: '',
-			userAgent: '',
-			params: {},
+		this.ip = (
+			(request.headers['x-forwarded-for'] || '')
+				.split(',')[0]
+				.trim() || request.connection.remoteAddress
+		).replace(/^::ffff:/, '')
+		this.userAgent = request.headers['user-agent'] || ''
+		this.params = fromEntries(
+			new URLSearchParams(request.url.slice(9)),
+		)
 
-			messages: [],
-			callbacks: [() => {}],
+		this.messages = []
+		/** @type Function[]| Null[] */
+		this.callbacks = [null]
 
-			bytesSent: 0,
-			bytesReceived: 0,
-			messagesSent: 0,
-			messagesReceived: 0,
+		this.bytesSent = 0
+		this.bytesReceived = 0
+		this.messagesSent = 0
+		this.messagesReceived = 0
 
-			since: server.now,
-			seen: server.now,
-			contacted: server.now,
-			ping: 0,
-			timedout: false,
+		this.since = server.now
+		this.seen = server.now
+		this.contacted = server.now
 
-			onclose: this.onclose.bind(this),
-			onerror: this.onerror.bind(this),
-			onmessage: this.onmessage.bind(this),
-			doreply: this.doreply.bind(this),
+		this.ping = 0
+		this.timedout = false
 
-			inspect: this.inspect.bind(this),
+		this.rooms = new Set()
 
-			io: socket,
-			proxy: server.tracking ? server.observe(this) : this,
-			rooms: new Set(),
-
-			null: Object.create(null),
-		})
-		this.toJSON = this[inspect] = this.inspect
-
-		Object.assign(socket, {
-			[inspect]: this.inspect,
-			toJSON: this.inspect,
-		})
+		this.proxy = server.tracking ? server.observe(this) : this
 	}
 	emit(k, v, cb) {
 		if (!this.messages.length) {
@@ -53,7 +46,7 @@ export class Socket {
 		if (cb) {
 			this.messages.push([k, v, this.callback(cb)])
 		} else if (typeof v === 'function') {
-			this.messages.push([k, this.null, this.callback(v)])
+			this.messages.push([k, 0, this.callback(v)])
 		} else {
 			this.messages.push(typeof k === 'object' ? k : [k, v])
 		}
@@ -63,14 +56,14 @@ export class Socket {
 			this.emit(k, v)
 		} else {
 			if (typeof k === 'object') {
-				for (let m of this.messages) {
+				for (const m of this.messages) {
 					if (m[0] === k[0]) {
 						m[1] = k[1]
 						return
 					}
 				}
 			} else {
-				for (let m of this.messages) {
+				for (const m of this.messages) {
 					if (m[0] === k) {
 						m[1] = v
 						return
@@ -82,44 +75,44 @@ export class Socket {
 	}
 	disconnect(noReconnect) {
 		if (noReconnect) {
-			for (let m of this.server.disconnectData)
-				this.io._socket.write(m)
+			this.write(this.server.disconnectData)
 		}
 		this.io.close()
 	}
 
-	// PRIVATE API
+	// private
+
 	listen() {
 		this.io.on('close', this.onclose)
 		this.io.on('error', this.onerror)
 		this.io.on('message', this.onmessage)
 	}
-	onclose(code, message, isBinary) {
+	onclose = (code, message, isBinary) => {
 		message = message.toString()
 
 		this.server.sockets.delete(this)
 
-		for (let room of this.rooms) {
+		for (const room of this.rooms) {
 			room[leave](this.proxy)
 		}
 
 		this.server.events.disconnect &&
 			this.server.events.disconnect(this.proxy, code, message)
 	}
-	onerror(err) {
+	onerror = err => {
 		this.server.socketErrors++
-		console.error('Socket.onerror', err, this.inspect())
+		console.error('Socket.onerror', err, this)
 	}
 
 	// callbacks
 	callback(c) {
-		let i = this.callbacks.length
+		const i = this.callbacks.length
 		this.callbacks[i] = c
 		return i
 	}
 	oncallback(d, m) {
 		if (!this.callbacks[d[0]]) {
-			console.log('oncallback doesnt exits', this, m)
+			console.error('oncallback doesnt exits', this, m)
 		} else {
 			this.callbacks[d[0]](...d[1])
 			this.callbacks[d[0]] = null
@@ -132,13 +125,13 @@ export class Socket {
 	// messages
 	parse(o) {
 		try {
-			return JSON.parse(o)
+			return parse(o)
 		} catch (e) {
 			console.log('parser error', this, o)
 			return false
 		}
 	}
-	onmessage(e, isBinary) {
+	onmessage = (e, isBinary) => {
 		e = e.toString()
 
 		if (e === '') {
@@ -149,15 +142,15 @@ export class Socket {
 			this.server.bytesReceived += e.length
 			this.bytesReceived += e.length
 
-			let messages = this.parse(e)
+			const messages = this.parse(e)
 
-			if (messages && Array.isArray(messages)) {
+			if (messages && isArray(messages)) {
 				this.server.messagesReceived += messages.length
 				this.messagesReceived += messages.length
 
 				this.server.events.incoming &&
 					this.server.events.incoming(this.proxy, messages)
-				for (let m of messages) {
+				for (const m of messages) {
 					if (m[0] === '') {
 						this.oncallback(m[1], m)
 					} else if (this.server.events[m[0]]) {
@@ -182,7 +175,7 @@ export class Socket {
 	processQueue() {
 		if (this.io.readyState === 1) {
 			if (this.messages.length) {
-				let messages = this.messages
+				const messages = this.messages
 				this.messages = []
 
 				this.server.events.outgoing &&
@@ -191,39 +184,34 @@ export class Socket {
 				this.server.messagesSent += messages.length
 				this.messagesSent += messages.length
 
-				messages = this.server.cacheMessages(messages, this)
-
-				for (let m of messages) this.io._socket.write(m)
+				this.write(this.server.cacheMessages(messages, this))
 			}
 		}
-		this.messages = []
+		// this.messages = []
 	}
-
-	inspect() {
+	write(messages) {
+		this.socket.cork()
+		for (const m of messages) {
+			this.socket.write(m)
+		}
+		this.socket.uncork()
+	}
+	toJSON() {
+		return '[content of socket object omitted for toJSON]'
+	}
+	[inspect]() {
 		return {
+			...this,
+			server: 'omitted',
+			io: 'omitted',
+			socket: 'omitted',
+
+			messages: 'omitted',
+			callbacks: 'omitted',
+
 			readyState: this.io.readyState,
 
-			since: this.since,
-			seen: this.seen,
-			contacted: this.contacted,
-			ping: this.ping,
-			timedout: this.timedout,
-
-			ip: this.ip,
-			userAgent: this.userAgent,
-			params: this.params,
-
-			bytesSent: this.bytesSent,
-			bytesReceived: this.bytesReceived,
-			messagesSent: this.messagesSent,
-			messagesReceived: this.messagesReceived,
-
-			rooms: this.rooms,
-
-			// functions
-			emit: this.emit,
-			once: this.once,
-			disconnect: this.disconnect,
+			proxy: 'omitted',
 		}
 	}
 }

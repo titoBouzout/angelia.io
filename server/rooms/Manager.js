@@ -17,13 +17,13 @@ class ManagerSingleton {
 		})
 	}
 	track(path) {
-		let root = '.' + path
+		const root = '.' + path
 
 		if (!this.rooms.has(root)) {
 			// index for fast access
 			let paths = ''
 			let pathsObject = this.pathsObject
-			for (let child of path.split('.')) {
+			for (const child of path.split('.')) {
 				paths += '.' + child
 				pathsObject = pathsObject[child] = pathsObject[child] || {}
 				this.paths[paths] = pathsObject
@@ -48,7 +48,7 @@ class ManagerSingleton {
 				set: (target, id, value, receiver) => {
 					// if not Symbol and path in track
 					if (typeof id === 'string' && this.paths[path + '.' + id]) {
-						let oldValue = target[id]
+						const oldValue = target[id]
 						target[id] = value
 
 						this.check(

@@ -203,6 +203,75 @@ As in `socket.on('connect', () => console.log('connect happened!'))`
 | `reconnect`  | if we were connected at least once, then any re-connection will dispatch this event instead of `connect` |
 | `disconnect` | when we disconnect from the server                                                                       |
 
+## Rooms
+
+1. Create a room class that extends `Room`
+2. Create a room list that will allow joining sockets
+3. Join a socket in a room, a socket may join multiple rooms. Rooms
+   are created when the `id` of the room doesn't exists, and deleted
+   when there are no sockets in the room and the room doesn't have the
+   flag `persistent`
+
+```js
+import { Room, Rooms } from 'angelia.io/server'
+
+class GameRoom extends Room {
+	persistent = true
+
+	onCreate(socket) {
+		console.log('creating room', this.id, socket)
+	}
+	onDelete(socket) {
+		console.log('deleting room', this.id, socket)
+	}
+
+	onJoin(socket) {
+		console.log('socket joined room', this.id, socket)
+		socket.game = this
+		this.emit('user joined', 'data here')
+	}
+	onLeave(socket) {
+		console.log('socket left room', this.id, socket)
+		socket.game = undefined
+		this.emit('user left', 'data here')
+	}
+}
+
+const games = new Rooms(GameRoom)
+
+class Connection {
+	connect(socket) {
+		game.join(socket, 'room id here')
+		socket.room.id === 'room id here'
+		game.leave(socket, 'room id here')
+
+		game.join(socket, 'a different room')
+		socket.room.id === 'a different room'
+		game.leave(socket, 'a different room')
+	}
+}
+
+Server.on(Connection)
+Server.listen()
+```
+
+### `Room` Class
+
+| signature                             | kind    | description                                      |
+| ------------------------------------- | ------- | ------------------------------------------------ |
+| `onCreate(socket)`                    | method  | dispatched when the room is created              |
+| `onDelete(socket)`                    | method  | dispatched when the room is deleted              |
+| `onJoin(socket)`                      | method  | dispatched when a socket joins the room          |
+| `onLeave(socket)`                     | method  | dispatched when a socket leaves the room         |
+| `persistent`                          | boolean | to not delete rooms when there are no sockets in |
+| `connections`                         | number  | number of sockets in the room                    |
+| `sockets`                             | Set     | sockets in the room                              |
+| `emit(key, [value])`                  | method  | emits to all sockets in the room                 |
+| `once(key, [value])`                  | method  | emits once all sockets in the room               |
+| `broadcast(socket, key, [value])`     | method  | emits to other sockets in the room               |
+| `broadcastOnce(socket, key, [value])` | method  | emits once to other sockets in the room          |
+| `id`                                  | any     | the room id                                      |
+
 ## Authors
 
 - Tito Bouzout https://github.com/titoBouzout

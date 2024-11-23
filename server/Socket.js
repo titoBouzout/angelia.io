@@ -1,4 +1,4 @@
-import { leave } from './rooms/constants.js'
+import { leave } from './constants.js'
 
 import { fromEntries, inspect, isArray, parse } from './utils.js'
 
@@ -35,8 +35,6 @@ export class Socket {
 		this.timedout = false
 
 		this.rooms = new Set()
-
-		this.proxy = server.tracking ? server.observe(this) : this
 	}
 	emit(k, v, cb) {
 		if (!this.messages.length) {
@@ -93,11 +91,11 @@ export class Socket {
 		this.server.sockets.delete(this)
 
 		for (const room of this.rooms) {
-			room[leave](this.proxy)
+			room[leave](this)
 		}
 
 		this.server.events.disconnect &&
-			this.server.events.disconnect(this.proxy, code, message)
+			this.server.events.disconnect(this, code, message)
 	}
 	onerror = err => {
 		this.server.socketErrors++
@@ -149,26 +147,26 @@ export class Socket {
 				this.messagesReceived += messages.length
 
 				this.server.events.incoming &&
-					this.server.events.incoming(this.proxy, messages)
+					this.server.events.incoming(this, messages)
 				for (const m of messages) {
 					if (m[0] === '') {
 						this.oncallback(m[1], m)
 					} else if (this.server.events[m[0]]) {
 						this.server.events[m[0]](
-							this.proxy,
+							this,
 							m[1],
 							m[2] && this.doreply.bind(null, m[2]),
 						)
 					} else {
 						this.server.messagesGarbage++
 						this.server.events.garbage &&
-							this.server.events.garbage(this.proxy, m)
+							this.server.events.garbage(this, m)
 					}
 				}
 			} else {
 				this.server.messagesGarbage++
 				this.server.events.garbage &&
-					this.server.events.garbage(this.proxy, messages || e)
+					this.server.events.garbage(this, messages || e)
 			}
 		}
 	}
@@ -179,7 +177,7 @@ export class Socket {
 				this.messages = []
 
 				this.server.events.outgoing &&
-					this.server.events.outgoing(this.proxy, messages)
+					this.server.events.outgoing(this, messages)
 
 				this.server.messagesSent += messages.length
 				this.messagesSent += messages.length
@@ -210,8 +208,6 @@ export class Socket {
 			callbacks: 'omitted',
 
 			readyState: this.io.readyState,
-
-			proxy: 'omitted',
 		}
 	}
 }

@@ -7,9 +7,8 @@ import {
 	stringify,
 } from './utils.js'
 
-import { Manager } from './rooms/Manager.js'
-import { Room } from './rooms/Room.js'
 import { Socket } from './Socket.js'
+import { Emitter } from './Emitter.js'
 
 import { nextTick } from 'node:process'
 import * as http from 'http'
@@ -17,11 +16,11 @@ import formidable from 'formidable'
 
 import { WebSocketServer } from 'ws'
 
-export { Room }
-
 /** Creates a new Socket Server */
-export default new (class Server {
+export default new (class Server extends Emitter {
 	constructor() {
+		super()
+
 		this.hostname = ''
 		this.port = 3001
 
@@ -44,8 +43,6 @@ export default new (class Server {
 		this.serverErrors = 0
 		this.socketErrors = 0
 
-		this.sockets = new Set()
-
 		this.queue = []
 
 		this.cacheSymbol = Symbol('cache')
@@ -56,11 +53,6 @@ export default new (class Server {
 
 		this.pingData = frame('')
 		this.disconnectData = frame(stringify([['disconnect', true]]))
-
-		this._track = Manager.track
-		this.rooms = Manager.rooms
-		this.Room = Room
-		this.observe = Manager.observe
 	}
 	/**
 	 * Start server listening
@@ -72,7 +64,7 @@ export default new (class Server {
 	 * 	maxPostSize?: number
 	 * 	skipUTF8Validation?: boolean
 	 * 	timeout?: number
-	 * }} options
+	 * }} [options]
 	 */
 	listen(options) {
 		this.hostname = options.hostname || this.hostname
@@ -157,15 +149,11 @@ export default new (class Server {
 		console.log('Socket Server Started Listening On Port', this.port)
 	}
 
-	// count of connections
-	get connections() {
-		return this.sockets.size
-	}
-
 	/**
 	 * Listen for events
 	 *
-	 * @param {ObjectConstructor} listener
+	 * @template T
+	 * @param {T} listener
 	 */
 	on(listener) {
 		const instance = new listener()
@@ -189,35 +177,6 @@ export default new (class Server {
 		}
 	}
 
-	emit(k, v) {
-		const d = [k, v]
-		for (const socket of this.sockets) {
-			socket.emit(d)
-		}
-	}
-	once(k, v) {
-		const d = [k, v]
-		for (const socket of this.sockets) {
-			socket.once(d)
-		}
-	}
-	broadcast(me, k, v) {
-		const d = [k, v]
-		for (const socket of this.sockets) {
-			if (me != socket) {
-				socket.emit(d)
-			}
-		}
-	}
-	broadcastOnce(me, k, v) {
-		const d = [k, v]
-		for (const socket of this.sockets) {
-			if (me != socket) {
-				socket.once(d)
-			}
-		}
-	}
-
 	// private
 
 	onconnect = (socket, request) => {
@@ -229,7 +188,7 @@ export default new (class Server {
 
 		this.sockets.add(socket)
 
-		this.events.connect && this.events.connect(socket.proxy, request)
+		this.events.connect && this.events.connect(socket, request)
 
 		if (socket.params.angelia) {
 			socket.onmessage(socket.params.angelia)
@@ -288,8 +247,7 @@ export default new (class Server {
 
 			if (delay > this.timeout) {
 				socket.timedout = true
-				this.events.timeout &&
-					this.events.timeout(socket.proxy, delay)
+				this.events.timeout && this.events.timeout(socket, delay)
 				socket.io.terminate()
 			} else if (delay > this.timeoutCheck) {
 				/**
@@ -318,7 +276,7 @@ export default new (class Server {
 		socket.seen = this.now
 		socket.ping = this.now - socket.contacted
 
-		this.events.ping && this.events.ping(socket.proxy)
+		this.events.ping && this.events.ping(socket)
 	}
 
 	toJSON() {
@@ -329,13 +287,5 @@ export default new (class Server {
 			...this,
 			sockets: 'omitted',
 		}
-	}
-
-	track(path) {
-		this.tracking = true
-		for (const socket of this.sockets) {
-			socket.proxy = this.observe(socket)
-		}
-		return this._track(path)
 	}
 })()

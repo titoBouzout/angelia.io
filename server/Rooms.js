@@ -25,10 +25,9 @@ export class Rooms {
 		const room = this.rooms.get(id)
 		if (room) {
 			room[leave](socket)
-
-			if (!room.persistent && room.size === 0) {
-				room.onDelete(socket)
+			if (!room.persistent && room.sockets.size === 0) {
 				this.rooms.delete(id)
+				room.onDelete(socket)
 			}
 		}
 	}

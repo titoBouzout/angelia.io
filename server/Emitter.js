@@ -1,7 +1,9 @@
+import { MapeableSet } from './utils.js'
+
 export class Emitter {
 	constructor() {
-		/** @type Set<import('./Socket.js').Socket> */
-		this.sockets = new Set()
+		/** @type MapeableSet<import('./Socket.js').Socket> */
+		this.sockets = new MapeableSet()
 	}
 
 	get connections() {

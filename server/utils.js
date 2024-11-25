@@ -1,5 +1,3 @@
-// utils
-
 export const empty = () => Object.create(null)
 
 export const now = Date.now
@@ -15,6 +13,8 @@ export const assign = Object.assign
 export const isArray = Array.isArray
 
 export const fromEntries = Object.fromEntries
+
+export const arrayFrom = Array.from
 
 export function ListenerTemplate() {
 	const fns = []
@@ -45,3 +45,12 @@ export const frame = function (
 	opcode: 1,
 	fin: true,
 })
+
+export class MapeableSet extends Set {
+	map(fn) {
+		return arrayFrom(this, fn)
+	}
+	filter(fn) {
+		return this.map().filter(fn)
+	}
+}

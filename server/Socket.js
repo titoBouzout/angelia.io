@@ -1,6 +1,12 @@
-import { leave } from './constants.js'
+import { parent } from './constants.js'
 
-import { fromEntries, inspect, isArray, parse } from './utils.js'
+import {
+	fromEntries,
+	inspect,
+	isArray,
+	MapeableSet,
+	parse,
+} from './utils.js'
 
 export class Socket {
 	constructor(socket, server, request) {
@@ -34,7 +40,7 @@ export class Socket {
 		this.ping = 0
 		this.timedout = false
 
-		this.rooms = new Set()
+		this.rooms = new MapeableSet()
 	}
 	emit(k, v, cb) {
 		if (!this.messages.length) {
@@ -155,7 +161,7 @@ export class Socket {
 						this.server.events[m[0]](
 							this,
 							m[1],
-							m[2] && this.doreply.bind(null, m[2]),
+							m[2] && this.doreply.bind(this, m[2]),
 						)
 					} else {
 						this.server.messagesGarbage++

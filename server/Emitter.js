@@ -22,6 +22,7 @@ export class Emitter {
 			socket.once(d)
 		}
 	}
+	/** @param me {import('./Socket.js').Socket} */
 	broadcast(me, k, v) {
 		const d = [k, v]
 		for (const socket of this.sockets) {
@@ -30,6 +31,7 @@ export class Emitter {
 			}
 		}
 	}
+	/** @param me {import('./Socket.js').Socket} */
 	broadcastOnce(me, k, v) {
 		const d = [k, v]
 		for (const socket of this.sockets) {

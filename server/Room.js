@@ -6,11 +6,16 @@ export class Room extends Emitter {
 	id
 	persistent
 
+	/** @param socket {import('./Socket.js').Socket} */
 	onCreate(socket) {}
+	/** @param socket {import('./Socket.js').Socket} */
 	onDelete(socket) {}
+	/** @param socket {import('./Socket.js').Socket} */
 	onJoin(socket) {}
+	/** @param socket {import('./Socket.js').Socket} */
 	onLeave(socket) {}
 
+	/** @param socket {import('./Socket.js').Socket} */
 	[join](socket) {
 		this.sockets.add(socket)
 
@@ -18,6 +23,7 @@ export class Room extends Emitter {
 
 		this.onJoin(socket)
 	}
+	/** @param socket {import('./Socket.js').Socket} */
 	[leave](socket) {
 		this.sockets.delete(socket)
 

@@ -91,7 +91,7 @@ export class Socket {
 		this.server.sockets.delete(this)
 
 		for (const room of this.rooms) {
-			room[leave](this)
+			room[parent].leave(this, room.id)
 		}
 
 		this.server.events.disconnect &&

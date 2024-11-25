@@ -158,7 +158,7 @@ export default new (class Server extends Emitter {
 	on(listener) {
 		const instance = new listener()
 
-		const methods = [
+		const methods = listener.listeners || [
 			// todo maybe use getPrototypeOf ?
 			...Object.getOwnPropertyNames(instance.__proto__),
 			...Object.getOwnPropertyNames(instance),
@@ -175,6 +175,8 @@ export default new (class Server extends Emitter {
 				}
 			}
 		}
+
+		return instance
 	}
 
 	// private

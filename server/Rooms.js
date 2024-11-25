@@ -44,6 +44,31 @@ export class Rooms extends Emitter {
 		}
 	}
 
+	get connections() {
+		let count = 0
+		for (const room of this.rooms.values()) {
+			count += room.sockets.size
+		}
+		return count
+	}
+
+	*Sockets() {
+		for (const room of this.rooms.values()) {
+			for (const socket of room.sockets) {
+				yield socket
+			}
+		}
+	}
+
+	map(fn) {
+		return arrayFrom(this.rooms.values(), fn)
+	}
+	filter(fn) {
+		return this.map().filter(fn)
+	}
+	toJSON() {
+		return this.map()
+	}
 	[Symbol.iterator]() {
 		return this.rooms.values()
 	}

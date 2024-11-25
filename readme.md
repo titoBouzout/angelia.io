@@ -261,7 +261,7 @@ Server.listen()
 
 ### `Room` Class
 
-Iterating `room` returns the sockets
+Iterating returns the sockets
 
 | signature                             | kind    | description                                      |
 | ------------------------------------- | ------- | ------------------------------------------------ |
@@ -273,20 +273,37 @@ Iterating `room` returns the sockets
 | `connections`                         | number  | number of sockets in the room                    |
 | `sockets`                             | Set     | sockets in the room                              |
 | `emit(key, [value])`                  | method  | emits to all sockets in the room                 |
-| `once(key, [value])`                  | method  | emits once all sockets in the room               |
+| `once(key, [value])`                  | method  | emits once to all sockets in the room            |
 | `broadcast(socket, key, [value])`     | method  | emits to other sockets in the room               |
 | `broadcastOnce(socket, key, [value])` | method  | emits once to other sockets in the room          |
 | `id`                                  | any     | the room id                                      |
 
 ### `Rooms` Class
 
-Iterating `rooms` returns the rooms
+Iterating returns the rooms
 
-| signature             | kind   | description                    |
-| --------------------- | ------ | ------------------------------ |
-| `get(id)`             | method | returns room with such an `id` |
-| `join(socket, [id])`  | method | adds socket to room `id`       |
-| `leave(socket, [id])` | method | removes socket from room `id`  |
+| signature                             | kind     | description                                   |
+| ------------------------------------- | -------- | --------------------------------------------- |
+| `get(id)`                             | method   | gets room with such an `id`                   |
+| `join(socket, [id])`                  | method   | adds socket to room `id`                      |
+| `leave(socket, [id])`                 | method   | removes socket from room `id`                 |
+| `connections`                         | number   | number of sockets in this room list           |
+| `sockets`                             | Iterator | sockets in this room list                     |
+| `emit(key, [value])`                  | method   | emits to all sockets in this room list        |
+| `once(key, [value])`                  | method   | emits once to all sockets in this room list   |
+| `broadcast(socket, key, [value])`     | method   | emits to other sockets in this room list      |
+| `broadcastOnce(socket, key, [value])` | method   | emits once to other sockets in this room list |
+| `map(fn)`                             | method   | returns mapped array                          |
+| `filter(fn)`                          | method   | returns mapped filtered array                 |
+
+### `sockets` Object
+
+Like `Set` but with two aditional methods
+
+| signature    | kind   | description                   |
+| ------------ | ------ | ----------------------------- |
+| `map(fn)`    | method | returns mapped array          |
+| `filter(fn)` | method | returns mapped filtered array |
 
 ## Authors
 

@@ -70,6 +70,12 @@ export function ClientWebWorker() {
 				 * event.reason)
 				 */
 				break
+			case 1001:
+				/**
+				 * Freaking firefox code when reloading the page, must be
+				 * blacklisted else it will connect twice in reloads.
+				 */
+				break
 			case 1005:
 				/**
 				 * Closed by client - console.log( 'ws - we called
@@ -97,8 +103,12 @@ export function ClientWebWorker() {
 			postMessage(['dispatch', 'disconnect'])
 		}
 
-		// do not reconnect when we call `socket.disconnect()`
-		if (reconnect && code !== 1005) {
+		console.log(code)
+
+		// 1001: freaking firefox
+		// 1005: do not reconnect when we call `socket.disconnect()`
+		// 1006: DO NOT USE! THAT HAPPENS WHEN SERVER CONNECTION IS KILLED
+		if (reconnect && code !== 1005 && code !== 1001) {
 			postMessage(['connect'])
 		}
 	}

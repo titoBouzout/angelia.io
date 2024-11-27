@@ -1,4 +1,4 @@
-import { join, leave, parent } from './constants.js'
+import { parent } from './constants.js'
 import { Emitter } from './Emitter.js'
 import { arrayFrom } from './utils.js'
 
@@ -30,13 +30,13 @@ export class Rooms extends Emitter {
 
 			room.onCreate(socket)
 		}
-		room[join](socket)
+		room.join(socket)
 	}
 
 	leave(socket, id = undefined) {
 		const room = this.rooms.get(id)
 		if (room) {
-			room[leave](socket)
+			room.leave(socket)
 			if (!room.persistent && room.sockets.size === 0) {
 				this.rooms.delete(id)
 				room.onDelete(socket)

@@ -205,13 +205,15 @@ As in `socket.on('connect', () => console.log('connect happened!'))`
 
 ## Rooms
 
+### Via a `Rooms` list
+
 1. Create a room class that extends `Room`
 2. Create a room list that will allow joining sockets
 3. Join a socket in a room, a socket may join multiple rooms. Rooms
    are created when the `id` of the room doesn't exists, and deleted
    when there are no sockets in the room and the room doesn't have the
    flag `persistent`
-4. a socket will leave automatically all rooms on disconnection
+4. A socket will leave automatically all rooms on disconnection
 5. `socket.rooms` is a set with all the rooms the socket joined
 6. `id` is assigned to the room on creation
 
@@ -219,7 +221,7 @@ As in `socket.on('connect', () => console.log('connect happened!'))`
 import { Room, Rooms } from 'angelia.io/server'
 
 class GameRoom extends Room {
-	persistent = true
+	persistent = false
 
 	onCreate(socket) {
 		console.log('creating room', this.id, socket)
@@ -240,6 +242,7 @@ class GameRoom extends Room {
 	}
 }
 
+// games is a room list
 const games = new Rooms(GameRoom)
 
 class Connection {
@@ -259,26 +262,7 @@ Server.on(Connection)
 Server.listen()
 ```
 
-### `Room` Class
-
-Iterating returns the sockets
-
-| signature                             | kind    | description                                      |
-| ------------------------------------- | ------- | ------------------------------------------------ |
-| `onCreate(socket)`                    | method  | dispatched when the room is created              |
-| `onDelete(socket)`                    | method  | dispatched when the room is deleted              |
-| `onJoin(socket)`                      | method  | dispatched when a socket joins the room          |
-| `onLeave(socket)`                     | method  | dispatched when a socket leaves the room         |
-| `persistent`                          | boolean | to not delete rooms when there are no sockets in |
-| `connections`                         | number  | number of sockets in the room                    |
-| `sockets`                             | Set     | sockets in the room                              |
-| `emit(key, [value])`                  | method  | emits to all sockets in the room                 |
-| `once(key, [value])`                  | method  | emits once to all sockets in the room            |
-| `broadcast(socket, key, [value])`     | method  | emits to other sockets in the room               |
-| `broadcastOnce(socket, key, [value])` | method  | emits once to other sockets in the room          |
-| `id`                                  | any     | the room id                                      |
-
-### `Rooms` Class
+#### `Rooms` Class
 
 Iterating returns the rooms
 
@@ -296,7 +280,65 @@ Iterating returns the rooms
 | `map(fn)`                             | method   | returns mapped array                          |
 | `filter(fn)`                          | method   | returns mapped filtered array                 |
 
-### `sockets` Object
+### Via a `Room`
+
+1. Create a room instance that extends `Room`
+2. Join a socket in a room, a socket may join multiple rooms.
+3. A socket will leave automatically all rooms on disconnection
+4. `socket.rooms` is a set with all the rooms the socket joined
+5. Keep in mind that `onCreate` and `onDelete` are not dispatched when
+   the room is manged by yourself. The construtor could be used for
+   simulating `onCreate` and `onDelete` only you will know when to
+   dispose such a variable.
+
+```js
+import { Room } from 'angelia.io/server'
+
+class Lobby extends Room {
+	persistent = true
+	id = 'lobby'
+	onJoin(socket) {
+		console.log('socket joined room', this.id, socket)
+	}
+}
+
+// lobby is just 1 room
+const lobby = new Lobby()
+
+class Connection {
+	connect(socket) {
+		lobby.join(socket)
+
+		lobby.leave(socket)
+	}
+}
+
+Server.on(Connection)
+Server.listen()
+```
+
+#### `Room` Class
+
+Iterating returns the sockets
+
+| signature                             | kind    | description                                      |
+| ------------------------------------- | ------- | ------------------------------------------------ |
+| `onCreate(socket)`                    | method  | dispatched when the room is created              |
+| `onDelete(socket)`                    | method  | dispatched when the room is deleted              |
+| `onJoin(socket)`                      | method  | dispatched when a socket joins the room          |
+| `onLeave(socket)`                     | method  | dispatched when a socket leaves the room         |
+| `persistent`                          | boolean | to not delete rooms when there are no sockets in |
+| `connections`                         | number  | number of sockets in the room                    |
+| `sockets`                             | Set     | sockets in the room                              |
+| `emit(key, [value])`                  | method  | emits to all sockets in the room                 |
+| `once(key, [value])`                  | method  | emits once to all sockets in the room            |
+| `broadcast(socket, key, [value])`     | method  | emits to other sockets in the room               |
+| `broadcastOnce(socket, key, [value])` | method  | emits once to other sockets in the room          |
+| `id`                                  | any     | the room id                                      |
+| `join(socket)`                        | method  | adds a socket to the room                        |
+| `leave(socket)`                       | method  | remves a socket from the room                    |
+
+### `sockets` Object in `Room` and `Rooms`
 
 Like `Set` but with two aditional methods
 

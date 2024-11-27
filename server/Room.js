@@ -1,5 +1,3 @@
-import { join, leave } from './constants.js'
-
 import { Emitter } from './Emitter.js'
 
 export class Room extends Emitter {
@@ -16,7 +14,7 @@ export class Room extends Emitter {
 	onLeave(socket) {}
 
 	/** @param socket {import('./Socket.js').Socket} */
-	[join](socket) {
+	join(socket) {
 		this.sockets.add(socket)
 
 		socket.rooms.add(this)
@@ -24,7 +22,7 @@ export class Room extends Emitter {
 		this.onJoin(socket)
 	}
 	/** @param socket {import('./Socket.js').Socket} */
-	[leave](socket) {
+	leave(socket) {
 		this.sockets.delete(socket)
 
 		socket.rooms.delete(this)

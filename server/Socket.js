@@ -4,8 +4,8 @@ import {
 	fromEntries,
 	inspect,
 	isArray,
-	MapeableSet,
 	parse,
+	remove,
 } from './utils.js'
 
 export class Socket {
@@ -20,12 +20,14 @@ export class Socket {
 				.trim() || request.connection.remoteAddress
 		).replace(/^::ffff:/, '')
 		this.userAgent = request.headers['user-agent'] || ''
-		this.params = fromEntries(
+		/** @type {Record<string, string>} */
+		this.params = Object.fromEntries(
 			new URLSearchParams(request.url.slice(9)),
 		)
 
+		/** @type {any[][]} */
 		this.messages = []
-		/** @type Function[]| Null[] */
+		/** @type {(Function | null)[]} */
 		this.callbacks = [null]
 
 		this.bytesSent = 0
@@ -40,7 +42,8 @@ export class Socket {
 		this.ping = 0
 		this.timedout = false
 
-		this.rooms = new MapeableSet()
+		/** @type {import('./Room.js').Room[]} */
+		this.rooms = []
 	}
 	emit(k, v, cb) {
 		if (!this.messages.length) {
@@ -94,9 +97,10 @@ export class Socket {
 	onclose = (code, message, isBinary) => {
 		message = message.toString()
 
-		this.server.sockets.delete(this)
+		remove(this.server.sockets, this)
 
-		for (const room of this.rooms) {
+		// Room.leave mutates this.rooms via splice — iterate a snapshot
+		for (const room of this.rooms.slice()) {
 			room[parent]
 				? room[parent].leave(this, room.id)
 				: room.leave(this)
@@ -117,10 +121,11 @@ export class Socket {
 		return i
 	}
 	oncallback(d, m) {
-		if (!this.callbacks[d[0]]) {
+		const cb = this.callbacks[d[0]]
+		if (!cb) {
 			console.error('oncallback doesnt exits', this, m)
 		} else {
-			this.callbacks[d[0]](...d[1])
+			cb(...d[1])
 			this.callbacks[d[0]] = null
 		}
 	}

@@ -21,6 +21,9 @@ export default new (class Server extends Emitter {
 	constructor() {
 		super()
 
+		/** @type {import('./Socket.js').Socket[]} */
+		this.sockets = []
+
 		this.hostname = ''
 		this.port = 3001
 
@@ -68,21 +71,21 @@ export default new (class Server extends Emitter {
 	 */
 	listen(options = {}) {
 		this.hostname = options.hostname || this.hostname
-		this.port =
-			+options.port > 0 && +options.port <= 65535
-				? +options.port
-				: this.port
 
-		this.maxMessageSize =
-			+options.maxMessageSize > 0 ? +options.maxMessageSize : 5
-		this.maxPostSize =
-			+options.maxPostSize > 0 ? +options.maxPostSize : 50
+		const port = +(options.port ?? 0)
+		this.port = port > 0 && port <= 65535 ? port : this.port
+
+		const maxMessageSize = +(options.maxMessageSize ?? 0)
+		this.maxMessageSize = maxMessageSize > 0 ? maxMessageSize : 5
+
+		const maxPostSize = +(options.maxPostSize ?? 0)
+		this.maxPostSize = maxPostSize > 0 ? maxPostSize : 50
 
 		this.now = now()
 		this.since = this.now
 
-		this.timeout =
-			+options.timeout >= 10000 ? +options.timeout : 60 * 1000
+		const timeout = +(options.timeout ?? 0)
+		this.timeout = timeout >= 10000 ? timeout : 60 * 1000
 
 		// updates ping and checks for disconnections
 		this.timeoutCheck = this.timeout / 2
@@ -152,8 +155,9 @@ export default new (class Server extends Emitter {
 	/**
 	 * Listen for events
 	 *
-	 * @template T
-	 * @param {T} listener
+	 * @template {new () => any} T
+	 * @param {T & { listeners?: string[] }} listener
+	 * @returns {InstanceType<T>}
 	 */
 	on(listener) {
 		const instance = new listener()
@@ -188,7 +192,7 @@ export default new (class Server extends Emitter {
 
 		socket.listen()
 
-		this.sockets.add(socket)
+		this.sockets.push(socket)
 
 		this.events.connect && this.events.connect(socket, request)
 

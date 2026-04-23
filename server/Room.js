@@ -1,36 +1,37 @@
 import { Emitter } from './Emitter.js'
+import { remove } from './utils.js'
 
 export class Room extends Emitter {
-	id
-	persistent
+	/** @type {import('./Socket.js').Socket[]} */
+	sockets = []
 
-	/** @param socket {import('./Socket.js').Socket} */
+	/** @type {any} */
+	id
+	persistent = false
+
+	/** @param {import('./Socket.js').Socket} socket */
 	onCreate(socket) {}
-	/** @param socket {import('./Socket.js').Socket} */
+	/** @param {import('./Socket.js').Socket} socket */
 	onDelete(socket) {}
-	/** @param socket {import('./Socket.js').Socket} */
+	/** @param {import('./Socket.js').Socket} socket */
 	onJoin(socket) {}
-	/** @param socket {import('./Socket.js').Socket} */
+	/** @param {import('./Socket.js').Socket} socket */
 	onLeave(socket) {}
 
-	/** @param socket {import('./Socket.js').Socket} */
+	/** @param {import('./Socket.js').Socket} socket */
 	join(socket) {
-		this.sockets.add(socket)
-
-		socket.rooms.add(this)
-
-		this.onJoin(socket)
+		if (this.sockets.indexOf(socket) === -1) {
+			this.sockets.push(socket)
+			socket.rooms.push(this)
+			this.onJoin(socket)
+		}
 	}
-	/** @param socket {import('./Socket.js').Socket} */
+	/** @param {import('./Socket.js').Socket} socket */
 	leave(socket) {
-		this.sockets.delete(socket)
-
-		socket.rooms.delete(this)
-
-		this.onLeave(socket)
-	}
-
-	[Symbol.iterator]() {
-		return this.sockets
+		if (this.sockets.indexOf(socket) !== -1) {
+			remove(this.sockets, socket)
+			remove(socket.rooms, this)
+			this.onLeave(socket)
+		}
 	}
 }

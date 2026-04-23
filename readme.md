@@ -106,7 +106,7 @@ The `server` object can be accessed from everywhere
 | `once(key, [value])`                  | Function | emits to the sockets and replace if exists a pending message with the same `key`               |
 | `broadcast(sender, key, [value])`     | Function | emits to all connected sockets except sender                                                   |
 | `broadcastOnce(sender, key, [value])` | Function | emits to the sockets except sender and replace if exists a pending message with the same `key` |
-| `sockets`                             | Set      | a Set() with all the current connected sockets                                                 |
+| `sockets`                             | Array    | an Array with all the current connected sockets                                                |
 
 ### `Socket` Object
 
@@ -128,7 +128,7 @@ The `socket` object is given to you by a listener
 | `bytesReceived`             | Number   | sum of bytes received from this socket                                        |
 | `messagesSent`              | Number   | count of messages sent to this socket                                         |
 | `messagesReceived`          | Number   | count of messages received from this socket                                   |
-| `rooms`                     | Set      | a set with the rooms where this socket is in                                  |
+| `rooms`                     | Array    | an array with the rooms where this socket is in                               |
 | `emit(key, [value])`        | Function | emits to client                                                               |
 | `once(key, [value])`        | Function | replace if exists a pending message with the same `key` from emit queue       |
 | `disconnect([noReconnect])` | Function | disconnects the socket from the server, pass `true` to prevent re-connections |
@@ -214,7 +214,7 @@ As in `socket.on('connect', () => console.log('connect happened!'))`
    when there are no sockets in the room and the room doesn't have the
    flag `persistent`
 4. A socket will leave automatically all rooms on disconnection
-5. `socket.rooms` is a set with all the rooms the socket joined
+5. `socket.rooms` is an array with all the rooms the socket joined
 6. `id` is assigned to the room on creation
 
 ```js
@@ -264,28 +264,25 @@ Server.listen()
 
 #### `Rooms` Class
 
-Iterating returns the rooms
-
 | signature                             | kind     | description                                   |
 | ------------------------------------- | -------- | --------------------------------------------- |
 | `get(id)`                             | method   | gets room with such an `id`                   |
 | `join(socket, [id])`                  | method   | adds socket to room `id`                      |
 | `leave(socket, [id])`                 | method   | removes socket from room `id`                 |
 | `connections`                         | number   | number of sockets in this room list           |
-| `sockets`                             | Iterator | sockets in this room list                     |
+| `sockets`                             | Array    | sockets across every room in this room list   |
+| `list`                                | Array    | every room in this room list                  |
 | `emit(key, [value])`                  | method   | emits to all sockets in this room list        |
 | `once(key, [value])`                  | method   | emits once to all sockets in this room list   |
 | `broadcast(socket, key, [value])`     | method   | emits to other sockets in this room list      |
 | `broadcastOnce(socket, key, [value])` | method   | emits once to other sockets in this room list |
-| `map(fn)`                             | method   | returns mapped array                          |
-| `filter(fn)`                          | method   | returns mapped filtered array                 |
 
 ### Via a `Room`
 
 1. Create a room instance that extends `Room`
 2. Join a socket in a room, a socket may join multiple rooms.
 3. A socket will leave automatically all rooms on disconnection
-4. `socket.rooms` is a set with all the rooms the socket joined
+4. `socket.rooms` is an array with all the rooms the socket joined
 5. Keep in mind that `onCreate` and `onDelete` are not dispatched when
    the room is manged by yourself. The construtor could be used for
    simulating `onCreate` and `onDelete` only you will know when to
@@ -319,8 +316,6 @@ Server.listen()
 
 #### `Room` Class
 
-Iterating returns the sockets
-
 | signature                             | kind    | description                                      |
 | ------------------------------------- | ------- | ------------------------------------------------ |
 | `onCreate(socket)`                    | method  | dispatched when the room is created              |
@@ -329,7 +324,7 @@ Iterating returns the sockets
 | `onLeave(socket)`                     | method  | dispatched when a socket leaves the room         |
 | `persistent`                          | boolean | to not delete rooms when there are no sockets in |
 | `connections`                         | number  | number of sockets in the room                    |
-| `sockets`                             | Set     | sockets in the room                              |
+| `sockets`                             | Array   | sockets in the room                              |
 | `emit(key, [value])`                  | method  | emits to all sockets in the room                 |
 | `once(key, [value])`                  | method  | emits once to all sockets in the room            |
 | `broadcast(socket, key, [value])`     | method  | emits to other sockets in the room               |
@@ -340,12 +335,7 @@ Iterating returns the sockets
 
 ### `sockets` Object in `Room` and `Rooms`
 
-Like `Set` but with two aditional methods
-
-| signature    | kind   | description                   |
-| ------------ | ------ | ----------------------------- |
-| `map(fn)`    | method | returns mapped array          |
-| `filter(fn)` | method | returns mapped filtered array |
+A plain `Array` of sockets — use any native array method (`map`, `filter`, `forEach`, etc.).
 
 ## Authors
 

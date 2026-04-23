@@ -1,28 +1,47 @@
-import { MapeableSet } from './utils.js'
+/**
+ * Common emit / broadcast logic. Subclasses provide their own
+ * `sockets`: Server and Room as a plain Array; Rooms as a computed
+ * getter that walks every room.
+ *
+ * @typedef {{ sockets: import('./Socket.js').Socket[] }} HasSockets
+ */
 
 export class Emitter {
-	constructor() {
-		/** @type MapeableSet<import('./Socket.js').Socket> */
-		this.sockets = new MapeableSet()
-	}
-
+	/** @this {HasSockets} */
 	get connections() {
-		return this.sockets.size
+		return this.sockets.length
 	}
 
+	/**
+	 * @this {HasSockets}
+	 * @param {any} k
+	 * @param {any} [v]
+	 */
 	emit(k, v) {
 		const d = [k, v]
 		for (const socket of this.sockets) {
 			socket.emit(d)
 		}
 	}
+
+	/**
+	 * @this {HasSockets}
+	 * @param {any} k
+	 * @param {any} [v]
+	 */
 	once(k, v) {
 		const d = [k, v]
 		for (const socket of this.sockets) {
 			socket.once(d)
 		}
 	}
-	/** @param me {import('./Socket.js').Socket} */
+
+	/**
+	 * @this {HasSockets}
+	 * @param {import('./Socket.js').Socket} me
+	 * @param {any} k
+	 * @param {any} [v]
+	 */
 	broadcast(me, k, v) {
 		const d = [k, v]
 		for (const socket of this.sockets) {
@@ -31,7 +50,13 @@ export class Emitter {
 			}
 		}
 	}
-	/** @param me {import('./Socket.js').Socket} */
+
+	/**
+	 * @this {HasSockets}
+	 * @param {import('./Socket.js').Socket} me
+	 * @param {any} k
+	 * @param {any} [v]
+	 */
 	broadcastOnce(me, k, v) {
 		const d = [k, v]
 		for (const socket of this.sockets) {

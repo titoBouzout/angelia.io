@@ -1,4 +1,6 @@
 .gitignore
 node_modules
-publish.bat
+publish.sh
 todo
+tests
+tsconfig.json

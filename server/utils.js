@@ -1,20 +1,18 @@
-export const empty = () => Object.create(null)
-
 export const now = Date.now
 
 export const inspect = Symbol.for('nodejs.util.inspect.custom')
 
-export const stringify = JSON.stringify
-
-export const parse = JSON.parse
-
-export const assign = Object.assign
-
-export const isArray = Array.isArray
-
-export const fromEntries = Object.fromEntries
-
-export const arrayFrom = Array.from
+/**
+ * Remove the first occurrence of `item` from `arr` in place.
+ *
+ * @template T
+ * @param {T[]} arr
+ * @param {T} item
+ */
+export function remove(arr, item) {
+	const i = arr.indexOf(item)
+	if (i !== -1) arr.splice(i, 1)
+}
 
 export function ListenerTemplate() {
 	const fns = []
@@ -45,12 +43,3 @@ export const frame = function (
 	opcode: 1,
 	fin: true,
 })
-
-export class MapeableSet extends Set {
-	map(fn) {
-		return arrayFrom(this, fn)
-	}
-	filter(fn) {
-		return this.map().filter(fn)
-	}
-}

@@ -1,18 +1,15 @@
 import { parent } from './constants.js'
 import { Emitter } from './Emitter.js'
 
-/** @template {import('./Room.js').Room} R */
 export class Rooms extends Emitter {
-	/** @param {new () => R} RoomClass */
 	constructor(RoomClass) {
 		super()
 
 		this.RoomClass = RoomClass
-		/** @type {Map<any, R>} */
 		this.rooms = new Map()
 	}
 
-	/** @returns {import('./Socket.js').Socket[]} */
+	/** Every socket across every room, flattened into one array. */
 	get sockets() {
 		const out = []
 		for (const room of this.rooms.values()) {
@@ -21,15 +18,15 @@ export class Rooms extends Emitter {
 		return out
 	}
 
-	/** @param {any} id */
+/** Array of every room in this list. */
+	get list() {
+		return [...this.rooms.values()]
+	}
+
 	get(id) {
 		return this.rooms.get(id)
 	}
 
-	/**
-	 * @param {import('./Socket.js').Socket} socket
-	 * @param {any} [id]
-	 */
 	join(socket, id = undefined) {
 		let room = this.rooms.get(id)
 		if (!room) {
@@ -43,10 +40,6 @@ export class Rooms extends Emitter {
 		room.join(socket)
 	}
 
-	/**
-	 * @param {import('./Socket.js').Socket} socket
-	 * @param {any} [id]
-	 */
 	leave(socket, id = undefined) {
 		const room = this.rooms.get(id)
 		if (room) {
@@ -56,19 +49,6 @@ export class Rooms extends Emitter {
 				room.onDelete(socket)
 			}
 		}
-	}
-
-	get connections() {
-		let count = 0
-		for (const room of this.rooms.values()) {
-			count += room.sockets.length
-		}
-		return count
-	}
-
-	/** @returns {R[]} */
-	get list() {
-		return [...this.rooms.values()]
 	}
 
 	toJSON() {

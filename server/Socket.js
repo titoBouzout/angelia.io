@@ -1,32 +1,47 @@
 import { parent } from './constants.js'
 
 import {
-	fromEntries,
+	encode,
 	inspect,
 	isArray,
+	params,
 	parse,
 	remove,
+	stringify,
 } from './utils.js'
 
+// Shared no-op handler for fire-and-forget `writer.write()` — avoids
+// allocating a new closure per write.
+const noop = () => {}
+
 export class Socket {
-	constructor(socket, server, request) {
+	/**
+	 * @param {any} session WebTransport session
+	 * @param {any} controlStream Bidi stream for queued messages
+	 * @param {any} server
+	 */
+	constructor(session, controlStream, server) {
 		this.server = server
-		this.io = socket
-		this.socket = socket._socket
+		this.session = session
+		this.control = controlStream
 
-		this.ip = (
-			(request.headers['x-forwarded-for'] || '')
-				.split(',')[0]
-				.trim() || request.connection.remoteAddress
-		).replace(/^::ffff:/, '')
-		this.userAgent = request.headers['user-agent'] || ''
-		/** @type {Record<string, string>} */
-		this.params = Object.fromEntries(
-			new URLSearchParams(request.url.slice(9)),
-		)
+		// Writer for outgoing frames on the control stream.
+		this.writer = controlStream.writable.getWriter()
 
-		/** @type {any[][]} */
-		this.messages = []
+		const headers = session.header || {}
+		this.userAgent = headers['user-agent'] || ''
+		// HTTP/3 carries the request URL in the `:path` pseudo-header;
+		// reuse the same params() helper used for the old WS URLs.
+		this.params = params(headers[':path'] || '')
+
+		/**
+		 * Pending outbound messages, split by transport — same shape
+		 * as the client's `#messages`. Both kinds debounce via the
+		 * server's `nextQueue` next-tick scheduler.
+		 *
+		 * @type {{ emit: any[]; http: any[] }}
+		 */
+		this.messages = { emit: [], http: [] }
 		/** @type {(Function | null)[]} */
 		this.callbacks = [null]
 
@@ -41,63 +56,168 @@ export class Socket {
 
 		this.ping = 0
 		this.timedout = false
+		this.closed = false
 
-		/** @type {import('./Room.js').Room[]} */
 		this.rooms = []
 	}
-	emit(k, v, cb) {
-		if (!this.messages.length) {
-			this.server.nextQueue(this)
-		}
 
-		if (cb) {
-			this.messages.push([k, v, this.callback(cb)])
-		} else if (typeof v === 'function') {
-			this.messages.push([k, 0, this.callback(v)])
-		} else {
-			this.messages.push(typeof k === 'object' ? k : [k, v])
+	/**
+	 * Client IP. Prefers `X-Forwarded-For` when `trustProxy` is on
+	 * (LB/proxy in front), otherwise the QUIC peer address. Strips
+	 * the port and any IPv6-mapped-IPv4 (`::ffff:`) prefix. Computed
+	 * on access so it tracks the live `session.peerAddress` if it
+	 * ever updates (e.g., on QUIC connection migration).
+	 */
+	get ip() {
+		const headers = this.session.header || {}
+		let ip = ''
+		if (this.server.trustProxy) {
+			ip = (headers['x-forwarded-for'] || '').split(',')[0].trim()
 		}
-	}
-	once(k, v) {
-		if (!this.messages.length) {
-			this.emit(k, v)
-		} else {
-			if (typeof k === 'object') {
-				for (const m of this.messages) {
-					if (m[0] === k[0]) {
-						m[1] = k[1]
-						return
-					}
-				}
-			} else {
-				for (const m of this.messages) {
-					if (m[0] === k) {
-						m[1] = v
-						return
-					}
-				}
-			}
-			this.emit(k, v)
+		if (!ip) {
+			const peer = (this.session.peerAddress || '').toString()
+			const lastColon = peer.lastIndexOf(':')
+			ip = lastColon === -1 ? peer : peer.slice(0, lastColon)
 		}
+		return ip.replace(/^::ffff:/, '')
 	}
-	disconnect(noReconnect) {
+
+	/** Queue a message for the next control-stream batch. */
+	emit(k, v, cb) {
+		this.enqueue(this.messages.emit, k, v, cb)
+	}
+
+	/**
+	 * Queue a message for the next out-of-band batch — sent on a fresh
+	 * send-only stream rather than the control stream so big payloads
+	 * don't head-of-line-block. Multiple `http()` calls in the same
+	 * tick coalesce into one stream; fan-out emits (`Emitter.http`)
+	 * pass the same array reference to every recipient so the
+	 * encoding is cached and shared.
+	 */
+	http(k, v, cb) {
+		this.enqueue(this.messages.http, k, v, cb)
+	}
+
+	/**
+	 * Send pre-encoded bytes on a fresh send-only stream. Internal —
+	 * called from `processQueue` once per http batch.
+	 * Fire-and-forget: per-stream failures are swallowed so a dead
+	 * socket can't take down a fan-out.
+	 */
+	httpBytes(bytes) {
+		this.server.bytesSent += bytes.length
+		this.bytesSent += bytes.length
+		return this.session
+			.createUnidirectionalStream()
+			.then(stream => {
+				const w = stream.getWriter()
+				return w.write(bytes).then(() => w.close())
+			})
+			.catch(noop)
+	}
+
+	/**
+	 * Close the session.
+	 *
+	 * @param {boolean} [noReconnect] Pass `true` to also write a
+	 *   `disconnect` protocol frame so the client suppresses its
+	 *   auto-reconnect.
+	 * @param {string} [reason] Human-readable reason carried in QUIC's
+	 *   `CONNECTION_CLOSE` frame; surfaced on the client-side
+	 *   `WebTransportError`. Up to 1024 bytes.
+	 */
+	disconnect(noReconnect, reason = 'server disconnect') {
 		if (noReconnect) {
-			this.write(this.server.disconnectData)
+			this.write(encode(stringify([['disconnect', true]]) + '\n'))
 		}
-		this.io.close()
+		try {
+			this.session.close({ closeCode: 0, reason })
+		} catch {}
+		// QUIC graceful close drains for ~2s with active streams; we
+		// already know the socket is gone, so fire cleanup synchronously.
+		// `onclose` is idempotent.
+		this.onclose()
 	}
 
 	// private
 
 	listen() {
-		this.io.on('close', this.onclose)
-		this.io.on('error', this.onerror)
-		this.io.on('message', this.onmessage)
+		// Two ways the socket's life ends, both feed `onclose`:
+		//   1. The control-stream pump returns (reader done or thrown).
+		//   2. The session's `closed` promise settles — covers
+		//      server-initiated `session.close()` which doesn't always
+		//      wake the reader promptly.
+		// `onclose` is idempotent so double-firing is safe.
+		this.pump(this.control.readable).then(this.onclose, this.onclose)
+		this.session.closed.then(this.onclose, this.onclose)
 	}
-	onclose = (code, message, isBinary) => {
-		message = message.toString()
 
+	/**
+	 * Pump a readable: dispatch each `\n`-terminated frame mid-stream
+	 * via `onframe`, plus any un-terminated leftover when the stream
+	 * ends. Shared by the long-lived control stream and the short
+	 * per-call http payload streams (which carry one batch then
+	 * close).
+	 */
+	async pump(readable) {
+		const decode = TextDecoder.prototype.decode.bind(
+			new TextDecoder(),
+		)
+		const reader = readable.getReader()
+		let buf = ''
+		try {
+			while (true) {
+				const { value, done } = await reader.read()
+				if (done) {
+					if (buf) this.onframe(buf)
+					break
+				}
+				// Count actual UTF-8 bytes here, not `line.length` later
+				// (which is UTF-16 code units). Symmetric with `write`,
+				// which counts `bytes.length` of the outgoing buffer.
+				this.server.bytesReceived += value.byteLength
+				this.bytesReceived += value.byteLength
+				buf += decode(value, { stream: true })
+				let nl
+				while ((nl = buf.indexOf('\n')) !== -1) {
+					const line = buf.slice(0, nl)
+					buf = buf.slice(nl + 1)
+					this.onframe(line)
+				}
+			}
+		} catch {
+			// Stream closed / network error — parser errors land in
+			// garbage via `parse`'s try/catch.
+		}
+	}
+
+	/** Handle one newline-delimited frame from the control stream. */
+	onframe(line) {
+		if (line === '') {
+			this.server.pong(this)
+			return
+		}
+		this.seen = this.server.now
+
+		const messages = this.parse(line)
+		if (messages && isArray(messages)) {
+			this.dispatch(messages)
+		} else {
+			this.server.messagesGarbage++
+			this.server.events.garbage?.(this, messages || line)
+		}
+	}
+
+	onclose = () => {
+		if (this.closed) return
+		this.closed = true
 		remove(this.server.sockets, this)
+
+		// Drop any outstanding RPC callbacks — the client just went
+		// away, so the replies they're waiting for will never arrive.
+		// Holding the cb references would also pin user closures.
+		this.callbacks = [null]
 
 		// Room.leave mutates this.rooms via splice — iterate a snapshot
 		for (const room of this.rooms.slice()) {
@@ -106,12 +226,26 @@ export class Socket {
 				: room.leave(this)
 		}
 
-		this.server.events.disconnect &&
-			this.server.events.disconnect(this, code, message)
+		this.server.events.disconnect?.(this)
 	}
-	onerror = err => {
-		this.server.socketErrors++
-		console.error('Socket.onerror', err, this)
+
+	/**
+	 * Shared push+schedule logic for `emit` and `http`. The first
+	 * push when both queues are empty triggers `nextQueue` so the
+	 * server schedules a drain on the next tick. Mirrors the
+	 * client's `#enqueue`.
+	 */
+	enqueue(queue, k, v, cb) {
+		if (!this.messages.emit.length && !this.messages.http.length) {
+			this.server.nextQueue(this)
+		}
+		if (cb) {
+			queue.push([k, v, this.callback(cb)])
+		} else if (typeof v === 'function') {
+			queue.push([k, 0, this.callback(v)])
+		} else {
+			queue.push(typeof k === 'object' ? k : [k, v])
+		}
 	}
 
 	// callbacks
@@ -120,17 +254,15 @@ export class Socket {
 		this.callbacks[i] = c
 		return i
 	}
+
 	oncallback(d, m) {
 		const cb = this.callbacks[d[0]]
 		if (!cb) {
-			console.error('oncallback doesnt exits', this, m)
+			console.error("oncallback doesn't exist", this, m)
 		} else {
 			cb(...d[1])
 			this.callbacks[d[0]] = null
 		}
-	}
-	doreply(k, ...v) {
-		this.emit('', [k, v])
 	}
 
 	// messages
@@ -142,85 +274,87 @@ export class Socket {
 			return false
 		}
 	}
-	onmessage = (e, isBinary) => {
-		e = e.toString()
 
-		if (e === '') {
-			this.server.pong(this)
-		} else {
-			this.seen = this.server.now
+	/**
+	 * Route an array of parsed messages through the registered event
+	 * handlers.
+	 */
+	dispatch(messages) {
+		this.server.messagesReceived += messages.length
+		this.messagesReceived += messages.length
 
-			this.server.bytesReceived += e.length
-			this.bytesReceived += e.length
-
-			const messages = this.parse(e)
-
-			if (messages && isArray(messages)) {
-				this.server.messagesReceived += messages.length
-				this.messagesReceived += messages.length
-
-				this.server.events.incoming &&
-					this.server.events.incoming(this, messages)
-				for (const m of messages) {
-					if (m[0] === '') {
-						this.oncallback(m[1], m)
-					} else if (this.server.events[m[0]]) {
-						this.server.events[m[0]](
-							this,
-							m[1],
-							m[2] && this.doreply.bind(this, m[2]),
-						)
-					} else {
-						this.server.messagesGarbage++
-						this.server.events.garbage &&
-							this.server.events.garbage(this, m)
-					}
-				}
+		this.server.events.incoming?.(this, messages)
+		for (const m of messages) {
+			if (m[0] === '') {
+				this.oncallback(m[1], m)
+			} else if (this.server.events[m[0]]) {
+				let replied = false
+				this.server.events[m[0]](
+					this,
+					m[1],
+					m[2]
+						? (...v) => {
+								if (replied) {
+									console.error(
+										`reply() already called for "${m[0]}"`,
+									)
+									return
+								}
+								replied = true
+								this.emit('', [m[2], v])
+							}
+						: undefined,
+				)
 			} else {
 				this.server.messagesGarbage++
-				this.server.events.garbage &&
-					this.server.events.garbage(this, messages || e)
+				this.server.events.garbage?.(this, m)
 			}
 		}
 	}
+
 	processQueue() {
-		if (this.io.readyState === 1) {
-			if (this.messages.length) {
-				const messages = this.messages
-				this.messages = []
-
-				this.server.events.outgoing &&
-					this.server.events.outgoing(this, messages)
-
-				this.server.messagesSent += messages.length
-				this.messagesSent += messages.length
-
-				this.write(this.server.cacheMessages(messages, this))
-			}
+		const { emit, http } = this.messages
+		if (emit.length) {
+			this.messages.emit = []
+			this.server.events.outgoing?.(this, emit)
+			this.server.messagesSent += emit.length
+			this.messagesSent += emit.length
+			this.write(this.server.cacheMessages(emit))
 		}
-		// this.messages = []
-	}
-	write(messages) {
-		this.socket.cork()
-		for (const m of messages) {
-			this.socket.write(m)
+		if (http.length) {
+			this.messages.http = []
+			this.server.events.outgoing?.(this, http)
+			this.server.messagesSent += http.length
+			this.messagesSent += http.length
+			this.httpBytes(this.server.cacheMessages(http))
 		}
-		this.socket.uncork()
 	}
+
+	/** Write a Uint8Array frame to the control stream. */
+	write(bytes) {
+		this.server.bytesSent += bytes.length
+		this.bytesSent += bytes.length
+		// Fire-and-forget: writer.write() returns a Promise that rejects
+		// if the session is gone. Swallow it — onclose handles cleanup.
+		this.writer.write(bytes).catch(noop)
+	}
+
 	toJSON() {
 		return '[content of socket object omitted for toJSON]'
 	}
+
 	[inspect]() {
 		return {
 			...this,
+			// Spread misses prototype getters — surface `ip` explicitly.
+			ip: this.ip,
 			server: 'omitted',
-			io: 'omitted',
-			socket: 'omitted',
+			session: 'omitted',
+			control: 'omitted',
+			writer: 'omitted',
 
 			messages: 'omitted',
 			callbacks: 'omitted',
-
-			readyState: this.io.readyState,
 		}
 	}
 }

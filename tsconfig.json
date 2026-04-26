@@ -1,7 +1,5 @@
 {
   "compilerOptions": {
-    "outDir": "./types",
-
     "allowJs": true,
     "checkJs": true,
     "strict": true,
@@ -11,13 +9,15 @@
     "lib": ["ESNext", "WebWorker"],
     "moduleResolution": "NodeNext",
 
-    "declaration": true,
-    "declarationMap": false,
-    "emitDeclarationOnly": true,
-
-    "sourceMap": false,
+    "noEmit": true,
 
     /* "strictNullChecks": false,*/
-    "noImplicitAny": false
-  }
+    "noImplicitAny": false,
+
+    /* @fails-components/webtransport ships .d.ts files with extensionless
+     * relative imports that don't resolve under nodenext. Skip checking
+     * library code — we only care about our own. */
+    "skipLibCheck": true
+  },
+  "exclude": ["type-tests", "tests/demo"]
 }

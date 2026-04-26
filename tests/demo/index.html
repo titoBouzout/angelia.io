@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>angelia.io demo</title>
+		<style>
+			:root {
+				color-scheme: light dark;
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+
+				--bg: #ffffff;
+				--fg: #1a1a1a;
+				--muted: #666;
+				--subtle: #888;
+				--border: #ddd;
+				--panel: #fafafa;
+				--chip-bg: #eee;
+				--chip-fg: #333;
+				--ok-bg: #cde9d2;
+				--ok-fg: #1a4a25;
+				--err-bg: #f3c9c9;
+				--err-fg: #7a2222;
+				--accent: #4477ff;
+				--accent-hover: #3360e6;
+			}
+			@media (prefers-color-scheme: dark) {
+				:root {
+					--bg: #15171a;
+					--fg: #e8e8e8;
+					--muted: #aaa;
+					--subtle: #888;
+					--border: #333;
+					--panel: #1d2024;
+					--chip-bg: #2a2d31;
+					--chip-fg: #ddd;
+					--ok-bg: #1f3d29;
+					--ok-fg: #b8e3c4;
+					--err-bg: #4a2222;
+					--err-fg: #ecb6b6;
+					--accent: #6688ff;
+					--accent-hover: #88a2ff;
+				}
+			}
+			body {
+				max-width: 640px;
+				margin: 2rem auto;
+				padding: 0 1rem;
+				background: var(--bg);
+				color: var(--fg);
+			}
+			h1 {
+				margin: 0 0 0.25rem;
+			}
+			.sub {
+				color: var(--muted);
+				font-size: 0.9em;
+				margin-bottom: 1rem;
+			}
+			#status {
+				display: inline-block;
+				padding: 0.1rem 0.5rem;
+				border-radius: 999px;
+				font-size: 0.85em;
+				background: var(--chip-bg);
+				color: var(--chip-fg);
+			}
+			#status.connected {
+				background: var(--ok-bg);
+				color: var(--ok-fg);
+			}
+			#status.offline {
+				background: var(--err-bg);
+				color: var(--err-fg);
+			}
+			#log {
+				border: 1px solid var(--border);
+				border-radius: 6px;
+				padding: 0.5rem 0.75rem;
+				height: 320px;
+				overflow-y: auto;
+				margin: 0.75rem 0;
+				background: var(--panel);
+				color: var(--fg);
+			}
+			.line {
+				padding: 0.15rem 0;
+				word-break: break-word;
+			}
+			.line .from {
+				color: var(--muted);
+				font-weight: 600;
+				margin-right: 0.4rem;
+			}
+			.line.system {
+				color: var(--subtle);
+				font-style: italic;
+			}
+			.line.ack {
+				color: var(--subtle);
+				font-size: 0.8em;
+			}
+			form {
+				display: flex;
+				gap: 0.5rem;
+			}
+			input[type='text'] {
+				flex: 1;
+				padding: 0.5rem 0.65rem;
+				border: 1px solid var(--border);
+				border-radius: 6px;
+				background: var(--bg);
+				color: var(--fg);
+				font: inherit;
+			}
+			input[type='text']::placeholder {
+				color: var(--subtle);
+			}
+			button {
+				padding: 0.5rem 1rem;
+				border: 0;
+				border-radius: 6px;
+				background: var(--accent);
+				color: white;
+				font: inherit;
+				cursor: pointer;
+			}
+			button:hover {
+				background: var(--accent-hover);
+			}
+			#typing {
+				min-height: 1.2em;
+				color: var(--subtle);
+				font-size: 0.85em;
+				margin-top: 0.25rem;
+			}
+			.roster {
+				font-size: 0.85em;
+				color: var(--muted);
+				margin-top: 1rem;
+			}
+			.room-bar {
+				display: flex;
+				gap: 0.5rem;
+				align-items: center;
+				margin: 0.5rem 0 0;
+			}
+			.room-bar .label {
+				color: var(--subtle);
+				font-size: 0.9em;
+			}
+			.room-bar strong {
+				color: var(--accent);
+				margin-right: 0.5rem;
+			}
+			.room-bar input {
+				flex: 1;
+				padding: 0.35rem 0.55rem;
+				font-size: 0.95em;
+			}
+			.room-bar button {
+				padding: 0.35rem 0.85rem;
+				font-size: 0.9em;
+				background: var(--chip-bg);
+				color: var(--chip-fg);
+			}
+			.room-bar button:hover {
+				background: var(--accent);
+				color: white;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>angelia.io demo</h1>
+		<div class="sub">
+			A tiny chat over WebTransport.
+			<span id="status">connecting…</span>
+		</div>
+
+		<form id="room-form" class="room-bar" autocomplete="off">
+			<span class="label">room:</span>
+			<strong id="room-label">—</strong>
+			<input
+				id="room-input"
+				type="text"
+				placeholder="switch room…"
+			/>
+			<button type="submit">switch</button>
+		</form>
+
+		<div id="log"></div>
+		<div id="typing"></div>
+
+		<form id="form" autocomplete="off">
+			<input
+				id="input"
+				type="text"
+				placeholder="say something…"
+				autofocus
+			/>
+			<button type="submit">send</button>
+		</form>
+
+		<div class="roster">online: <span id="roster">—</span></div>
+
+		<script>
+			window.__CERT_HASH = __CERT_HASH__
+		</script>
+		<script type="module" src="/demo.js"></script>
+	</body>
+</html>

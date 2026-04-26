@@ -1,34 +1,35 @@
 {
 	"name": "angelia.io",
 	"version": "5.0.91",
-	"description": "WebSockets Server and Client API for node.js and the browser, with rooms support.",
+	"description": "WebTransport Server and Client API for node.js and the browser, with rooms support.",
 	"author": "@titoBouzout @boredofnames",
 	"license": "GPL",
 	"type": "module",
 	"exports": {
 		"./server": {
-			"types": "./types/server/index.js",
+			"types": "./server/index.d.ts",
 			"default": "./server/index.js"
 		},
 		"./client": {
-			"types": "./types/client/index.js",
+			"types": "./client/index.d.ts",
 			"default": "./client/index.js"
 		},
 		"./*": null
 	},
 	"dependencies": {
-		"bufferutil": "^4.0.8",
-		"formidable": "^3.5.2",
-		"utf-8-validate": "^6.0.5",
-		"ws": "^8.18.0"
+		"@fails-components/webtransport": "^1.6.0",
+		"@fails-components/webtransport-transport-http3-quiche": "^1.6.0"
 	},
 	"devDependencies": {
 		"@types/node": "^22.9.1",
 		"typescript": "^5.6.3"
 	},
 	"scripts": {
-		"dev": "tsc -w",
-		"test": "node --test tests/*.test.js"
+		"dev": "tsc --noEmit -w",
+		"test": "node --test tests/*.test.js",
+		"test:types": "tsc --noEmit && tsc -p type-tests/",
+		"gen-cert": "scripts/gen-cert.sh",
+		"demo": "node tests/demo/server.js"
 	},
 	"homepage": "https://github.com/titoBouzout/angelia.io",
 	"repository": {
@@ -38,18 +39,15 @@
 	"keywords": [
 		"Client",
 		"Server",
-		"Socket",
-		"Sockets",
-		"WebSocket",
-		"WebSocketClient",
-		"WebSocketServer",
+		"WebTransport",
+		"WebTransportClient",
+		"WebTransportServer",
+		"HTTP/3",
+		"QUIC",
 		"events",
 		"rooms api",
 		"rooms",
-		"socket api",
-		"sockets api",
-		"io",
-		"ws"
+		"io"
 	],
 	"prettier": {
 		"printWidth": 70,

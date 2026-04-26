@@ -1,37 +1,49 @@
 import {
 	empty,
-	frame,
-	inspect,
+	encode,
+	isArray,
 	ListenerTemplate,
 	now,
+	parse,
 	stringify,
 } from './utils.js'
+
+import {
+	DEFAULT_PORT,
+	DEFAULT_TIMEOUT_MS,
+	MAX_PORT,
+	MIN_TIMEOUT_MS,
+} from './constants.js'
 
 import { Socket } from './Socket.js'
 import { Emitter } from './Emitter.js'
 
 import { nextTick } from 'node:process'
-import * as http from 'http'
-import formidable from 'formidable'
+import { randomBytes } from 'node:crypto'
 
-import { WebSocketServer } from 'ws'
+const randomSecret = () => randomBytes(32).toString('hex')
 
-/** Creates a new Socket Server */
+// Ping/pong frame is a constant byte — encode once, reuse forever.
+const PING = encode('\n')
+
+/** Creates a new Socket Server (singleton). */
 export default new (class Server extends Emitter {
 	constructor() {
 		super()
 
-		/** @type {import('./Socket.js').Socket[]} */
 		this.sockets = []
 
 		this.hostname = ''
-		this.port = 3001
+		this.port = DEFAULT_PORT
 
-		this.timeout = 60 * 1000
-		this.timeoutCheck = 25 * 1000
+		this.timeout = DEFAULT_TIMEOUT_MS
+		this.timeoutCheck = DEFAULT_TIMEOUT_MS / 2
 
-		this.maxMessageSize = 5
-		this.maxPostSize = 50
+		/**
+		 * When true, read `x-forwarded-for` from the upgrade headers for
+		 * the client IP. Only enable when a trusted proxy is in front.
+		 */
+		this.trustProxy = false
 
 		this.since = 0
 		this.now = 0
@@ -44,7 +56,6 @@ export default new (class Server extends Emitter {
 		this.messagesSent = 0
 		this.messagesSentCacheHit = 0
 		this.serverErrors = 0
-		this.socketErrors = 0
 
 		this.queue = []
 
@@ -53,118 +64,157 @@ export default new (class Server extends Emitter {
 		this.cache = empty()
 
 		this.events = empty()
-
-		this.pingData = frame('')
-		this.disconnectData = frame(stringify([['disconnect', true]]))
 	}
+
 	/**
-	 * Start server listening
+	 * Start listening over WebTransport (HTTP/3 / QUIC).
 	 *
-	 * @param {{
-	 * 	hostname?: string
-	 * 	port?: number
-	 * 	maxMessageSize?: number
-	 * 	maxPostSize?: number
-	 * 	skipUTF8Validation?: boolean
-	 * 	timeout?: number
-	 * }} [options]
+	 * @param {import('./Server.js').ServerListenOptions} options
 	 */
-	listen(options = {}) {
+	async listen(options) {
+		// Guard against double-listen: would otherwise overwrite
+		// `this.io`/`this.pingTimer`/`this.nowTimer` and leak the old
+		// server + intervals (no way to clear them after reassignment).
+		if (this.io) {
+			throw new Error(
+				'Server.listen() already called; call stop() first.',
+			)
+		}
+
 		this.hostname = options.hostname || this.hostname
 
 		const port = +(options.port ?? 0)
-		this.port = port > 0 && port <= 65535 ? port : this.port
-
-		const maxMessageSize = +(options.maxMessageSize ?? 0)
-		this.maxMessageSize = maxMessageSize > 0 ? maxMessageSize : 5
-
-		const maxPostSize = +(options.maxPostSize ?? 0)
-		this.maxPostSize = maxPostSize > 0 ? maxPostSize : 50
+		this.port = port > 0 && port <= MAX_PORT ? port : this.port
 
 		this.now = now()
 		this.since = this.now
 
 		const timeout = +(options.timeout ?? 0)
-		this.timeout = timeout >= 10000 ? timeout : 60 * 1000
+		this.timeout =
+			timeout >= MIN_TIMEOUT_MS ? timeout : DEFAULT_TIMEOUT_MS
 
-		// updates ping and checks for disconnections
+		this.trustProxy = !!options.trustProxy
+
+		// updates ping and checks for disconnections. `unref` so a
+		// stopped server doesn't hold the process alive on its own.
 		this.timeoutCheck = this.timeout / 2
-		setInterval(this.ping, this.timeoutCheck)
+		this.pingTimer = setInterval(this.ping, this.timeoutCheck)
+		this.pingTimer.unref()
 		this.timeoutCheck -= 5000
 
-		setInterval(this.updateNow, 500)
+		this.nowTimer = setInterval(this.#updateNow, 500)
+		this.nowTimer.unref()
 
-		// fires the server
+		if (!options.cert || !options.privKey) {
+			throw new Error(
+				'listen() requires `cert` and `privKey` options for WebTransport.',
+			)
+		}
 
-		const server = http.createServer(async (request, response) => {
-			/*
-			need to take care of rooms before handling this
-
-			if (
-				request.url === '/angelia/upload' &&
-				request.method === 'POST'
-			) {
-				// parse a file upload
-				const form = formidable({})
-
-				try {
-					const [fields, files] = await form.parse(request)
-				} catch (err) {
-					console.error(err)
-					response.writeHead(err.httpCode || 400, {
-						'Content-Type': 'text/plain',
-					})
-					response.end(String(err))
-					return
-				}
-				response.writeHead(200, {
-					'Content-Type': 'application/json',
-				})
-				response.end(JSON.stringify({ fields, files }, null, 2))
-				return
-			} else {
-				response.writeHead(200, { 'Content-Type': 'text/plain' })
-				response.end()
-			}
-			*/
+		// Lazy-loaded so that `import Server from 'angelia.io/server'`
+		// without calling listen() doesn't require the native dep.
+		const { Http3Server } =
+			await import('@fails-components/webtransport')
+		const server = new Http3Server({
+			port: this.port,
+			host: this.hostname || '0.0.0.0',
+			// QUIC retry-token / anti-amplification secret. Random per
+			// process when not provided; pin it via options for clean
+			// rolling restarts (lets in-flight 0-RTT keys survive).
+			secret: options.secret || randomSecret(),
+			cert: options.cert,
+			privKey: options.privKey,
+			// QUIC negotiates per-direction stream limits. Without an
+			// explicit cap, the server-side limit for outgoing unidi
+			// streams defaults to ~0, so `socket.http()` / `Server.http()`
+			// would silently fail. Lift it well above realistic burst
+			// sizes for fan-out broadcasts.
+			initialBidirectionalStreams: 1000,
+			initialUnidirectionalStreams: 1000,
 		})
+		this.io = server
 
-		const io = new WebSocketServer({
-			perMessageDeflate: false,
-			clientTracking: false,
-			server: server,
+		// Two reasons to set a request callback even though we accept
+		// every session:
+		//   1. The native dispatcher matches the registered path EXACTLY
+		//      (including query string), so `/angelia?foo=bar` would be
+		//      rejected. Returning `path: '/angelia'` remaps every request
+		//      to our single registered controller.
+		//   2. Without a request callback the binding leaves `session.header`
+		//      empty, so we'd lose the `:path` pseudo-header (and with it
+		//      every URL param the client sent).
+		server.setRequestCallback(async () => ({
+			status: 200,
 			path: '/angelia',
-			maxPayload: this.maxMessageSize * 1024 * 1024,
-			backlog: 1024,
-			skipUTF8Validation:
-				options.skipUTF8Validation !== undefined
-					? options.skipUTF8Validation
-					: false,
-		})
+		}))
 
-		io.on('connection', this.onconnect)
-		io.on('error', this.onerror)
+		// IMPORTANT: register path BEFORE startServer so the session
+		// dispatcher knows where to route. Matches the package's
+		// reference echoserver pattern.
+		const sessions = server.sessionStream('/angelia')
+		const reader = sessions.getReader()
+		this.sessionReader = reader
 
-		server.listen(this.port, this.hostname || undefined)
-
-		this.events.listen && this.events.listen()
+		server.startServer()
+		await server.ready
 
 		console.log('Socket Server Started Listening On Port', this.port)
+
+		this.#acceptSessions(reader)
+
+		this.events.listen?.()
 	}
 
 	/**
-	 * Listen for events
-	 *
-	 * @template {new () => any} T
-	 * @param {T & { listeners?: string[] }} listener
-	 * @returns {InstanceType<T>}
+	 * Long-lived loop that pulls newly-arrived QUIC sessions off the
+	 * dispatcher and hands each to `#onsession`. Errors are logged
+	 * and the loop continues — one bad session shouldn't take the
+	 * server down.
+	 */
+	async #acceptSessions(reader) {
+		while (true) {
+			try {
+				const { value, done } = await reader.read()
+				if (done) break
+				this.#onsession(value)
+			} catch (err) {
+				this.#onerror(err)
+			}
+		}
+	}
+
+	/**
+	 * Per-session loop that pulls each incoming unidi payload stream
+	 * and feeds it to `socket.pump`. Exits when the session ends or
+	 * the reader rejects (typical at session close).
+	 */
+	async #acceptPayloads(reader, socket) {
+		while (true) {
+			try {
+				const { value, done } = await reader.read()
+				if (done) break
+				socket.pump(value)
+			} catch {
+				break
+			}
+		}
+	}
+
+	/**
+	 * Register a listener class. Each method becomes an event handler.
+	 * If the class declares a `static listeners` array of method names,
+	 * only those are registered — useful for keeping helpers off the
+	 * event surface. See the "Restricting which methods become
+	 * listeners" section in the readme.
 	 */
 	on(listener) {
 		const instance = new listener()
 
+		// Single-level prototype lookup is intentional: methods on a
+		// base class stay hidden from registration. See the readme's
+		// "Restricting which methods become listeners" section.
 		const methods = listener.listeners || [
-			// todo maybe use getPrototypeOf ?
-			...Object.getOwnPropertyNames(instance.__proto__),
+			...Object.getOwnPropertyNames(Object.getPrototypeOf(instance)),
 			...Object.getOwnPropertyNames(instance),
 		]
 
@@ -185,37 +235,88 @@ export default new (class Server extends Emitter {
 
 	// private
 
-	onconnect = (socket, request) => {
-		socket = new Socket(socket, this, request)
+	#onsession = async session => {
+		try {
+			await session.ready
+		} catch (err) {
+			this.serverErrors++
+			console.error('Server.onsession ready failed', err)
+			return
+		}
 
-		this.served++
+		// First incoming bidi stream is the "control" stream — carries
+		// the message queue. Everything else is a per-call payload.
+		const incoming = session.incomingBidirectionalStreams.getReader()
+		const first = await incoming.read()
+		if (first.done) {
+			try {
+				session.close()
+			} catch {}
+			return
+		}
+
+		const socket = new Socket(session, first.value, this)
 
 		socket.listen()
 
+		// Per-call payloads (client.http) arrive on send-only streams —
+		// the client never reads from them. Bidi is reserved for the
+		// control stream we already consumed above. Each payload is a
+		// JSON-array batch with no trailing newline; `socket.pump`
+		// handles both control and payload shapes via its end-of-stream
+		// flush.
+		this.#acceptPayloads(
+			session.incomingUnidirectionalStreams.getReader(),
+			socket,
+		)
+
+		this.served++
+
 		this.sockets.push(socket)
 
-		this.events.connect && this.events.connect(socket, request)
+		// Strip the internal `m` (URL-packed messages) off params before
+		// the connect event fires.
+		const { m, ...rest } = socket.params
+		if (m !== undefined) socket.params = rest
 
-		if (socket.params.angelia) {
-			socket.onmessage(socket.params.angelia)
+		// Pass the upgrade request shape to the connect handler so apps
+		// can read headers (cookies, auth, custom proxy headers) at
+		// connect time without us having to keep it on the socket.
+		const headers = session.header || {}
+		const request = {
+			headers,
+			url: headers[':path'] || '',
+		}
+
+		this.events.connect?.(socket, request)
+
+		if (m !== undefined) {
+			try {
+				const packed = parse(m)
+				if (isArray(packed)) socket.dispatch(packed)
+			} catch {}
 		}
 
 		// ping on connect is usually high
-		setTimeout(() => this.pingSocket(socket), 200)
+		setTimeout(() => this.#pingSocket(socket), 200)
 	}
-	onerror = err => {
+
+	#onerror = err => {
 		this.serverErrors++
 		console.error('Server.onerror', err)
 	}
 
 	// queue
+
+	/** @internal Called from Socket.enqueue. */
 	nextQueue(socket) {
 		if (!this.queue.length) {
-			nextTick(this.processQueue)
+			nextTick(this.#processQueue)
 		}
 		this.queue.push(socket)
 	}
-	processQueue = () => {
+
+	#processQueue = () => {
 		const queue = this.queue
 		this.queue = []
 		for (const socket of queue) {
@@ -223,7 +324,16 @@ export default new (class Server extends Emitter {
 		}
 		this.cache = empty()
 	}
-	cacheMessages(messages, socket) {
+
+	/**
+	 * Cache the encoded form of `messages` keyed by message identity.
+	 * Returns a Uint8Array ready to write to a control stream
+	 * (newline-delimited JSON). Byte counters are bumped in
+	 * `Socket.write` so cache hits are counted accurately too.
+	 *
+	 * @internal Called from Socket.processQueue.
+	 */
+	cacheMessages(messages) {
 		let id = ''
 		for (const m of messages) {
 			if (!m[this.cacheSymbol]) {
@@ -232,66 +342,70 @@ export default new (class Server extends Emitter {
 			id += m[this.cacheSymbol] + ','
 		}
 		if (!this.cache[id]) {
-			const json = stringify(messages)
-			this.bytesSent += json.length
-			socket.bytesSent += json.length
-			this.cache[id] = frame(json)
+			this.cache[id] = encode(stringify(messages) + '\n')
 		} else {
 			this.messagesSentCacheHit++
 		}
 		return this.cache[id]
 	}
 
-	// ping
-	updateNow = () => {
+	// ping. Only `ping` is public so tests can drive the heartbeat
+	// sweep manually; the rest is internal.
+
+	#updateNow = () => {
 		this.now = now()
 	}
+
 	ping = () => {
-		this.updateNow()
+		this.#updateNow()
 		for (const socket of this.sockets) {
+			// Skip sockets we already kicked: QUIC graceful close can
+			// take seconds, during which `socket.seen` stays frozen and
+			// we'd re-fire `events.timeout` on every tick.
+			if (socket.timedout) continue
 			const delay = this.now - socket.seen
 
 			if (delay > this.timeout) {
 				socket.timedout = true
-				this.events.timeout && this.events.timeout(socket, delay)
-				socket.io.terminate()
+				this.events.timeout?.(socket, delay)
+				try {
+					socket.session.close()
+				} catch {}
 			} else if (delay > this.timeoutCheck) {
-				/**
-				 * In an example: if timeout is set to 60 seconds, then we
-				 * check for timed out sockets every 30 seconds. If the socket
-				 * was last seen 29 seconds ago, then the next check will be
-				 * in another 30 seconds. That means that if the socket doesnt
-				 * sends any message since then, then the last seen will be 59
-				 * seconds the next time. This gives very little amount of
-				 * time to check. For this reason we remove 5 seconds on the
-				 * condition by using `this.timeoutCheck`
-				 */
-				this.pingSocket(socket)
+				this.#pingSocket(socket)
 			}
 		}
 	}
-	pingSocket(socket) {
-		this.updateNow()
+
+	#pingSocket(socket) {
+		this.#updateNow()
 		socket.contacted = this.now
-		if (socket.io.readyState === 1) {
-			socket.write(this.pingData)
-		}
+		socket.write(PING)
 	}
+
+	/** @internal Called from Socket.onframe on heartbeat receipt. */
 	pong(socket) {
-		this.updateNow()
+		this.#updateNow()
 		socket.seen = this.now
 		socket.ping = this.now - socket.contacted
 
-		this.events.ping && this.events.ping(socket)
+		this.events.ping?.(socket)
+	}
+
+	/** Stop listening. Closes existing sessions and frees the port. */
+	async stop() {
+		clearInterval(this.pingTimer)
+		clearInterval(this.nowTimer)
+		try {
+			this.sessionReader?.cancel()
+		} catch {}
+		try {
+			this.io?.stopServer()
+		} catch {}
+		this.io = null
 	}
 
 	toJSON() {
 		return '[content of server object omitted for toJSON]'
-	}
-	[inspect]() {
-		return {
-			...this,
-			sockets: 'omitted',
-		}
 	}
 })()

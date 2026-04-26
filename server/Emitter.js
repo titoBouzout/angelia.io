@@ -1,48 +1,32 @@
 /**
- * Common emit / broadcast logic. Subclasses provide their own
- * `sockets`: Server and Room as a plain Array; Rooms as a computed
- * getter that walks every room.
- *
- * @typedef {{ sockets: import('./Socket.js').Socket[] }} HasSockets
+ * @typedef {{
+ *   sockets: import('./Socket.js').Socket[]
+ *   emit: (k: any, v?: any) => void
+ *   broadcast: (me: any, k: any, v?: any) => void
+ * }} HasSockets
  */
 
+/**
+ * Common emit / broadcast / http / broadcastHttp logic. Subclasses
+ * own the `sockets` field (Server/Room as a plain Array, Rooms as a
+ * computed getter). Each fan-out builds the wire tuple **once** and
+ * passes the same reference to every recipient — `Server.cacheMessages`
+ * keys the encoded form by message identity, so all sockets share a
+ * single encoding for the batch.
+ */
 export class Emitter {
 	/** @this {HasSockets} */
-	get connections() {
-		return this.sockets.length
-	}
-
-	/**
-	 * @this {HasSockets}
-	 * @param {any} k
-	 * @param {any} [v]
-	 */
 	emit(k, v) {
+		/** @type {[string, any]} */
 		const d = [k, v]
 		for (const socket of this.sockets) {
 			socket.emit(d)
 		}
 	}
 
-	/**
-	 * @this {HasSockets}
-	 * @param {any} k
-	 * @param {any} [v]
-	 */
-	once(k, v) {
-		const d = [k, v]
-		for (const socket of this.sockets) {
-			socket.once(d)
-		}
-	}
-
-	/**
-	 * @this {HasSockets}
-	 * @param {import('./Socket.js').Socket} me
-	 * @param {any} k
-	 * @param {any} [v]
-	 */
+	/** @this {HasSockets} */
 	broadcast(me, k, v) {
+		/** @type {[string, any]} */
 		const d = [k, v]
 		for (const socket of this.sockets) {
 			if (me != socket) {
@@ -51,17 +35,22 @@ export class Emitter {
 		}
 	}
 
-	/**
-	 * @this {HasSockets}
-	 * @param {import('./Socket.js').Socket} me
-	 * @param {any} k
-	 * @param {any} [v]
-	 */
-	broadcastOnce(me, k, v) {
+	/** @this {HasSockets} */
+	http(k, v) {
+		/** @type {[string, any]} */
+		const d = [k, v]
+		for (const socket of this.sockets) {
+			socket.http(d)
+		}
+	}
+
+	/** @this {HasSockets} */
+	broadcastHttp(me, k, v) {
+		/** @type {[string, any]} */
 		const d = [k, v]
 		for (const socket of this.sockets) {
 			if (me != socket) {
-				socket.once(d)
+				socket.http(d)
 			}
 		}
 	}

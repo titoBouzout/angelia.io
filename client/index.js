@@ -232,9 +232,8 @@ export default class Client {
 			message = [key]
 		}
 
-		queue.push(message)
-
 		this.#microtask()
+		queue.push(message)
 
 		return promise
 	}
@@ -278,8 +277,8 @@ export default class Client {
 							}
 							replied = true
 
-							this.#messages.emit.push(['', [e[2], args]])
 							this.#microtask()
+							this.#messages.emit.push(['', [e[2], args]])
 						}
 					: undefined
 				for (const fn of this.#listeners[e[0]]) {

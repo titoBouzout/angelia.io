@@ -9,6 +9,15 @@ const Server = /** @type {new () => typeof serverSingleton} */ (
 	/** @type {unknown} */ (serverSingleton.constructor)
 )
 
+// Same constructor, but typed as `any` for the describe blocks that
+// exercise @internal methods (`cacheMessages`, `nextQueue`, `pong`).
+// We don't expose these on the public type, but they're worth covering
+// at the unit-test level — this keeps tsc happy without polluting
+// `Server.d.ts`.
+const InternalServer = /** @type {new () => any} */ (
+	/** @type {unknown} */ (serverSingleton.constructor)
+)
+
 describe('Server defaults', () => {
 	it('initializes counters to zero', () => {
 		const s = new Server()
@@ -123,7 +132,7 @@ describe('Server.on(Class)', () => {
 
 describe('Server.cacheMessages', () => {
 	it('caches by message identity sequence; second call is a hit', () => {
-		const s = new Server()
+		const s = new InternalServer()
 		const m1 = ['k', 'v']
 		const m2 = ['k2', 'v2']
 		const a = s.cacheMessages([m1, m2])
@@ -133,7 +142,7 @@ describe('Server.cacheMessages', () => {
 	})
 
 	it('returns a Uint8Array of newline-delimited JSON', () => {
-		const s = new Server()
+		const s = new InternalServer()
 		const out = s.cacheMessages([['k', 'v']])
 		assert.ok(out instanceof Uint8Array)
 		const text = new TextDecoder().decode(out)
@@ -143,7 +152,7 @@ describe('Server.cacheMessages', () => {
 
 describe('Server.nextQueue / processQueue', () => {
 	it('first nextQueue schedules processQueue on next tick', async () => {
-		const s = new Server()
+		const s = new InternalServer()
 		const drained = []
 		const fakeSock = {
 			processQueue() {
@@ -158,7 +167,7 @@ describe('Server.nextQueue / processQueue', () => {
 	})
 
 	it('processQueue drains every queued socket and clears cache', async () => {
-		const s = new Server()
+		const s = new InternalServer()
 		const calls = []
 		const a = {
 			processQueue() {
@@ -182,7 +191,7 @@ describe('Server.nextQueue / processQueue', () => {
 
 describe('Server.pong', () => {
 	it('pong updates seen and computes ping from contacted', () => {
-		const s = new Server()
+		const s = new InternalServer()
 		s.now = 1000
 		const fakeSock = { contacted: 900, seen: 0, ping: 0 }
 		s.pong(fakeSock)
@@ -191,7 +200,7 @@ describe('Server.pong', () => {
 	})
 
 	it('pong fires events.ping when wired', () => {
-		const s = new Server()
+		const s = new InternalServer()
 		const calls = []
 		s.events.ping = sock => calls.push(sock)
 		const fakeSock = { contacted: 0, seen: 0, ping: 0 }

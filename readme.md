@@ -54,7 +54,6 @@ whenever the cert expires).
 // server.js (node.js)
 
 import Server from 'angelia.io/server'
-import { readFileSync } from 'node:fs'
 
 class FancyChat {
 	typing(socket, data) {
@@ -81,8 +80,10 @@ Server.on(myConnection)
 
 await Server.listen({
 	port: 3001,
-	cert: readFileSync('./cert.pem', 'utf8'),
-	privKey: readFileSync('./key.pem', 'utf8'),
+	cert: './cert.pem',
+	privKey: './key.pem',
+	// Auto-reload on Let's Encrypt renewal (off by default)
+	watch: true,
 })
 
 // index.js (browser)
@@ -109,15 +110,17 @@ socket.on('gotIt', message => {
 
 ### `Server.listen` Options
 
-| name         | kind    | default   | description                                                                                       |
-| ------------ | ------- | --------- | ------------------------------------------------------------------------------------------------- |
-| `hostname`   | String  | undefined | the hostname (interface) to bind to; defaults to `0.0.0.0`                                        |
-| `port`       | Number  | 3001      | the UDP port to use for QUIC                                                                      |
-| `cert`       | String  | required  | PEM-encoded TLS certificate                                                                       |
-| `privKey`    | String  | required  | PEM-encoded private key for the TLS certificate                                                   |
-| `timeout`    | Number  | 40000     | time in milliseconds after a socket is considered gone, minimum value is 10000                    |
-| `secret`     | String  | random    | QUIC retry-token / 0-RTT secret. Pin across rolling restarts so in-flight session tickets survive |
-| `trustProxy` | Boolean | false     | read client IP from `X-Forwarded-For` on the upgrade request (spoofable without a trusted proxy)  |
+| name               | kind    | default   | description                                                                                                       |
+| ------------------ | ------- | --------- | ----------------------------------------------------------------------------------------------------------------- |
+| `hostname`         | String  | undefined | the hostname (interface) to bind to; defaults to `0.0.0.0`                                                        |
+| `port`             | Number  | 3001      | the UDP port to use for QUIC                                                                                      |
+| `cert`             | String  | required  | path to PEM-encoded TLS certificate file (read from disk on each `listen()` / `reloadCerts()`)                    |
+| `privKey`          | String  | required  | path to PEM-encoded private key file                                                                              |
+| `timeout`          | Number  | 40000     | time in milliseconds after a socket is considered gone, minimum value is 10000                                    |
+| `secret`           | String  | random    | QUIC retry-token / 0-RTT secret. Pin across rolling restarts so in-flight session tickets survive                 |
+| `trustProxy`       | Boolean | false     | read client IP from `X-Forwarded-For` on the upgrade request (spoofable without a trusted proxy)                  |
+| `watch`            | Boolean | false     | watch the parent directories of `cert` / `privKey` and call `reloadCerts()` on change (Let's Encrypt-style atomic-rename renewal) |
+| `watchDebounceMs`  | Number  | 1000      | how long to wait after a watcher event before reloading. LE writes cert + key in quick succession, so coalesce    |
 
 ### `Server` Object
 
@@ -147,6 +150,7 @@ The `server` object can be accessed from everywhere
 | `http(key, [value])`                  | Function | out-of-band emit — opens a fresh stream per recipient so big payloads don't HoL-block  |
 | `broadcastHttp(sender, key, [value])` | Function | like `http` but skip the sender                                                        |
 | `sockets`                             | Array    | an Array with all the current connected sockets                                        |
+| `reloadCerts()`                       | Function | re-read `cert`/`privKey` from disk and restart the server. Existing sessions are torn down and clients reconnect. Safe to call manually (e.g. on `SIGHUP`); the watcher uses it internally |
 
 ### `Socket` Object
 
@@ -279,12 +283,6 @@ const socket = new Client({
 socket.connect()
 ```
 
-You may also do like this if you don't need any option
-
-```js
-const socket = new Client('https://localhost:3001')
-```
-
 ### `Client` API
 
 The client API is similar to regular event handling
@@ -307,6 +305,15 @@ As in `socket.on('connect', () => console.log('connect happened!'))`
 | `connect`    | **this happens only once** when we connect to the server, any future connection is a `reconnect`         |
 | `reconnect`  | if we were connected at least once, then any re-connection will dispatch this event instead of `connect` |
 | `disconnect` | when we disconnect from the server                                                                       |
+
+#### Reconnect behavior
+
+On reconnect, any messages still queued for send are dropped, and
+pending `emit` / `http` reply promises reject with `Error('reconnecting')`.
+The library can't tell which queued messages are safe to replay (a
+typing indicator: yes; a "transfer $100": maybe not), so recovery is
+the application's responsibility — listen for the `reconnect` event
+and re-send whatever your protocol needs.
 
 ## Rooms
 

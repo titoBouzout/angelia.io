@@ -30,8 +30,6 @@ export class Socket {
 
 		const headers = session.header || {}
 		this.userAgent = headers['user-agent'] || ''
-		// HTTP/3 carries the request URL in the `:path` pseudo-header;
-		// reuse the same params() helper used for the old WS URLs.
 		this.params = params(headers[':path'] || '')
 
 		/**

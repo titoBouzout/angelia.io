@@ -7,8 +7,17 @@
  */
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import {
+	copyFileSync,
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs'
 import { createHash } from 'node:crypto'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import {
 	WebTransport,
@@ -51,8 +60,9 @@ try {
 	process.exit(0)
 }
 
+// PEM still loaded into memory — we need it to compute the cert hash
+// for client-side pinning. The server itself now takes paths.
 const cert = readFileSync(CERT_PATH, 'utf8')
-const privKey = readFileSync(KEY_PATH, 'utf8')
 
 /** Compute the SHA-256 of the DER form of a PEM cert (for cert-pinning). */
 function certDigest(pem) {
@@ -86,7 +96,7 @@ async function waitFor(predicate, tries = 40) {
 async function bootServer() {
 	const s = new Server()
 	const port = pickPort()
-	await s.listen({ port, cert, privKey })
+	await s.listen({ port, cert: CERT_PATH, privKey: KEY_PATH })
 	return {
 		server: s,
 		port,
@@ -272,26 +282,30 @@ describe('integration: round-trip with callback', () => {
 		assert.deepEqual(JSON.parse(line), [['', [cbId, ['HI']]]])
 	})
 
-	it('reply() throws if called more than once', async () => {
-		/** @type {any} */
-		let secondCallError
-		s.server.events.twice = (_sock, _data, reply) => {
-			reply('first')
-			try {
+	it('reply() drops second call and logs', async () => {
+		const origError = console.error
+		/** @type {any[]} */
+		const logged = []
+		console.error = (...args) => logged.push(args)
+
+		try {
+			s.server.events.twice = (_sock, _data, reply) => {
+				reply('first')
 				reply('second')
-			} catch (err) {
-				secondCallError = err
 			}
+
+			await client.send([['twice', null, 8]])
+			await waitFor(() => logged.length > 0)
+			const msg = String(logged[0][0])
+			assert.match(msg, /reply\(\) already called/)
+			assert.match(msg, /"twice"/)
+
+			// First reply still landed correctly; second was dropped.
+			const line = await client.nextFrame()
+			assert.deepEqual(JSON.parse(line), [['', [8, ['first']]]])
+		} finally {
+			console.error = origError
 		}
-
-		await client.send([['twice', null, 8]])
-		await waitFor(() => secondCallError != null)
-		assert.match(secondCallError.message, /reply\(\) already called/)
-		assert.match(secondCallError.message, /"twice"/)
-
-		// First reply still landed correctly.
-		const line = await client.nextFrame()
-		assert.deepEqual(JSON.parse(line), [['', [8, ['first']]]])
 	})
 })
 
@@ -394,6 +408,61 @@ describe('integration: URL params', () => {
 		)
 		await waitFor(() => captured != null)
 		assert.deepEqual(captured, { room: 'lobby', user: 'tito' })
+	})
+})
+
+// ------------------------------------------------------------------
+// Path filtering
+// ------------------------------------------------------------------
+
+describe('integration: path filtering', () => {
+	let s
+
+	before(async () => {
+		s = await bootServer()
+	})
+	after(async () => {
+		await s.stop()
+	})
+
+	it('accepts /angelia (with and without query); rejects every other path', async () => {
+		const accepted = []
+		s.server.events.connect = sock => accepted.push({ ...sock.params })
+
+		// Accepted: bare path and path with query string.
+		const c1 = await bootClient(`${s.baseUrl}/angelia`)
+		const c2 = await bootClient(`${s.baseUrl}/angelia?room=lobby&n=2`)
+		await waitFor(() => accepted.length === 2)
+		assert.deepEqual(accepted[0], {})
+		assert.deepEqual(accepted[1], { room: 'lobby', n: '2' })
+		c1.close()
+		c2.close()
+
+		// Rejected: extra segments, unrelated paths, root.
+		const rejectedPaths = [
+			'/angelia/extra',
+			'/something-else',
+			'/foo/bar?x=1',
+			'/',
+		]
+		for (const p of rejectedPaths) {
+			const t = new WebTransport(`${s.baseUrl}${p}`, {
+				serverCertificateHashes: [
+					{ algorithm: 'sha-256', value: certHash },
+				],
+			})
+			// Swallow the post-close rejection so node:test doesn't flag it.
+			t.closed?.catch?.(() => {})
+			await assert.rejects(
+				t.ready,
+				/handshake|404/i,
+				`expected ${p} to be rejected at handshake`,
+			)
+		}
+
+		// Server must not have served any of the rejected attempts —
+		// the only sockets it ever saw were the two accepted clients.
+		assert.equal(s.server.served, 2)
 	})
 })
 
@@ -902,7 +971,7 @@ describe('integration: events.listen', () => {
 		let fired = 0
 		s.events.listen = () => fired++
 		const port = pickPort()
-		await s.listen({ port, cert, privKey })
+		await s.listen({ port, cert: CERT_PATH, privKey: KEY_PATH })
 		assert.equal(fired, 1)
 		await s.stop()
 	})
@@ -927,8 +996,11 @@ describe('integration: events.ping', () => {
 		await waitFor(() => s.server.sockets.length === 1)
 		const [sock] = s.server.sockets
 
-		// Manually trigger a ping rather than wait for the timer.
-		s.server.pingSocket(sock)
+		// Drive the heartbeat sweep manually: backdate `seen` past
+		// `timeoutCheck` so `ping()` picks this socket (but not past
+		// `timeout`, which would kick it instead).
+		sock.seen = s.server.now - s.server.timeoutCheck - 100
+		s.server.ping()
 		await client.pong()
 		await waitFor(() => pinged.length === 1)
 		assert.deepEqual(pinged, [sock])
@@ -1177,5 +1249,122 @@ describe('integration: server-initiated disconnect', () => {
 		// Session should close shortly after.
 		await waitFor(() => s.server.sockets.length === 0)
 		assert.equal(s.server.sockets.length, 0)
+	})
+})
+
+// ------------------------------------------------------------------
+// Cert reload (path-based listen + watcher)
+// ------------------------------------------------------------------
+
+describe('integration: cert reload', () => {
+	/** @type {string} */
+	let tempDir
+	/** @type {string} */
+	let tempCert
+	/** @type {string} */
+	let tempKey
+
+	before(() => {
+		// Mirror the repo's certs into a tempdir so tests can mutate
+		// (touch / rewrite) them without affecting other test runs.
+		tempDir = mkdtempSync(join(tmpdir(), 'angelia-cert-'))
+		tempCert = join(tempDir, 'cert.pem')
+		tempKey = join(tempDir, 'key.pem')
+		copyFileSync(CERT_PATH, tempCert)
+		copyFileSync(KEY_PATH, tempKey)
+	})
+	after(() => {
+		rmSync(tempDir, { recursive: true, force: true })
+	})
+
+	it('listen({ cert: path, privKey: path }) reads PEM from disk', async () => {
+		const s = new Server()
+		const port = pickPort()
+		await s.listen({ port, cert: tempCert, privKey: tempKey })
+		const client = await bootClient(`https://127.0.0.1:${port}/angelia`)
+		await waitFor(() => s.sockets.length === 1)
+		client.close()
+		await s.stop()
+	})
+
+	it('reloadCerts() restarts the server with re-read cert files', async () => {
+		const s = new Server()
+		const port = pickPort()
+		await s.listen({ port, cert: tempCert, privKey: tempKey })
+
+		const oldIo = s.io
+		assert.ok(oldIo, 'io should be set after listen')
+
+		await s.reloadCerts()
+		assert.notEqual(s.io, oldIo, 'reload must replace the underlying server')
+
+		// New clients still connect after the reload (port and cert
+		// hash are the same, so the existing pinning still validates).
+		const c = await bootClient(`https://127.0.0.1:${port}/angelia`)
+		await waitFor(() => s.sockets.length === 1)
+		c.close()
+		await s.stop()
+	})
+
+	it('reloadCerts() is a no-op when files cannot be read', async () => {
+		const s = new Server()
+		const port = pickPort()
+		await s.listen({ port, cert: tempCert, privKey: tempKey })
+		const liveIo = s.io
+
+		// Simulate a renewal that hasn't fully landed — make the cert
+		// file unreadable by removing it, ask for a reload, then
+		// restore. The live server must survive untouched.
+		rmSync(tempCert)
+
+		const origError = console.error
+		/** @type {any[]} */
+		const errs = []
+		console.error = (...a) => errs.push(a)
+		try {
+			await s.reloadCerts()
+		} finally {
+			console.error = origError
+		}
+
+		assert.equal(s.io, liveIo, 'live server must survive a failed reload')
+		assert.ok(
+			errs.some(e => /cert reload skipped/i.test(String(e[0]))),
+			'expected a "skipped" log line',
+		)
+
+		// Restore the cert so subsequent tests still work.
+		copyFileSync(CERT_PATH, tempCert)
+		await s.stop()
+	})
+
+	it('watch: true triggers reloadCerts() when the cert file changes', async () => {
+		const s = new Server()
+		const port = pickPort()
+		await s.listen({
+			port,
+			cert: tempCert,
+			privKey: tempKey,
+			watch: true,
+			watchDebounceMs: 100,
+		})
+
+		// Spy on reloadCerts to count invocations without actually
+		// re-running the listen flow during this test.
+		let reloadCalls = 0
+		const realReload = s.reloadCerts.bind(s)
+		s.reloadCerts = async () => {
+			reloadCalls++
+		}
+
+		// Touch the cert file. The watcher should fire within
+		// debounce + filesystem latency.
+		writeFileSync(tempCert, readFileSync(tempCert))
+
+		await waitFor(() => reloadCalls > 0, 40)
+		assert.ok(reloadCalls >= 1, 'expected at least one reload trigger')
+
+		s.reloadCerts = realReload
+		await s.stop()
 	})
 })

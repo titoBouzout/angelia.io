@@ -26,6 +26,8 @@
 				--err-fg: #7a2222;
 				--accent: #4477ff;
 				--accent-hover: #3360e6;
+				--whisper: #8a5cf2;
+				--shout: #d97706;
 			}
 			@media (prefers-color-scheme: dark) {
 				:root {
@@ -43,24 +45,37 @@
 					--err-fg: #ecb6b6;
 					--accent: #6688ff;
 					--accent-hover: #88a2ff;
+					--whisper: #b48cff;
+					--shout: #f5a44a;
 				}
 			}
 			body {
-				max-width: 640px;
+				max-width: 720px;
 				margin: 2rem auto;
-				padding: 0 1rem;
+				padding: 0 1rem 3rem;
 				background: var(--bg);
 				color: var(--fg);
 			}
 			h1 {
 				margin: 0 0 0.25rem;
 			}
+			h2 {
+				font-size: 0.85em;
+				text-transform: uppercase;
+				letter-spacing: 0.05em;
+				color: var(--muted);
+				margin: 1.25rem 0 0.5rem;
+			}
 			.sub {
 				color: var(--muted);
 				font-size: 0.9em;
 				margin-bottom: 1rem;
+				display: flex;
+				gap: 0.5rem;
+				align-items: center;
+				flex-wrap: wrap;
 			}
-			#status {
+			.status {
 				display: inline-block;
 				padding: 0.1rem 0.5rem;
 				border-radius: 999px;
@@ -68,21 +83,26 @@
 				background: var(--chip-bg);
 				color: var(--chip-fg);
 			}
-			#status.connected {
+			.status.connected {
 				background: var(--ok-bg);
 				color: var(--ok-fg);
 			}
-			#status.offline {
+			.status.offline {
 				background: var(--err-bg);
 				color: var(--err-fg);
 			}
-			#log {
+			.rtt {
+				color: var(--subtle);
+				font-size: 0.85em;
+				font-variant-numeric: tabular-nums;
+			}
+			.log {
 				border: 1px solid var(--border);
 				border-radius: 6px;
 				padding: 0.5rem 0.75rem;
-				height: 320px;
+				height: 280px;
 				overflow-y: auto;
-				margin: 0.75rem 0;
+				margin: 0.5rem 0;
 				background: var(--panel);
 				color: var(--fg);
 			}
@@ -103,12 +123,22 @@
 				color: var(--subtle);
 				font-size: 0.8em;
 			}
+			.line.whisper,
+			.line.whisper .from {
+				color: var(--whisper);
+			}
+			.line.shout,
+			.line.shout .from {
+				color: var(--shout);
+			}
 			form {
 				display: flex;
 				gap: 0.5rem;
+				flex-wrap: wrap;
 			}
 			input[type='text'] {
 				flex: 1;
+				min-width: 12rem;
 				padding: 0.5rem 0.65rem;
 				border: 1px solid var(--border);
 				border-radius: 6px;
@@ -120,7 +150,7 @@
 				color: var(--subtle);
 			}
 			button {
-				padding: 0.5rem 1rem;
+				padding: 0.5rem 0.9rem;
 				border: 0;
 				border-radius: 6px;
 				background: var(--accent);
@@ -131,7 +161,15 @@
 			button:hover {
 				background: var(--accent-hover);
 			}
-			#typing {
+			button.secondary {
+				background: var(--chip-bg);
+				color: var(--chip-fg);
+			}
+			button.secondary:hover {
+				background: var(--accent);
+				color: white;
+			}
+			.typing {
 				min-height: 1.2em;
 				color: var(--subtle);
 				font-size: 0.85em;
@@ -140,13 +178,11 @@
 			.roster {
 				font-size: 0.85em;
 				color: var(--muted);
-				margin-top: 1rem;
+				margin-top: 0.75rem;
 			}
 			.room-bar {
-				display: flex;
-				gap: 0.5rem;
 				align-items: center;
-				margin: 0.5rem 0 0;
+				margin: 0 0 0.5rem;
 			}
 			.room-bar .label {
 				color: var(--subtle);
@@ -156,59 +192,85 @@
 				color: var(--accent);
 				margin-right: 0.5rem;
 			}
-			.room-bar input {
-				flex: 1;
-				padding: 0.35rem 0.55rem;
-				font-size: 0.95em;
+			.actions {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+				gap: 0.5rem;
 			}
-			.room-bar button {
-				padding: 0.35rem 0.85rem;
-				font-size: 0.9em;
-				background: var(--chip-bg);
-				color: var(--chip-fg);
+			.stats-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+				gap: 0.75rem;
+				margin-top: 0.75rem;
 			}
-			.room-bar button:hover {
+			.stats-grid section {
+				background: var(--panel);
+				border: 1px solid var(--border);
+				border-radius: 6px;
+				padding: 0.5rem 0.75rem;
+			}
+			.stats-grid h3 {
+				font-size: 0.8em;
+				text-transform: uppercase;
+				color: var(--muted);
+				margin: 0 0 0.5rem;
+				letter-spacing: 0.05em;
+			}
+			.stats-grid dl {
+				display: grid;
+				grid-template-columns: 1fr auto;
+				gap: 0.15rem 0.75rem;
+				margin: 0;
+				font-size: 0.85em;
+			}
+			.stats-grid dt {
+				color: var(--muted);
+			}
+			.stats-grid dd {
+				margin: 0;
+				font-variant-numeric: tabular-nums;
+				text-align: right;
+				word-break: break-all;
+			}
+			.stats-grid dd.ua {
+				font-size: 0.75em;
+				color: var(--subtle);
+			}
+			.room-list {
+				list-style: none;
+				padding: 0;
+				margin: 0;
+				font-size: 0.85em;
+			}
+			.room-list li {
+				padding: 0.15rem 0;
+				color: var(--muted);
+				font-variant-numeric: tabular-nums;
+			}
+			.room-list .tag {
+				display: inline-block;
+				margin-left: 0.4rem;
+				padding: 0 0.4rem;
+				border-radius: 999px;
 				background: var(--accent);
 				color: white;
+				font-size: 0.7em;
+				vertical-align: middle;
 			}
 		</style>
-	</head>
-	<body>
-		<h1>angelia.io demo</h1>
-		<div class="sub">
-			A tiny chat over WebTransport.
-			<span id="status">connecting…</span>
-		</div>
-
-		<form id="room-form" class="room-bar" autocomplete="off">
-			<span class="label">room:</span>
-			<strong id="room-label">—</strong>
-			<input
-				id="room-input"
-				type="text"
-				placeholder="switch room…"
-			/>
-			<button type="submit">switch</button>
-		</form>
-
-		<div id="log"></div>
-		<div id="typing"></div>
-
-		<form id="form" autocomplete="off">
-			<input
-				id="input"
-				type="text"
-				placeholder="say something…"
-				autofocus
-			/>
-			<button type="submit">send</button>
-		</form>
-
-		<div class="roster">online: <span id="roster">—</span></div>
-
+		<script type="importmap">
+			{
+				"imports": {
+					"pota": "/pota/src/exports.js",
+					"pota/xml": "/pota/src/core/xml.js",
+					"pota/components": "/pota/src/components/@main.js"
+				}
+			}
+		</script>
 		<script>
 			window.__CERT_HASH = __CERT_HASH__
 		</script>
-		<script type="module" src="/demo.js"></script>
-	</body>
+		<script type="module" src="/main.js"></script>
+	</head>
+	<body></body>
 </html>

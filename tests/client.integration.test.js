@@ -40,8 +40,8 @@ try {
 // Polyfill the browser global the Client expects.
 ;/** @type {any} */ (globalThis).WebTransport = WebTransport
 
+// PEM only used for hash computation; the server itself takes paths.
 const cert = readFileSync(CERT_PATH, 'utf8')
-const privKey = readFileSync(KEY_PATH, 'utf8')
 
 const certHash = new Uint8Array(
 	createHash('sha256')
@@ -70,7 +70,7 @@ const pickPort = () => nextPort++
 async function bootServer() {
 	const s = new Server()
 	const port = pickPort()
-	await s.listen({ port, cert, privKey })
+	await s.listen({ port, cert: CERT_PATH, privKey: KEY_PATH })
 	return {
 		server: s,
 		port,
@@ -176,35 +176,29 @@ describe('client: reply() one-shot', () => {
 		await s.stop()
 	})
 
-	it('throws if a client handler calls reply() more than once', async () => {
+	it('drops the second reply() call without throwing', async () => {
 		client = makeClient(s.baseUrl)
 		await waitFor(() => client.connected)
 
-		/** @type {any} */
-		let thrown
 		client.on('ask', (_data, reply) => {
 			if (!reply) return
 			reply('first')
-			try {
-				reply('second')
-			} catch (err) {
-				thrown = err
-			}
+			// Must not throw — second call is silently dropped (and
+			// logged via console.error inside the client). If it threw,
+			// we'd never finish the handler and the cb below wouldn't
+			// resolve.
+			reply('second')
 		})
 
 		// Server-side: emit with a callback so the client receives a
-		// reply-capable message. We only care about the client's
-		// double-call behavior; the server's cb getting `'first'` is
-		// proof the first reply landed.
+		// reply-capable message. The cb resolving with `'first'` proves
+		// (a) the first reply landed and (b) the handler completed
+		// without the second call throwing.
 		const [sock] = s.server.sockets
 		const got = await new Promise(resolve =>
 			sock.emit('ask', 'q', resolve),
 		)
 		assert.equal(got, 'first')
-
-		await waitFor(() => thrown != null)
-		assert.match(thrown.message, /reply\(\) already called/)
-		assert.match(thrown.message, /"ask"/)
 	})
 })
 
@@ -498,5 +492,89 @@ describe('client: disconnect', () => {
 		// Give a grace window — should NOT auto-reconnect.
 		await new Promise(r => setTimeout(r, 200))
 		assert.equal(s.server.sockets.length, 0)
+	})
+})
+
+describe('client: reconnect lifecycle', () => {
+	let s, client
+
+	before(async () => {
+		s = await bootServer()
+	})
+	after(async () => {
+		client?.disconnect(true)
+		await s.stop()
+	})
+
+	it('soft disconnect + connect() dispatches `reconnect` (not a second `connect`)', async () => {
+		client = makeClient(s.baseUrl)
+
+		/** @type {string[]} */
+		const events = []
+		client.on('connect', () => events.push('connect'))
+		client.on('reconnect', () => events.push('reconnect'))
+		client.on('disconnect', () => events.push('disconnect'))
+
+		await waitFor(() => client.connected)
+		// Give the post-handshake dispatch a beat to fire 'connect'.
+		await new Promise(r => setTimeout(r, 50))
+		assert.deepEqual(events, ['connect'])
+		assert.equal(s.server.served, 1)
+
+		// Soft disconnect leaves #reconnect = true. We then call
+		// connect() manually instead of waiting for the 2–4s jittered
+		// timer; once #io is non-null again, the timer's connect()
+		// becomes a no-op.
+		client.disconnect()
+		await waitFor(() => !client.connected)
+		assert.deepEqual(events, ['connect', 'disconnect'])
+
+		client.connect()
+		await waitFor(() => client.connected)
+		await new Promise(r => setTimeout(r, 50))
+		assert.deepEqual(events, ['connect', 'disconnect', 'reconnect'])
+
+		// Server saw two distinct sessions across the reconnect.
+		assert.equal(s.server.served, 2)
+	})
+})
+
+describe('client: pending callbacks reject on reconnect', () => {
+	let s, client
+
+	before(async () => {
+		s = await bootServer()
+	})
+	after(async () => {
+		client?.disconnect(true)
+		await s.stop()
+	})
+
+	it('outstanding emit-with-callback rejects with Error("reconnecting")', async () => {
+		// Handler that never replies — the callback would otherwise
+		// resolve normally.
+		s.server.events.willNotReply = () => {}
+
+		client = makeClient(s.baseUrl)
+		await waitFor(() => client.connected)
+
+		const emitP = client.emit('willNotReply', 'data', () => 'never')
+		const httpP = client.http('willNotReply', 'data', () => 'never')
+		// Attach a no-op catch up front so the eventual rejection
+		// isn't flagged as unhandled while we wait through the
+		// disconnect / reconnect window.
+		emitP.catch(() => {})
+		httpP.catch(() => {})
+
+		// Soft disconnect + manual reconnect, same trick as above.
+		client.disconnect()
+		await waitFor(() => !client.connected)
+		client.connect()
+		await waitFor(() => client.connected)
+
+		// connect()'s reconnect branch synchronously cancels every
+		// pending callback with Error('reconnecting').
+		await assert.rejects(emitP, /reconnecting/)
+		await assert.rejects(httpP, /reconnecting/)
 	})
 })

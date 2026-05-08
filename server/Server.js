@@ -62,7 +62,7 @@ export default new (class Server extends Emitter {
 
 		this.sockets = []
 
-		this.hostname = ''
+		this.hostname = '127.0.0.1'
 		this.port = DEFAULT_PORT
 
 		this.timeout = DEFAULT_TIMEOUT_MS
@@ -160,7 +160,7 @@ export default new (class Server extends Emitter {
 			await import('@fails-components/webtransport')
 		const server = new Http3Server({
 			port: this.port,
-			host: this.hostname || '0.0.0.0',
+			host: this.hostname,
 			secret: this.#secret,
 			cert: certPem,
 			privKey: privKeyPem,
@@ -202,7 +202,7 @@ export default new (class Server extends Emitter {
 		await server.ready
 
 		console.log(
-			`[angelia.io] server listening on port ${this.port}`,
+			`[angelia.io] server listening on ${this.hostname}:${this.port}`,
 		)
 
 		this.#acceptSessions(reader)
@@ -227,10 +227,10 @@ export default new (class Server extends Emitter {
 	}
 
 	/**
-	 * Re-read cert/privKey from disk and restart the underlying
-	 * server. Existing sessions are torn down; clients reconnect via
-	 * their auto-reconnect loop. Safe to call manually (e.g. on
-	 * SIGHUP) or via the file watcher when `watch: true`.
+	 * Re-read cert/privKey from disk and restart the underlying server.
+	 * Existing sessions are torn down; clients reconnect via their
+	 * auto-reconnect loop. Safe to call manually (e.g. on SIGHUP) or
+	 * via the file watcher when `watch: true`.
 	 *
 	 * If the new files can't be read, the running server is left
 	 * untouched.
@@ -258,7 +258,9 @@ export default new (class Server extends Emitter {
 				return
 			}
 
-			console.log('[angelia.io] reloading certs and restarting server...')
+			console.log(
+				'[angelia.io] reloading certs and restarting server...',
+			)
 
 			// Partial stop: tear down the live server but preserve
 			// `#secret` and `#listenOptions` so listen() reuses them.
@@ -355,9 +357,9 @@ export default new (class Server extends Emitter {
 
 	/**
 	 * Long-lived loop that pulls newly-arrived QUIC sessions off the
-	 * dispatcher and hands each to `#onsession`. Errors are logged
-	 * and the loop continues — one bad session shouldn't take the
-	 * server down.
+	 * dispatcher and hands each to `#onsession`. Errors are logged and
+	 * the loop continues — one bad session shouldn't take the server
+	 * down.
 	 */
 	async #acceptSessions(reader) {
 		while (true) {
@@ -373,8 +375,8 @@ export default new (class Server extends Emitter {
 
 	/**
 	 * Per-session loop that pulls each incoming unidi payload stream
-	 * and feeds it to `socket.pump`. Exits when the session ends or
-	 * the reader rejects (typical at session close).
+	 * and feeds it to `socket.pump`. Exits when the session ends or the
+	 * reader rejects (typical at session close).
 	 */
 	async #acceptPayloads(reader, socket) {
 		while (true) {

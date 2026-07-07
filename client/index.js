@@ -300,14 +300,22 @@ export default class Client {
 			const batch = this.#messages.http
 			this.#messages.http = []
 
-			this.#io
-				?.createUnidirectionalStream()
-				.then(async stream => {
-					const w = stream.getWriter()
-					await w.write(encode(stringify(batch)))
-					return w.close()
-				})
-				.catch(e => error('client.#send http', e))
+			// try/catch: browsers reject the returned promise when the
+			// session is gone, but the Node polyfill
+			// (@fails-components/webtransport) throws synchronously —
+			// and `#send` runs in a microtask with no handler above it.
+			try {
+				this.#io
+					?.createUnidirectionalStream()
+					.then(async stream => {
+						const w = stream.getWriter()
+						await w.write(encode(stringify(batch)))
+						return w.close()
+					})
+					.catch(e => error('client.#send http', e))
+			} catch (e) {
+				error('client.#send http', e)
+			}
 		}
 	}
 

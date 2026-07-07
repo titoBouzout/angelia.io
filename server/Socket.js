@@ -106,13 +106,21 @@ export class Socket {
 	httpBytes(bytes) {
 		this.server.bytesSent += bytes.length
 		this.bytesSent += bytes.length
-		return this.session
-			.createUnidirectionalStream()
-			.then(stream => {
-				const w = stream.getWriter()
-				return w.write(bytes).then(() => w.close())
-			})
-			.catch(noop)
+		try {
+			return this.session
+				.createUnidirectionalStream()
+				.then(stream => {
+					const w = stream.getWriter()
+					return w.write(bytes).then(() => w.close())
+				})
+				.catch(noop)
+		} catch {
+			// `createUnidirectionalStream()` throws synchronously (not a
+			// rejection) when the session is already closed/failed — an
+			// `http()` racing a disconnect. Swallow it like the rejected
+			// path; escaping here would crash the whole drain (nextTick
+			// has no handler above us).
+		}
 	}
 
 	/**
@@ -312,15 +320,19 @@ export class Socket {
 
 	processQueue() {
 		const { emit, http } = this.messages
+		// Reset BOTH queues before running any user hook. An
+		// `events.outgoing` handler may enqueue mid-drain, and `enqueue`
+		// only re-schedules when it sees both queues empty — a stale
+		// non-empty queue here would leave that message (and every one
+		// after it) undelivered forever.
+		this.messages = { emit: [], http: [] }
 		if (emit.length) {
-			this.messages.emit = []
 			this.server.events.outgoing?.(this, emit)
 			this.server.messagesSent += emit.length
 			this.messagesSent += emit.length
 			this.write(this.server.cacheMessages(emit))
 		}
 		if (http.length) {
-			this.messages.http = []
 			this.server.events.outgoing?.(this, http)
 			this.server.messagesSent += http.length
 			this.messagesSent += http.length

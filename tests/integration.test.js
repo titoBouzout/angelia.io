@@ -1253,6 +1253,99 @@ describe('integration: server-initiated disconnect', () => {
 })
 
 // ------------------------------------------------------------------
+// Drain-loop robustness
+// ------------------------------------------------------------------
+
+describe('integration: http() on a closed socket', () => {
+	let s, client
+
+	before(async () => {
+		s = await bootServer()
+	})
+	after(async () => {
+		client?.close()
+		await s.stop()
+	})
+
+	it('does not crash the server when the session is already gone', async () => {
+		const c1 = await bootClient(s.url)
+		await waitFor(() => s.server.sockets.length === 1)
+		const [stale] = s.server.sockets
+
+		// Client disconnects; app keeps a stale socket reference.
+		c1.close()
+		await waitFor(() => s.server.sockets.length === 0)
+		// Give the session a beat to reach its closed state.
+		await new Promise(r => setTimeout(r, 100))
+
+		// `createUnidirectionalStream()` throws synchronously on a
+		// closed session — this must be swallowed, not crash the
+		// process from the nextTick drain.
+		stale.http('bye', 1)
+		stale.emit('bye', 1)
+		await new Promise(r => setTimeout(r, 100))
+
+		// Server still fully functional for new clients.
+		let got
+		s.server.events.stillAlive = (_sock, data) => {
+			got = data
+		}
+		client = await bootClient(s.url)
+		await client.send([['stillAlive', 'yes']])
+		await waitFor(() => got != null)
+		assert.equal(got, 'yes')
+	})
+})
+
+describe('integration: events.outgoing enqueues mid-drain', () => {
+	let s, client
+
+	before(async () => {
+		s = await bootServer()
+	})
+	after(async () => {
+		client?.close()
+		await s.stop()
+	})
+
+	it('socket keeps draining when outgoing() emits during a mixed emit+http drain', async () => {
+		client = await bootClient(s.url)
+		await waitFor(() => s.server.sockets.length === 1)
+		const [sock] = s.server.sockets
+
+		// Hook that enqueues once, mid-drain. Before the fix this hit
+		// the window where `messages.emit` was reset but `messages.http`
+		// wasn't, so the enqueue never re-scheduled and the socket
+		// stopped delivering queued messages forever.
+		let hooked = false
+		s.server.events.outgoing = socket => {
+			if (!hooked) {
+				hooked = true
+				socket.emit('from-hook', 1)
+			}
+		}
+
+		// Same tick: both queues non-empty.
+		sock.emit('a', 1)
+		sock.http('b', 2)
+
+		const frames = []
+		// [a] on the control stream, [b] on a fresh unidi stream,
+		// then [from-hook] on the next drain.
+		frames.push(JSON.parse(await client.nextFrame()))
+		assert.deepEqual(await client.nextIncoming(), ['b', 2])
+		frames.push(JSON.parse(await client.nextFrame()))
+		assert.deepEqual(frames, [[['a', 1]], [['from-hook', 1]]])
+
+		// And the socket must still drain future emits.
+		sock.emit('later', 3)
+		assert.deepEqual(JSON.parse(await client.nextFrame()), [
+			['later', 3],
+		])
+	})
+})
+
+// ------------------------------------------------------------------
 // Cert reload (path-based listen + watcher)
 // ------------------------------------------------------------------
 

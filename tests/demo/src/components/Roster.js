@@ -1,6 +1,7 @@
 import { xml } from 'pota/xml'
 
-import { name, online } from '../state.js'
+import { name } from '../identity.js'
+import { online } from '../state.js'
 
 // Pin the local user to the front of the list so "you" is easy to spot.
 const rosterText = () =>

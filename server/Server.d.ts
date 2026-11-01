@@ -10,20 +10,20 @@ export interface ServerListenOptions {
 	hostname?: string
 	port?: number
 	timeout?: number
+	/** Max size of a single incoming message, in megabytes. */
+	maxMessageSize?: number
 	/**
-	 * Path to the PEM-encoded TLS certificate file. Read from disk
-	 * each time `listen()` runs (including cert reloads).
+	 * Skip `ws`'s UTF-8 validation of incoming text frames. Defaults to
+	 * `true`; pass `false` to close connections that send invalid UTF-8.
 	 */
-	cert: string
+	skipUTF8Validation?: boolean
+	/**
+	 * Path to the PEM-encoded TLS certificate file. When given with
+	 * `privKey` the server speaks `wss://`; otherwise plain `ws://`.
+	 */
+	cert?: string
 	/** Path to the PEM-encoded private key file. */
-	privKey: string
-	/**
-	 * QUIC retry-token / anti-amplification secret. Defaults to a
-	 * random 32-byte hex string per process. Pin it across rolling
-	 * restarts to let in-flight 0-RTT keys survive. The secret is
-	 * also pinned automatically across `reloadCerts()` calls.
-	 */
-	secret?: string
+	privKey?: string
 	/**
 	 * When true, read the client IP from the `X-Forwarded-For` header
 	 * (first entry) on the upgrade request. Only enable when a trusted
@@ -38,8 +38,8 @@ export interface ServerListenOptions {
 	watch?: boolean
 	/**
 	 * Debounce window between watcher events and the actual reload,
-	 * in milliseconds. Defaults to 1000 — long enough that LE writing
-	 * cert + key in quick succession coalesces into one reload.
+	 * in milliseconds. Long enough that LE writing cert + key in quick
+	 * succession coalesces into one reload.
 	 */
 	watchDebounceMs?: number
 }
@@ -83,6 +83,8 @@ export declare class Server extends Emitter {
 	timeout: number
 	timeoutCheck: number
 
+	maxMessageSize: number
+
 	trustProxy: boolean
 
 	since: number
@@ -96,31 +98,34 @@ export declare class Server extends Emitter {
 	messagesSent: number
 	messagesSentCacheHit: number
 	serverErrors: number
+	socketErrors: number
 
 	queue: Socket[]
 
 	cacheSymbol: symbol
 	cached: number
-	cache: Record<string, Uint8Array>
+	cache: Record<string, Buffer[]>
 
 	events: Record<string, any>
 
-	/** Underlying Http3Server instance (assigned in listen()). */
-	io: any
-	/** Reader for the session stream (assigned in listen()). */
-	sessionReader: any
+	/** Underlying WebSocketServer (assigned in listen()). */
+	io: import('ws').WebSocketServer | null
+	/** HTTP(S) server the WebSocketServer is attached to. */
+	httpServer: import('node:http').Server | null
 
-	/** Start server listening over WebTransport (HTTP/3 / QUIC). */
-	listen(options: ServerListenOptions): Promise<void>
+	/**
+	 * Start listening. Serves `wss://` when `cert` and `privKey` are
+	 * given, plain `ws://` otherwise.
+	 */
+	listen(options?: ServerListenOptions): Promise<void>
 
-	/** Stop the server and release the port. */
+	/** Stop the server, drop every connection and release the port. */
 	stop(): Promise<void>
 
 	/**
-	 * Re-read cert/privKey from the paths passed to `listen()` and
-	 * restart the underlying server. Existing sessions are torn down;
-	 * clients reconnect via their auto-reconnect loop. If the new
-	 * files can't be read, the running server is left untouched.
+	 * Re-read cert/privKey from the paths passed to `listen()` and swap
+	 * them into the running server. Open connections are untouched. If
+	 * the new files can't be read or parsed, the current cert stays.
 	 */
 	reloadCerts(): Promise<void>
 

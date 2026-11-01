@@ -7,7 +7,8 @@ export function ListenerTemplate(): {
 }
 
 export const now: () => number
-export const encode: (text: string) => Uint8Array
+/** A complete WebSocket text frame, ready to write to any socket. */
+export const frame: (text: string) => Buffer[]
 export const stringify: typeof JSON.stringify
 export const parse: typeof JSON.parse
 export const isArray: typeof Array.isArray

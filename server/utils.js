@@ -1,8 +1,22 @@
 export const now = Date.now
 
-// `encode` is stateless, safe to share. `decode` (TextDecoder) keeps
-// state across `{stream: true}` chunks, so each pump creates its own.
-export const encode = TextEncoder.prototype.encode.bind(new TextEncoder())
+import { Sender } from 'ws'
+
+const TEXT_FRAME = {
+	fin: true,
+	opcode: 1,
+	mask: false,
+	readOnly: false,
+	rsv1: false,
+}
+
+/**
+ * Frame `text` as a complete WebSocket text message, once, so the same
+ * frame can be written to every recipient.
+ *
+ * @param {string} text
+ */
+export const frame = text => Sender.frame(Buffer.from(text), TEXT_FRAME)
 
 export const stringify = JSON.stringify
 

@@ -1,64 +1,15 @@
 /**
  * Runtime tests for the actual `client/index.js` class — boots a real
- * Server, polyfills `globalThis.WebTransport` with the Node binding,
- * then exercises the Client API end-to-end.
- *
- * Skips gracefully if the QUIC native binding can't load.
+ * Server and exercises the Client API end-to-end over Node's global
+ * `WebSocket`.
  */
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
-import { createHash } from 'node:crypto'
 
-import {
-	WebTransport,
-	quicheLoaded,
-} from '@fails-components/webtransport'
+import { connect, createServer as createNetServer } from 'node:net'
 
-const CERT_PATH = 'certs/cert.pem'
-const KEY_PATH = 'certs/key.pem'
-
-if (!existsSync(CERT_PATH) || !existsSync(KEY_PATH)) {
-	console.error(
-		`[client.integration] skipping: missing ${CERT_PATH} / ${KEY_PATH}.`,
-	)
-	process.exit(0)
-}
-
-try {
-	await import(
-		'@fails-components/webtransport-transport-http3-quiche'
-	)
-	await quicheLoaded
-} catch {
-	console.error(
-		'[client.integration] skipping: native QUIC binding unavailable.',
-	)
-	process.exit(0)
-}
-
-// Polyfill the browser global the Client expects.
-;/** @type {any} */ (globalThis).WebTransport = WebTransport
-
-// PEM only used for hash computation; the server itself takes paths.
-const cert = readFileSync(CERT_PATH, 'utf8')
-
-const certHash = new Uint8Array(
-	createHash('sha256')
-		.update(
-			Buffer.from(
-				cert.replace(/-----[^-]+-----|\s+/g, ''),
-				'base64',
-			),
-		)
-		.digest(),
-)
-
-// Imported AFTER the polyfill so the module captures our WebTransport.
-const { default: serverSingleton } = await import(
-	'../server/Server.js'
-)
-const { default: Client } = await import('../client/index.js')
+import serverSingleton from '../server/Server.js'
+import Client from '../client/index.js'
 
 const Server = /** @type {new () => typeof serverSingleton} */ (
 	/** @type {unknown} */ (serverSingleton.constructor)
@@ -70,27 +21,21 @@ const pickPort = () => nextPort++
 async function bootServer() {
 	const s = new Server()
 	const port = pickPort()
-	await s.listen({ port, cert: CERT_PATH, privKey: KEY_PATH })
+	await s.listen({ port })
 	return {
 		server: s,
 		port,
-		baseUrl: `https://127.0.0.1:${port}`,
+		baseUrl: `ws://127.0.0.1:${port}`,
 		stop: () => s.stop(),
 	}
 }
 
 /**
- * Construct a Client pointed at our server with cert pinning. Caller is
- * responsible for `client.disconnect(true)`.
+ * Construct a Client pointed at our server. Caller is responsible for
+ * `client.disconnect(true)`.
  */
 function makeClient(baseUrl, options = {}) {
-	return new Client({
-		url: baseUrl,
-		serverCertificateHashes: [
-			{ algorithm: 'sha-256', value: certHash },
-		],
-		...options,
-	})
+	return new Client({ url: baseUrl, ...options })
 }
 
 async function waitFor(predicate, tries = 80) {
@@ -233,7 +178,7 @@ describe('client: on / off + server-initiated emit', () => {
 	})
 })
 
-describe('client: http() out-of-band', () => {
+describe('client: batching', () => {
 	let s, client
 
 	before(async () => {
@@ -244,84 +189,34 @@ describe('client: http() out-of-band', () => {
 		await s.stop()
 	})
 
-	it('client.http(k, v) lands on the server', async () => {
-		/** @type {any} */
-		let got
-		s.server.events.bigState = (_sock, data) => {
-			got = data
-		}
-
-		client = makeClient(s.baseUrl)
-		// Wait until the connection is up so http() has an open session.
-		await waitFor(() => client.connected)
-		client.http('bigState', { rows: ['a', 'b'] })
-		await waitFor(() => got != null)
-		assert.deepEqual(got, { rows: ['a', 'b'] })
-	})
-
-	it('multiple http() calls in the same tick batch into one stream', async () => {
+	it('multiple emit() calls in the same tick batch into one frame', async () => {
 		const seen = []
 		let dispatches = 0
 		s.server.events.batch = (_sock, data) => seen.push(data)
-		// Each pump → parse → dispatch fires `events.incoming` exactly
-		// once with the whole batch, so a successful client-side batch
-		// shows up as a single dispatch carrying all three messages.
-		const origIncoming = s.server.events.incoming
-		s.server.events.incoming = (sock, msgs) => {
-			dispatches++
-			if (origIncoming) origIncoming(sock, msgs)
-		}
+		s.server.events.incoming = () => dispatches++
 
-		const c2 = makeClient(s.baseUrl)
-		try {
-			await waitFor(() => c2.connected)
-			const baseline = dispatches
-			c2.http('batch', 1)
-			c2.http('batch', 2)
-			c2.http('batch', 3)
-			await waitFor(() => seen.length === 3)
-			assert.deepEqual(seen, [1, 2, 3])
-			assert.equal(
-				dispatches - baseline,
-				1,
-				'three http() calls = one server dispatch',
-			)
-		} finally {
-			c2.disconnect(true)
-			s.server.events.incoming = origIncoming
-		}
-	})
-
-	it('server-side socket.http(k, v) reaches the client via on()', async () => {
-		// Earlier tests in this describe leave clients connected, so
-		// snapshot the count and wait for ours to be added.
-		const before = s.server.sockets.length
 		client = makeClient(s.baseUrl)
-		const got = []
-		client.on('pushed', data => got.push(data))
-
-		await waitFor(() => s.server.sockets.length > before)
-		const sock = s.server.sockets[s.server.sockets.length - 1]
-		sock.http('pushed', { from: 'server' })
-
-		await waitFor(() => got.length === 1)
-		assert.deepEqual(got, [{ from: 'server' }])
+		await waitFor(() => client.connected)
+		client.emit('batch', 1)
+		client.emit('batch', 2)
+		client.emit('batch', 3)
+		await waitFor(() => seen.length === 3)
+		assert.deepEqual(seen, [1, 2, 3])
+		assert.equal(dispatches, 1, 'three emit() calls = one server dispatch')
 	})
 
-	it('http() called pre-connect buffers and flushes after handshake', async () => {
+	it('a pre-connect queue too big for the URL flushes after open', async () => {
 		const seen = []
-		s.server.events.early = (_sock, data) => seen.push(data)
+		s.server.events.big = (_sock, data) => seen.push(data)
 
-		// Construct a fresh client and immediately call http() before the
-		// session is up. With buffering, the messages should land after
-		// connect rather than being dropped.
 		const c2 = makeClient(s.baseUrl)
 		try {
 			assert.equal(c2.connected, false)
-			c2.http('early', 1)
-			c2.http('early', 2)
+			const payload = 'x'.repeat(8 * 1024)
+			c2.emit('big', payload)
+			c2.emit('big', 2)
 			await waitFor(() => seen.length === 2)
-			assert.deepEqual(seen, [1, 2])
+			assert.deepEqual(seen, [payload, 2])
 		} finally {
 			c2.disconnect(true)
 		}
@@ -416,6 +311,53 @@ describe('client: params as a function', () => {
 	})
 })
 
+describe('client: event names that exist on Object.prototype', () => {
+	let s, client
+
+	before(async () => {
+		s = await bootServer()
+	})
+	after(async () => {
+		client?.disconnect(true)
+		await s.stop()
+	})
+
+	it('can be listened to, and unlistened names are ignored', async () => {
+		client = makeClient(s.baseUrl)
+		const seen = []
+		for (const name of ['constructor', '__proto__', 'toString']) {
+			client.on(name, v => seen.push([name, v]))
+		}
+		await waitFor(() => client.connected)
+		s.server.emit('constructor', 1)
+		s.server.emit('__proto__', 2)
+		s.server.emit('toString', 3)
+		// Nobody listens to these: they must be skipped, not crash dispatch.
+		s.server.emit('hasOwnProperty', 4)
+		s.server.emit('valueOf', 5)
+		s.server.emit('done', 6)
+		client.on('done', v => seen.push(['done', v]))
+		await waitFor(() => seen.length === 4)
+		assert.deepEqual(seen, [
+			['constructor', 1],
+			['__proto__', 2],
+			['toString', 3],
+			['done', 6],
+		])
+	})
+})
+
+describe('client: url', () => {
+	it('throws for anything but ws:// or wss://', () => {
+		for (const url of ['http://127.0.0.1:1', 'https://127.0.0.1:1', 'ftp://x']) {
+			assert.throws(() => new Client({ url, noConnect: true }), /ws:\/\/ or wss:\/\//)
+		}
+		for (const url of ['ws://127.0.0.1:1', 'wss://127.0.0.1:1']) {
+			new Client({ url, noConnect: true })
+		}
+	})
+})
+
 describe('client: noConnect', () => {
 	it('does not auto-connect when noConnect is set', async () => {
 		const s = await bootServer()
@@ -437,7 +379,7 @@ describe('client: noConnect', () => {
 	})
 })
 
-describe('client: emit / http no-arg + http reply', () => {
+describe('client: emit no-arg', () => {
 	let s, client
 
 	before(async () => {
@@ -448,10 +390,9 @@ describe('client: emit / http no-arg + http reply', () => {
 		await s.stop()
 	})
 
-	it('emit(k) sends just [k]; http(k, v, fn) returns a reply promise', async () => {
+	it('emit(k) sends just [k]', async () => {
 		const seen = []
 		s.server.events.bare = (_sock, data) => seen.push(data)
-		s.server.events.echo = (_sock, data, reply) => reply(data)
 
 		client = makeClient(s.baseUrl)
 		await waitFor(() => client.connected)
@@ -460,9 +401,6 @@ describe('client: emit / http no-arg + http reply', () => {
 		await waitFor(() => seen.length === 1)
 		// emit(k) with no value: the server handler receives data === undefined
 		assert.equal(seen[0], undefined)
-
-		const got = await client.http('echo', 'hi', r => r + '!')
-		assert.equal(got, 'hi!')
 	})
 })
 
@@ -476,7 +414,7 @@ describe('client: disconnect', () => {
 		await s.stop()
 	})
 
-	it('client.disconnect(true) closes the session and disables reconnect', async () => {
+	it('client.disconnect(true) closes the connection and disables reconnect', async () => {
 		let disconnects = 0
 		s.server.events.disconnect = () => disconnects++
 
@@ -534,8 +472,66 @@ describe('client: reconnect lifecycle', () => {
 		await new Promise(r => setTimeout(r, 50))
 		assert.deepEqual(events, ['connect', 'disconnect', 'reconnect'])
 
-		// Server saw two distinct sessions across the reconnect.
+		// Server saw two distinct connections across the reconnect.
 		assert.equal(s.server.served, 2)
+	})
+})
+
+describe('client: reconnect timing', () => {
+	it('reconnects at once when a connection that was up drops', async () => {
+		const s = await bootServer()
+		const client = makeClient(s.baseUrl)
+		try {
+			await waitFor(() => client.connected)
+			// Past the retry minimum, so this counts as a working connection.
+			await new Promise(r => setTimeout(r, 2100))
+			const dropped = Date.now()
+			s.server.sockets[0].disconnect()
+			await waitFor(() => s.server.served === 2 && client.connected)
+			const took = Date.now() - dropped
+			assert.ok(took < 500, `reconnected after ${took}ms`)
+		} finally {
+			client.disconnect(true)
+			await s.stop()
+		}
+	})
+
+	it('waits 2–4s before retrying a failed attempt', async () => {
+		const port = pickPort()
+		const client = makeClient(`ws://127.0.0.1:${port}`)
+		try {
+			// Nothing listens yet: the first attempt fails and schedules a retry.
+			await new Promise(r => setTimeout(r, 100))
+			const failed = Date.now()
+			const s = new Server()
+			await s.listen({ port })
+			try {
+				await new Promise(r => setTimeout(r, 1700))
+				assert.equal(s.served, 0, 'retried before the minimum delay')
+				await waitFor(() => client.connected, 160)
+				const took = Date.now() - failed
+				assert.ok(took >= 1800 && took < 4500, `retried after ${took}ms`)
+			} finally {
+				client.disconnect(true)
+				await s.stop()
+			}
+		} finally {
+			client.disconnect(true)
+		}
+	})
+
+	it('waits before reconnecting when the server drops it right after opening', async () => {
+		const s = await bootServer()
+		s.server.events.connect = sock => sock.disconnect()
+		const client = makeClient(s.baseUrl)
+		try {
+			await waitFor(() => s.server.served === 1)
+			await new Promise(r => setTimeout(r, 1500))
+			assert.equal(s.server.served, 1, 'must not loop on an instant drop')
+		} finally {
+			client.disconnect(true)
+			await s.stop()
+		}
 	})
 })
 
@@ -559,12 +555,10 @@ describe('client: pending callbacks reject on reconnect', () => {
 		await waitFor(() => client.connected)
 
 		const emitP = client.emit('willNotReply', 'data', () => 'never')
-		const httpP = client.http('willNotReply', 'data', () => 'never')
 		// Attach a no-op catch up front so the eventual rejection
 		// isn't flagged as unhandled while we wait through the
 		// disconnect / reconnect window.
 		emitP.catch(() => {})
-		httpP.catch(() => {})
 
 		// Soft disconnect + manual reconnect, same trick as above.
 		client.disconnect()
@@ -575,6 +569,167 @@ describe('client: pending callbacks reject on reconnect', () => {
 		// connect()'s reconnect branch synchronously cancels every
 		// pending callback with Error('reconnecting').
 		await assert.rejects(emitP, /reconnecting/)
-		await assert.rejects(httpP, /reconnecting/)
+	})
+})
+
+describe('client: URL packing', () => {
+	/** Bytes of the handshake request line for request target `url`. */
+	const requestLine = url => `GET ${url} HTTP/1.1\r\n`.length
+	/** Form-encoded length of `text`, as the client measures it. */
+	const encoded = text => new URLSearchParams({ m: text }).toString().length - 2
+
+	/** Messages a connect request carried in its `m` param. */
+	const packedIn = url =>
+		JSON.parse(new URL(url, 'http://x').searchParams.get('m') || '[]')
+
+	/** Server recording each connect URL and every dispatched batch. */
+	const bootRecording = async (port = pickPort()) => {
+		const s = new Server()
+		const urls = []
+		const batches = []
+		s.events.connect = (_sock, request) => urls.push(request.url)
+		s.events.incoming = (_sock, messages) =>
+			batches.push(messages.map(m => [m[0], m[1]]))
+		s.events.m = () => {}
+		await s.listen({ port })
+		return { s, port, urls, batches }
+	}
+
+	it('packs every pre-connect message into the URL when they fit', async () => {
+		const { s, port, urls, batches } = await bootRecording()
+		const client = makeClient(`ws://127.0.0.1:${port}`)
+		try {
+			client.emit('m', 1)
+			client.emit('m', 2)
+			client.emit('m', 3)
+			await waitFor(() => batches.length === 1)
+			assert.deepEqual(packedIn(urls[0]), [['m', 1], ['m', 2], ['m', 3]])
+			assert.deepEqual(batches, [[['m', 1], ['m', 2], ['m', 3]]])
+		} finally {
+			client.disconnect(true)
+			await s.stop()
+		}
+	})
+
+	it('packs what fits and sends the rest over the socket, in order', async () => {
+		const { s, port, urls, batches } = await bootRecording()
+		const client = makeClient(`ws://127.0.0.1:${port}`)
+		try {
+			// Two of these fit nginx's 8 KB request line, the third doesn't.
+			const big = n => 'x'.repeat(3000) + n
+			client.emit('m', big(1))
+			client.emit('m', big(2))
+			client.emit('m', big(3))
+			client.emit('m', 'small')
+			await waitFor(() => batches.flat().length === 4)
+
+			// As full as it can be: within the limit, but not with one more.
+			const line = requestLine(urls[0])
+			assert.ok(line <= 8192, `request line is ${line} bytes`)
+			assert.ok(line + encoded(',' + JSON.stringify(['m', big(3)])) > 8192)
+			assert.deepEqual(packedIn(urls[0]), [['m', big(1)], ['m', big(2)]])
+			assert.deepEqual(batches, [
+				[['m', big(1)], ['m', big(2)]],
+				[['m', big(3)], ['m', 'small']],
+			])
+		} finally {
+			client.disconnect(true)
+			await s.stop()
+		}
+	})
+
+	it('stops at the first message that does not fit, so order is kept', async () => {
+		const { s, port, urls, batches } = await bootRecording()
+		const client = makeClient(`ws://127.0.0.1:${port}`)
+		try {
+			const huge = 'x'.repeat(9000)
+			client.emit('m', huge)
+			client.emit('m', 'small')
+			await waitFor(() => batches.flat().length === 2)
+			assert.deepEqual(packedIn(urls[0]), [])
+			assert.deepEqual(batches, [[['m', huge], ['m', 'small']]])
+		} finally {
+			client.disconnect(true)
+			await s.stop()
+		}
+	})
+
+	it('requeues packed messages after a failed connect, keeping order and callbacks', async () => {
+		const port = pickPort()
+		const client = makeClient(`ws://127.0.0.1:${port}`, {
+			noConnect: true,
+		})
+		try {
+			client.emit('m', 'a')
+			const replied = client.emit('echo', 'b', r => r)
+
+			// Nothing listens yet: this attempt fails before opening.
+			client.connect()
+			await new Promise(r => setTimeout(r, 300))
+			assert.equal(client.connected, false)
+			client.emit('m', 'c')
+
+			const { s, urls, batches } = await bootRecording(port)
+			s.events.echo = (_sock, data, reply) => reply(data)
+			try {
+				client.connect()
+				await waitFor(() => batches.flat().length === 3)
+				// The retry doesn't pack: the URL may be what failed.
+				assert.deepEqual(packedIn(urls[0]), [])
+				assert.deepEqual(batches, [[['m', 'a'], ['echo', 'b'], ['m', 'c']]])
+				assert.equal(await replied, 'b')
+			} finally {
+				client.disconnect(true)
+				await s.stop()
+			}
+		} finally {
+			client.disconnect(true)
+		}
+	})
+
+	it('gets through a proxy that rejects long URLs instead of retrying the same URL', async () => {
+		const { s, port, urls, batches } = await bootRecording()
+		// Stands in for a proxy with a small URL limit: 414 for any packed URL.
+		const proxy = createNetServer(conn => {
+			let head = ''
+			const onData = chunk => {
+				head += chunk.toString('latin1')
+				if (!head.includes('\r\n')) return
+				conn.off('data', onData)
+				if (head.split('\r\n')[0].includes('m=')) {
+					conn.end('HTTP/1.1 414 URI Too Long\r\nConnection: close\r\n\r\n')
+					return
+				}
+				const upstream = connect(port, '127.0.0.1', () => {
+					upstream.write(head, 'latin1')
+					conn.pipe(upstream).pipe(conn)
+				})
+				upstream.on('error', () => conn.destroy())
+				conn.on('error', () => upstream.destroy())
+			}
+			conn.on('data', onData)
+		})
+		const proxyPort = pickPort()
+		await new Promise(resolve =>
+			proxy.listen(proxyPort, '127.0.0.1', () => resolve(undefined)),
+		)
+		const client = makeClient(`ws://127.0.0.1:${proxyPort}`, {
+			noConnect: true,
+		})
+		try {
+			client.emit('m', 'a')
+			client.connect()
+			await new Promise(r => setTimeout(r, 300))
+			assert.equal(urls.length, 0, 'the packed attempt was rejected')
+
+			client.connect()
+			await waitFor(() => batches.length === 1)
+			assert.deepEqual(packedIn(urls[0]), [])
+			assert.deepEqual(batches, [[['m', 'a']]])
+		} finally {
+			client.disconnect(true)
+			proxy.close()
+			await s.stop()
+		}
 	})
 })

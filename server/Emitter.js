@@ -7,12 +7,11 @@
  */
 
 /**
- * Common emit / broadcast / http / broadcastHttp logic. Subclasses
- * own the `sockets` field (Server/Room as a plain Array, Rooms as a
- * computed getter). Each fan-out builds the wire tuple **once** and
- * passes the same reference to every recipient — `Server.cacheMessages`
- * keys the encoded form by message identity, so all sockets share a
- * single encoding for the batch.
+ * Common emit / broadcast logic. Subclasses own the `sockets` field
+ * (Server/Room as a plain Array, Rooms as a computed getter). Each
+ * fan-out builds the wire tuple **once** and passes the same reference
+ * to every recipient — `Server.cacheMessages` keys the encoded form by
+ * message identity, so all sockets share a single encoding.
  */
 export class Emitter {
 	/** @this {HasSockets} */
@@ -31,26 +30,6 @@ export class Emitter {
 		for (const socket of this.sockets) {
 			if (me != socket) {
 				socket.emit(d)
-			}
-		}
-	}
-
-	/** @this {HasSockets} */
-	http(k, v) {
-		/** @type {[string, any]} */
-		const d = [k, v]
-		for (const socket of this.sockets) {
-			socket.http(d)
-		}
-	}
-
-	/** @this {HasSockets} */
-	broadcastHttp(me, k, v) {
-		/** @type {[string, any]} */
-		const d = [k, v]
-		for (const socket of this.sockets) {
-			if (me != socket) {
-				socket.http(d)
 			}
 		}
 	}

@@ -20,19 +20,4 @@ export class Emitter {
 		v: EventValue<ClientEvents, K>,
 	): void
 
-	/**
-	 * Fire-and-forget out-of-band send to every socket in scope. The
-	 * payload is encoded once and pushed onto a fresh send-only stream
-	 * per recipient. Per-stream failures are swallowed.
-	 */
-	http<K extends EventKey<ClientEvents>>(
-		k: K,
-		v: EventValue<ClientEvents, K>,
-	): void
-	/** Like {@link http} but skip `me`. */
-	broadcastHttp<K extends EventKey<ClientEvents>>(
-		me: Socket,
-		k: K,
-		v: EventValue<ClientEvents, K>,
-	): void
 }

@@ -8,27 +8,21 @@ import type {
 } from './index.js'
 
 export class Socket {
-	/**
-	 * @param session WebTransport session
-	 * @param controlStream Bidi stream for queued messages
-	 * @param server
-	 */
-	constructor(session: any, controlStream: any, server: any)
+	constructor(
+		io: import('ws').WebSocket,
+		request: import('node:http').IncomingMessage,
+		server: any,
+	)
 
 	server: any
-	/** WebTransport session. */
-	session: any
-	/** Control bidi stream. */
-	control: any
-	/** Writer for the control stream. */
-	writer: any
+	/** The underlying `ws` WebSocket. */
+	io: import('ws').WebSocket
 
 	ip: string
 	userAgent: string
 	params: Record<string, string>
 
-	/** Outbound queues split by transport channel. */
-	messages: { emit: any[]; http: any[] }
+	messages: any[]
 	callbacks: (Function | null)[]
 
 	bytesSent: number
@@ -54,43 +48,19 @@ export class Socket {
 		cb?: (reply: EventValue<ClientReplies, K>) => void,
 	): void
 
-	/** Array-form used by `Emitter.http` to share one tuple across recipients. */
-	http(message: [string, any] | [string, any, number]): void
-	/** Queue a message for the next out-of-band batch. */
-	http<K extends EventKey<ClientEvents>>(
-		k: K,
-		v: EventValue<ClientEvents, K>,
-		cb?: (reply: EventValue<ClientReplies, K>) => void,
-	): void
 	/**
-	 * Send pre-encoded bytes on a fresh send-only stream. Internal —
-	 * called from `processQueue` once per http batch.
-	 */
-	httpBytes(bytes: Uint8Array): Promise<void>
-	/**
-	 * Close the session.
+	 * Close the connection.
 	 *
-	 * @param noReconnect Pass `true` to send a `disconnect` protocol
-	 *   frame so the client suppresses its auto-reconnect loop.
-	 * @param reason Human-readable reason carried in QUIC's
-	 *   `CONNECTION_CLOSE` frame; surfaced client-side via
-	 *   `WebTransportError`. Up to 1024 bytes.
+	 * @param noReconnect Pass `true` to send a `disconnect` frame so
+	 *   the client suppresses its auto-reconnect loop.
+	 * @param reason Close reason sent to the client, up to 123 bytes.
 	 */
 	disconnect(noReconnect?: boolean, reason?: string): void
 
 	listen(): void
-	/**
-	 * Pump a readable stream — dispatch each `\n`-terminated frame
-	 * via `onframe` mid-stream, plus any unterminated leftover when
-	 * the stream ends. Used for both the long-lived control stream
-	 * and per-call http payload streams.
-	 */
-	pump(readable: any): Promise<void>
-	onframe(line: string): void
+	onmessage: (raw: import('ws').RawData) => void
 	onclose: () => void
-
-	/** Shared push+schedule path for `emit` and `http`. */
-	enqueue(queue: any[], k: any, v?: any, cb?: Function): void
+	onerror: (err: Error) => void
 
 	callback(c: Function): number
 	oncallback(d: [number, any[]], m: any): void
@@ -104,7 +74,8 @@ export class Socket {
 	dispatch(messages: any[]): void
 
 	processQueue(): void
-	write(bytes: Uint8Array): void
+	/** Write a pre-built frame from `utils.frame`. */
+	write(chunks: Buffer[]): void
 
 	toJSON(): string
 	[inspect](): any

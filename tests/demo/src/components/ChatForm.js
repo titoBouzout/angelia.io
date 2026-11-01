@@ -1,7 +1,7 @@
 import { xml } from 'pota/xml'
 
 import { client } from '../connection.js'
-import { sendMessage, sendHttp, whisper } from '../actions.js'
+import { sendMessage, whisper } from '../actions.js'
 
 export const ChatForm = () => {
 	let input
@@ -39,11 +39,6 @@ export const ChatForm = () => {
 				on:input="${onInput}"
 			/>
 			<button type="submit">send</button>
-			<button
-				type="button"
-				class="secondary"
-				on:click="${() => sendHttp(consume())}"
-			>via http</button>
 			<button
 				type="button"
 				class="secondary"

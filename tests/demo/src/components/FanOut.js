@@ -3,7 +3,7 @@ import { xml } from 'pota/xml'
 import { measureRtt, shout, sendBig, askPushMe } from '../actions.js'
 
 export const FanOut = () => xml`
-	<h2>fan-out + transports</h2>
+	<h2>fan-out</h2>
 	<div class="actions">
 		<button class="secondary" on:click="${measureRtt}">
 			measure RTT (emit + reply)
@@ -12,10 +12,10 @@ export const FanOut = () => xml`
 			shout to everyone (Server.emit)
 		</button>
 		<button class="secondary" on:click="${sendBig}">
-			send 64KB via http
+			send 64KB (emit + reply)
 		</button>
 		<button class="secondary" on:click="${askPushMe}">
-			ask server to push (socket.http)
+			ask server to push 8KB (socket.emit)
 		</button>
 	</div>
 `

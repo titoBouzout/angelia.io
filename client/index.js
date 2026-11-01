@@ -1,3 +1,5 @@
+import { createTransport } from './transport.js'
+
 const error = console.error
 const stringify = JSON.stringify
 const parse = JSON.parse
@@ -5,22 +7,23 @@ const parse = JSON.parse
 /** @returns {v is Function} */
 const isFunction = (/** @type {any} */ v) => typeof v === 'function'
 
-// `encode` has no per-call state, safe to share. `decode` is created
-// per-pump (in `#pump`) because `TextDecoder` keeps state across
-// `{stream: true}` chunks — sharing across instances would corrupt
-// multi-byte UTF-8 boundaries.
-const encode = TextEncoder.prototype.encode.bind(new TextEncoder())
+// Pack queued messages into the `m=` query param while the handshake's
+// request line stays within nginx's default `large_client_header_buffers`
+// (8k): a longer line gets a 414.
+const REQUEST_LINE_LIMIT = 8192
 
-// Pong is the same byte every time — encode once, reuse forever.
-const PONG = encode('\n')
+/** Length of `text` once form-encoded into a query param value. */
+const encodedLength = text =>
+	new URLSearchParams({ m: text }).toString().length - 2
 
-// Shared no-op handler for fire-and-forget `writer.write()` — avoids
-// allocating a new closure per write.
-const noop = () => {}
+// Close code browsers send when the page navigates away. Firefox fires
+// it on reload too; reconnecting then would open a second connection.
+const GOING_AWAY = 1001
 
-// Pack queued messages into the `m=` query param when the resulting
-// full URL fits this budget (URL-encoding included).
-const URL_PACK_LIMIT = 4096
+// Retries wait RETRY_MIN_MS plus up to RETRY_JITTER_MS, so a server
+// bounce doesn't get every client back at the same instant.
+const RETRY_MIN_MS = 2000
+const RETRY_JITTER_MS = 2000
 
 const newConnid = () =>
 	crypto.getRandomValues(new BigUint64Array(1))[0].toString(36)
@@ -42,27 +45,31 @@ export default class Client {
 	 */
 	#callbacks = [null]
 	/** @type {Record<string, Function[]>} */
-	#listeners = {}
-	/**
-	 * Pending outbound messages, split by transport:
-	 *
-	 * - `emit` — batched and flushed on the control stream
-	 * - `http` — batched and flushed on one-fresh-stream
-	 *
-	 * @type {{ emit: any[]; http: any[] }}
-	 */
-	#messages = { emit: [], http: [] }
-	/** @type {WebTransport | null} */
+	// No prototype, so only registered keys are found ('constructor',
+	// '__proto__', … are ordinary event names).
+	#listeners = Object.create(null)
+	/** @type {any[]} */
+	#messages = []
+	/** @type {import('./transport.js').Connection | null} */
 	#io = null
-	/** @type {WritableStreamDefaultWriter<Uint8Array> | null} */
-	#writer = null
+	/** @type {import('./transport.js').Transport} */
+	#transport
 	#connid = newConnid()
 	#isReconnect = false
 	#reconnect = true
+	#packFailed = false
 
 	/** @param {import('./index.js').ClientOptions} options */
 	constructor(options) {
+		const { protocol } = new URL(options.url)
+		if (protocol !== 'ws:' && protocol !== 'wss:') {
+			throw new TypeError(
+				`Client url must be ws:// or wss://, got ${protocol}//`,
+			)
+		}
+
 		this.options = options
+		this.#transport = createTransport(options.worker !== false)
 
 		// Empty-key '' frames are reply messages — route them to the
 		// callback slot bookkeeping. Registered as a regular listener
@@ -72,7 +79,9 @@ export default class Client {
 		// Force-disconnect support: app can `socket.emit('disconnect')`.
 		this.on('disconnect', this.disconnect)
 
-		!options.noConnect && this.connect()
+		// Deferred so emits made right after construction are packed
+		// into the connect URL.
+		if (!options.noConnect) queueMicrotask(() => this.connect())
 	}
 
 	connect() {
@@ -90,47 +99,27 @@ export default class Client {
 		}
 		searchParams.append('connid', this.#connid)
 
+		/** @type {any[]} */
+		let packed = []
 		if (this.#isReconnect) {
-			this.#messages = { emit: [], http: [] }
+			this.#messages = []
 			const error = new Error('reconnecting')
 			for (let i = 1; i < this.#callbacks.length; i++) {
 				this.#callbacks[i]?.cancel(error)
 			}
 			this.#callbacks = [null]
-		} else if (this.#messages.emit.length) {
-			searchParams.append('m', stringify(this.#messages.emit))
-			if (url.toString().length <= URL_PACK_LIMIT) {
-				this.#messages.emit = []
-			} else {
-				searchParams.delete('m')
-			}
+		} else {
+			packed = this.#pack(url)
 		}
 
-		const io = new WebTransport(
-			url,
-			this.options.serverCertificateHashes
-				? {
-						serverCertificateHashes:
-							this.options.serverCertificateHashes,
-					}
-				: undefined,
-		)
-		this.#io = io
-
-		// Both `io.closed` and the setup chain can fire cleanup for the
-		// same failure. Tag every handler with the `io` it belongs to
-		// and skip stale ones — otherwise a stale firing could null a
-		// `#io` that a fresh `connect()` already replaced.
-		const onClose = () => this.#io === io && this.#handleClosed()
-		io.closed.then(onClose, onClose)
-
-		io.ready
-			.then(() => io.createBidirectionalStream())
-			.then(control => {
-				this.#writer = control.writable.getWriter()
-				this.#pump(control.readable)
-				this.#pumpIncoming(io)
-
+		/** @type {number | null} When this connection opened. */
+		let openedAt = null
+		// Every handler checks it still belongs to the live connection,
+		// so a late event can't clobber a newer one.
+		const io = this.#transport.open(url, {
+			onopen: () => {
+				if (this.#io !== io) return
+				openedAt = Date.now()
 				this.connected = true
 				if (this.#isReconnect) {
 					this.#dispatch([['reconnect', undefined]])
@@ -138,79 +127,66 @@ export default class Client {
 					this.#isReconnect = true
 					this.#dispatch([['connect', undefined]])
 				}
-
 				this.#send()
-			})
-			.catch(onClose)
+			},
+			onmessage: text => {
+				if (this.#io === io) this.#dispatch(parse(text))
+			},
+			onclose: code => {
+				if (this.#io !== io) return
+				// The URL never reached a server that accepted it: put the
+				// packed messages back in front, and stop packing, since the
+				// URL itself may be what got rejected.
+				if (openedAt === null && packed.length) {
+					this.#messages = [...packed, ...this.#messages]
+					this.#packFailed = true
+				}
+				this.#handleClosed(
+					code,
+					openedAt === null ? 0 : Date.now() - openedAt,
+				)
+			},
+			onerror: err => error('client', err),
+		})
+		this.#io = io
 	}
 
-	#handleClosed = () => {
+	/** @param {number} code */
+	/**
+	 * @param {number} code Close code
+	 * @param {number} uptime How long the connection was open, in ms
+	 */
+	#handleClosed = (code, uptime) => {
 		this.#io = null
-		this.#writer = null
 		if (this.connected) {
 			this.connected = false
 			this.#dispatch([['disconnect', undefined]])
 		}
-		if (this.#reconnect) {
-			// 2–4s jittered backoff so a server bounce doesn't trigger
-			// a thundering-herd reconnect from every client at once.
+		if (!this.#reconnect) {
+			this.#transport.terminate()
+		} else if (code === GOING_AWAY) {
+			return
+		} else if (uptime >= RETRY_MIN_MS) {
+			// A working connection dropped: get back right away.
+			this.connect()
+		} else {
+			// A failed attempt, or a connection dropped as soon as it
+			// opened (which would otherwise loop as fast as it can).
 			// `unref?.()` keeps a leaked Client from pinning a Node
-			// process alive via the timer; in browsers `setTimeout`
-			// returns a number and the optional chain short-circuits.
+			// process alive; browsers return a number and skip it.
 			setTimeout(
 				() => this.connect(),
-				2000 + Math.random() * 2000,
+				RETRY_MIN_MS + Math.random() * RETRY_JITTER_MS,
 			)?.unref?.()
 		}
 	}
 
 	disconnect = (noReconnect, reason = 'client disconnect') => {
 		if (noReconnect) this.#reconnect = false
-		try {
-			this.#io?.close({
-				closeCode: 0,
-				reason: noReconnect ? 'server disconnect' : reason,
-			})
-		} catch (r) {
-			error('client.disconnect', r)
-		}
+		this.#io?.close(1000, reason)
 	}
 
 	emit(key, valueOrCallback, callback) {
-		return this.#enqueue(
-			this.#messages.emit,
-			key,
-			valueOrCallback,
-			callback,
-		)
-	}
-
-	http(key, valueOrCallback, callback) {
-		return this.#enqueue(
-			this.#messages.http,
-			key,
-			valueOrCallback,
-			callback,
-		)
-	}
-
-	on(key, value) {
-		if (key == '') {
-			error('`key` cannot be empty')
-			return
-		}
-		this.#listeners[key] = this.#listeners[key] || []
-		this.#listeners[key].push(value)
-		return () => this.#off(key, value)
-	}
-
-	// PRIVATE API
-
-	/**
-	 * @param {any[]} queue
-	 * @returns {Promise<any> | undefined}
-	 */
-	#enqueue(queue, key, valueOrCallback, callback) {
 		if (key == '') {
 			error('`key` cannot be empty')
 			return
@@ -232,16 +208,68 @@ export default class Client {
 			message = [key]
 		}
 
-		this.#microtask()
-		queue.push(message)
+		this.#queue(message)
 
 		return promise
 	}
 
-	#microtask() {
-		if (!this.#messages.emit.length && !this.#messages.http.length) {
+	on(key, value) {
+		if (key == '') {
+			error('`key` cannot be empty')
+			return
+		}
+		this.#listeners[key] = this.#listeners[key] || []
+		this.#listeners[key].push(value)
+		return () => this.#off(key, value)
+	}
+
+	// PRIVATE API
+
+	/**
+	 * Move the longest prefix of the queue that fits the request-line
+	 * budget into the `m` param, so it dispatches on connect; the rest is sent once
+	 * the socket opens. Stops at the first message that doesn't fit, to
+	 * keep order. Off after a failed attempt that carried packed messages.
+	 * Returns the packed messages.
+	 *
+	 * @param {URL} url
+	 */
+	#pack(url) {
+		if (this.#packFailed) return []
+		const messages = this.#messages
+		// Form-encoding works per character and yields ASCII, so encoded
+		// lengths add up and equal bytes. `search` always holds `connid`.
+		let length =
+			'GET '.length +
+			url.pathname.length +
+			url.search.length +
+			' HTTP/1.1\r\n'.length +
+			'&m='.length +
+			encodedLength('[]')
+		const separator = encodedLength(',')
+		/** @type {string[]} */
+		const parts = []
+		for (const message of messages) {
+			const part = stringify(message)
+			const added =
+				encodedLength(part) + (parts.length ? separator : 0)
+			if (length + added > REQUEST_LINE_LIMIT) break
+			length += added
+			parts.push(part)
+		}
+		if (!parts.length) return []
+
+		url.searchParams.append('m', '[' + parts.join(',') + ']')
+		this.#messages = messages.slice(parts.length)
+		return messages.slice(0, parts.length)
+	}
+
+	/** Push a message, scheduling a flush when the queue was empty. */
+	#queue(message) {
+		if (!this.#messages.length) {
 			queueMicrotask(() => queueMicrotask(this.#send))
 		}
+		this.#messages.push(message)
 	}
 
 	#off(k, v) {
@@ -277,8 +305,7 @@ export default class Client {
 							}
 							replied = true
 
-							this.#microtask()
-							this.#messages.emit.push(['', [e[2], args]])
+							this.#queue(['', [e[2], args]])
 						}
 					: undefined
 				for (const fn of this.#listeners[e[0]]) {
@@ -289,95 +316,11 @@ export default class Client {
 	}
 
 	#send = () => {
-		if (this.#writer && this.#messages.emit.length) {
-			const batch = this.#messages.emit
-			this.#messages.emit = []
-
-			this.#writer.write(encode(stringify(batch) + '\n')).catch(noop)
-		}
-
-		if (this.#writer && this.#messages.http.length) {
-			const batch = this.#messages.http
-			this.#messages.http = []
-
-			// try/catch: browsers reject the returned promise when the
-			// session is gone, but the Node polyfill
-			// (@fails-components/webtransport) throws synchronously —
-			// and `#send` runs in a microtask with no handler above it.
-			try {
-				this.#io
-					?.createUnidirectionalStream()
-					.then(async stream => {
-						const w = stream.getWriter()
-						await w.write(encode(stringify(batch)))
-						return w.close()
-					})
-					.catch(e => error('client.#send http', e))
-			} catch (e) {
-				error('client.#send http', e)
-			}
-		}
-	}
-
-	#pong() {
-		this.#writer?.write(PONG).catch(noop)
-	}
-
-	/**
-	 * Pump a readable: dispatch each `\n`-terminated batch as it
-	 * arrives, plus any unterminated leftover when the stream ends.
-	 *
-	 * - Control stream: long-lived, frames separated by `\n` mid-stream.
-	 *   The "leftover at end" branch only runs at session close and is
-	 *   typically empty.
-	 * - Server-pushed unidi payload streams: short-lived, exactly one
-	 *   un-terminated batch per stream — the close acts as the frame
-	 *   boundary, so the leftover branch is the one that fires.
-	 */
-	async #pump(readable) {
-		const decoder = new TextDecoder()
-		const reader = readable.getReader()
-		let buf = ''
-		try {
-			while (true) {
-				const { value, done } = await reader.read()
-				if (done) {
-					if (buf) this.#onframe(buf)
-					break
-				}
-				buf += decoder.decode(value, { stream: true })
-				let nl
-				while ((nl = buf.indexOf('\n')) !== -1) {
-					const line = buf.slice(0, nl)
-					buf = buf.slice(nl + 1)
-
-					this.#onframe(line)
-				}
-			}
-		} catch (e) {
-			error('client.#pump', e)
-		}
-	}
-
-	/** Forward server-pushed unidi streams through `#pump`. */
-	async #pumpIncoming(io) {
-		const reader = io.incomingUnidirectionalStreams.getReader()
-		try {
-			while (true) {
-				const { value: stream, done } = await reader.read()
-				if (done) break
-				this.#pump(stream)
-			}
-		} catch (e) {
-			error('client.#pumpIncoming', e)
-		}
-	}
-
-	#onframe(line) {
-		if (line === '') {
-			this.#pong()
-		} else {
-			this.#dispatch(parse(line))
+		const io = this.#io
+		if (io && this.connected && this.#messages.length) {
+			const batch = this.#messages
+			this.#messages = []
+			io.send(stringify(batch))
 		}
 	}
 }

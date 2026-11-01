@@ -9,13 +9,13 @@ export class Rooms extends Emitter {
 		this.rooms = new Map()
 	}
 
-	/** Every socket across every room, flattened into one array. */
+	/** Every socket across every room, each once. */
 	get sockets() {
-		const out = []
+		const unique = new Set()
 		for (const room of this.rooms.values()) {
-			for (const s of room.sockets) out.push(s)
+			for (const s of room.sockets) unique.add(s)
 		}
-		return out
+		return [...unique]
 	}
 
 /** Array of every room in this list. */
@@ -28,6 +28,8 @@ export class Rooms extends Emitter {
 	}
 
 	join(socket, id = undefined) {
+		// Don't create a room for a socket `Room.join` would turn away.
+		if (socket.closed) return
 		let room = this.rooms.get(id)
 		if (!room) {
 			room = new this.RoomClass()

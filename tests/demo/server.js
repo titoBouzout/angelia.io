@@ -1,17 +1,13 @@
 /**
- * angelia.io demo — boots a real WebTransport server and a tiny HTTP
+ * angelia.io demo — boots a real WebSocket server and a tiny HTTP
  * server that hosts the demo page. Run with:
  *
  *   node tests/demo/server.js
  *
- * Then open http://localhost:8000 in a WebTransport-capable browser
- * (Chrome/Edge). The page talks to the WebTransport server on
- * https://localhost:3001 using the self-signed cert pinned by SHA-256.
- *
- * Requires `certs/cert.pem` + `certs/key.pem` (run `npm run gen-cert`).
+ * Then open http://localhost:8000. The page talks to the WebSocket
+ * server on ws://127.0.0.1:3001.
  */
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { dirname, join, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -21,31 +17,7 @@ import Server, { Room, Rooms } from '../../server/index.js'
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..', '..')
 
-const CERT_PATH = join(root, 'certs/cert.pem')
-const KEY_PATH = join(root, 'certs/key.pem')
-if (!existsSync(CERT_PATH) || !existsSync(KEY_PATH)) {
-	console.error(
-		`Missing ${CERT_PATH} / ${KEY_PATH}. Run \`npm run gen-cert\` first.`,
-	)
-	process.exit(1)
-}
-
-// PEM read only to compute the SHA-256 hash injected into the page —
-// `Server.listen` itself takes the paths and re-reads from disk.
-const cert = readFileSync(CERT_PATH, 'utf8')
-
-const certHash = [
-	...createHash('sha256')
-		.update(
-			Buffer.from(
-				cert.replace(/-----[^-]+-----|\s+/g, ''),
-				'base64',
-			),
-		)
-		.digest(),
-]
-
-// ---------- WebTransport (angelia.io) server ----------
+// ---------- WebSocket (angelia.io) server ----------
 
 /**
  * `Room` subclass — demonstrates extension and the lifecycle hooks
@@ -136,10 +108,9 @@ class Chat {
 }
 
 /**
- * Probes: smaller demos for transports and fan-out scope. `shout`
+ * Probes: smaller demos for payload size and fan-out scope. `shout`
  * uses `Server.emit` (every socket on the server, regardless of
- * room); `big` and `pushme` exercise the http transport in both
- * directions.
+ * room); `big` and `pushme` move large payloads in both directions.
  */
 class Probes {
 	shout(socket, text) {
@@ -156,7 +127,7 @@ class Probes {
 
 	pushme(socket) {
 		const payload = 'X'.repeat(8 * 1024)
-		socket.http('push', {
+		socket.emit('push', {
 			ts: Date.now(),
 			bytes: payload.length,
 			payload,
@@ -211,18 +182,13 @@ Server.on(Chat)
 Server.on(Probes)
 Server.on(Admin)
 
-await Server.listen({
-	port: 3001,
-	cert: CERT_PATH,
-	privKey: KEY_PATH,
-	watch: true,
-})
+await Server.listen({ port: 3001 })
 
 // ---------- Static page server ----------
 
 const SRC_DIR = join(here, 'src')
 const POTA_ROOT = join(root, 'node_modules/pota')
-const CLIENT_PATH = join(root, 'client/index.js')
+const CLIENT_ROOT = join(root, 'client')
 const HTML_PATH = join(here, 'index.html')
 
 /**
@@ -256,14 +222,15 @@ createServer((req, res) => {
 	if (url === '/' || url === '/index.html') {
 		const html = readFileSync(HTML_PATH, 'utf8')
 		res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-		res.end(html.replace('__CERT_HASH__', JSON.stringify(certHash)))
+		res.end(html)
 		return
 	}
 
 	// The angelia.io client lives at the repo root, not under tests/demo.
-	if (url === '/client.js') {
-		sendFile(res, CLIENT_PATH, 'application/javascript')
-		return
+	if (url.startsWith('/client/')) {
+		const path = resolveUnder(CLIENT_ROOT, url.slice('/client/'.length))
+		if (path) return sendFile(res, path, 'application/javascript')
+		return send404(res)
 	}
 
 	// Pota's source tree, served straight out of node_modules so the

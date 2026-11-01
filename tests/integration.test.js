@@ -1,28 +1,21 @@
 /**
- * End-to-end integration tests. Boots a real Server (over QUIC) and
- * connects a real WebTransport client from `@fails-components/webtransport`.
- *
- * Requires `certs/cert.pem` + `certs/key.pem` — run `npm run gen-cert`
- * first if they don't exist.
+ * End-to-end integration tests. Boots a real Server and talks to it
+ * over a raw `ws` WebSocket, asserting on the wire protocol.
  */
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { once } from 'node:events'
+import { execFileSync } from 'node:child_process'
 import {
-	copyFileSync,
-	existsSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,
 } from 'node:fs'
-import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import {
-	WebTransport,
-	quicheLoaded,
-} from '@fails-components/webtransport'
+import { WebSocket } from 'ws'
 
 import serverSingleton from '../server/Server.js'
 import { Room } from '../server/Room.js'
@@ -31,51 +24,6 @@ import { Rooms } from '../server/Rooms.js'
 const Server = /** @type {new () => typeof serverSingleton} */ (
 	/** @type {unknown} */ (serverSingleton.constructor)
 )
-
-const CERT_PATH = 'certs/cert.pem'
-const KEY_PATH = 'certs/key.pem'
-
-if (!existsSync(CERT_PATH) || !existsSync(KEY_PATH)) {
-	console.error(
-		`[integration] skipping: missing ${CERT_PATH} / ${KEY_PATH}. ` +
-			`Run \`npm run gen-cert\` first.`,
-	)
-	process.exit(0)
-}
-
-// The QUIC transport is a native binding. Probe it directly — if the
-// package's `.node` file isn't built/prebuilt for this platform, the
-// import itself throws.
-try {
-	await import(
-		'@fails-components/webtransport-transport-http3-quiche'
-	)
-	await quicheLoaded
-} catch (err) {
-	console.error(
-		'[integration] skipping: @fails-components/webtransport native ' +
-			'transport could not load. Install build tools (g++ / build-essential) ' +
-			'or run on a platform with prebuilt binaries.',
-	)
-	process.exit(0)
-}
-
-// PEM still loaded into memory — we need it to compute the cert hash
-// for client-side pinning. The server itself now takes paths.
-const cert = readFileSync(CERT_PATH, 'utf8')
-
-/** Compute the SHA-256 of the DER form of a PEM cert (for cert-pinning). */
-function certDigest(pem) {
-	const b64 = pem.replace(/-----[^-]+-----|\s+/g, '')
-	const der = Buffer.from(b64, 'base64')
-	return new Uint8Array(createHash('sha256').update(der).digest())
-}
-
-const certHash = certDigest(cert)
-const encoder = new TextEncoder()
-// Per-bootClient decoders are created inside the function — `TextDecoder`
-// keeps state across `{stream: true}` chunks and bootClient runs two
-// pumps (control + incoming) per call, so a shared decoder would race.
 
 let nextPort = 14000
 const pickPort = () => nextPort++
@@ -96,134 +44,79 @@ async function waitFor(predicate, tries = 40) {
 async function bootServer() {
 	const s = new Server()
 	const port = pickPort()
-	await s.listen({ port, cert: CERT_PATH, privKey: KEY_PATH })
+	await s.listen({ port })
 	return {
 		server: s,
 		port,
-		baseUrl: `https://127.0.0.1:${port}`,
-		url: `https://127.0.0.1:${port}/angelia`,
+		baseUrl: `ws://127.0.0.1:${port}`,
+		url: `ws://127.0.0.1:${port}/angelia`,
 		stop: () => s.stop(),
 	}
 }
 
 /**
- * Open a WebTransport client to `url`, open the control stream, set
- * up newline-JSON framing on it. Returns helpers to send messages and
- * await incoming frames.
+ * Open a raw WebSocket to `url`. Returns helpers to send batches and
+ * await incoming data frames. Heartbeat pings (empty frames) are
+ * counted in `pings` rather than queued, so they never race the
+ * frames a test is waiting for.
+ *
+ * @param {string} url
+ * @param {import('ws').ClientOptions} [options]
  */
-async function bootClient(url) {
-	// One decoder per pump — see header comment. The control pump has one
-	// stream so one decoder; the incoming pump opens many streams, each
-	// gets a fresh decoder inside the loop.
-	const controlDecoder = new TextDecoder()
-
-	const transport = new WebTransport(url, {
-		serverCertificateHashes: [
-			{ algorithm: 'sha-256', value: certHash },
-		],
-	})
-	// Swallow the post-close rejection — node:test treats an unhandled
-	// rejection (even after the test finished) as a file-level failure.
-	transport.closed?.catch?.(() => {})
-	await transport.ready
-
-	const control = await transport.createBidirectionalStream()
-	const writer = control.writable.getWriter()
-	const reader = control.readable.getReader()
+async function bootClient(url, options) {
+	const ws = new WebSocket(url, options)
 
 	/** @type {string[]} */
 	const inbound = []
 	/** @type {((line: string) => void) | null} */
-	let waiting = /** @type {any} */ (null)
+	let waiting = null
+	const counters = { pings: 0 }
 
-	;(async () => {
-		let buf = ''
-		try {
-			while (true) {
-				const { value, done } = await reader.read()
-				if (done) break
-				buf += controlDecoder.decode(value, { stream: true })
-				let nl
-				while ((nl = buf.indexOf('\n')) !== -1) {
-					const line = buf.slice(0, nl)
-					buf = buf.slice(nl + 1)
-					if (waiting) {
-						const w = waiting
-						waiting = null
-						w(line)
-					} else {
-						inbound.push(line)
-					}
-				}
-			}
-		} catch {}
-	})()
-
-	// One persistent reader for server-initiated bidi streams (used by
-	// Server.http / broadcastHttp). Each arriving stream is fully drained
-	// and parsed, then queued.
-	const incoming = transport.incomingUnidirectionalStreams.getReader()
-	/** @type {any[]} */
-	const incomingQueue = []
-	let waitingIncoming = /** @type {any} */ (null)
-	;(async () => {
-		try {
-			while (true) {
-				const { value: stream, done } = await incoming.read()
-				if (done) break
-				const streamDecoder = new TextDecoder()
-				const r = stream.getReader()
-				let buf = ''
-				while (true) {
-					const { value, done } = await r.read()
-					if (done) break
-					buf += streamDecoder.decode(value, { stream: true })
-				}
-				// Server-side http streams now carry an array of message
-				// tuples, matching the control-stream batch shape.
-				const messages = JSON.parse(buf)
-				for (const m of messages) {
-					if (waitingIncoming) {
-						const w = waitingIncoming
-						waitingIncoming = null
-						w(m)
-					} else {
-						incomingQueue.push(m)
-					}
-				}
-			}
-		} catch {}
-	})()
+	ws.on('message', raw => {
+		const line = raw.toString()
+		if (line === '') {
+			counters.pings++
+		} else if (waiting) {
+			const w = waiting
+			waiting = null
+			w(line)
+		} else {
+			inbound.push(line)
+		}
+	})
+	await once(ws, 'open')
 
 	return {
-		transport,
-		send: messages =>
-			writer.write(
-				encoder.encode(JSON.stringify(messages) + '\n'),
-			),
-		// A literal '\n' frame on the wire is the protocol-level pong.
-		pong: () => writer.write(encoder.encode('\n')),
+		ws,
+		counters,
+		send: messages => ws.send(JSON.stringify(messages)),
+		// An empty frame on the wire is the protocol-level pong.
+		pong: () => ws.send(''),
+		/** @returns {Promise<string>} */
 		nextFrame: () =>
 			new Promise(resolve => {
-				if (inbound.length) resolve(inbound.shift())
+				const line = inbound.shift()
+				if (line !== undefined) resolve(line)
 				else waiting = resolve
 			}),
-		nextIncoming: () =>
-			new Promise(resolve => {
-				if (incomingQueue.length) resolve(incomingQueue.shift())
-				else waitingIncoming = resolve
-			}),
-		http: async message => {
-			// Server expects an array of message tuples on a send-only
-			// stream; wrap the single test tuple so existing call sites
-			// stay simple.
-			const stream = await transport.createUnidirectionalStream()
-			const w = stream.getWriter()
-			await w.write(encoder.encode(JSON.stringify([message])))
-			await w.close()
-		},
-		close: () => transport.close(),
+		close: () => ws.close(),
 	}
+}
+
+/** Resolve with the HTTP status a rejected upgrade to `url` gets. */
+function rejectedStatus(url) {
+	return new Promise((resolve, reject) => {
+		const ws = new WebSocket(url)
+		ws.on('open', () => {
+			ws.close()
+			reject(new Error(`expected ${url} to be rejected`))
+		})
+		ws.on('unexpected-response', (_req, res) => {
+			resolve(res.statusCode)
+			ws.terminate()
+		})
+		ws.on('error', () => {})
+	})
 }
 
 // ------------------------------------------------------------------
@@ -269,7 +162,7 @@ describe('integration: round-trip with callback', () => {
 		await s.stop()
 	})
 
-	it('reply() sends a result back over the control stream', async () => {
+	it('reply() sends a result back to the client', async () => {
 		s.server.events.shout = (_sock, data, reply) => {
 			reply(data.toUpperCase())
 		}
@@ -328,32 +221,6 @@ describe('integration: server-initiated emit', () => {
 		client = await bootClient(s.url)
 		const line = await client.nextFrame()
 		assert.deepEqual(JSON.parse(line), [['welcome', { hi: 'there' }]])
-	})
-})
-
-describe('integration: http stream (out-of-band)', () => {
-	let s, client
-
-	before(async () => {
-		s = await bootServer()
-	})
-	after(async () => {
-		client?.close()
-		await s.stop()
-	})
-
-	it('client http() opens a fresh stream and lands the message', async () => {
-		/** @type {any} */
-		let received
-		s.server.events.bigState = (_sock, data) => {
-			received = data
-		}
-
-		client = await bootClient(s.url)
-		await client.http(['bigState', { rows: ['a', 'b', 'c'] }])
-
-		await waitFor(() => received != null)
-		assert.deepEqual(received, { rows: ['a', 'b', 'c'] })
 	})
 })
 
@@ -446,17 +313,10 @@ describe('integration: path filtering', () => {
 			'/',
 		]
 		for (const p of rejectedPaths) {
-			const t = new WebTransport(`${s.baseUrl}${p}`, {
-				serverCertificateHashes: [
-					{ algorithm: 'sha-256', value: certHash },
-				],
-			})
-			// Swallow the post-close rejection so node:test doesn't flag it.
-			t.closed?.catch?.(() => {})
-			await assert.rejects(
-				t.ready,
-				/handshake|404/i,
-				`expected ${p} to be rejected at handshake`,
+			const status = await rejectedStatus(`${s.baseUrl}${p}`)
+			assert.ok(
+				status >= 400,
+				`expected ${p} to be rejected at handshake, got ${status}`,
 			)
 		}
 
@@ -518,6 +378,69 @@ describe('integration: URL-pack on connect', () => {
 	})
 })
 
+describe('integration: URL-packed messages edge cases', () => {
+	let s
+
+	before(async () => {
+		s = await bootServer()
+	})
+	after(async () => {
+		await s.stop()
+	})
+
+	const packedUrl = messages =>
+		`${s.baseUrl}/angelia?m=${encodeURIComponent(JSON.stringify(messages))}`
+
+	it('counts the packed bytes in bytesReceived', async () => {
+		s.server.events.connect = undefined
+		s.server.events.early = () => {}
+		const before = s.server.bytesReceived
+		const json = JSON.stringify([['early', 'héllo']])
+		const client = await bootClient(packedUrl([['early', 'héllo']]))
+		try {
+			await waitFor(() => s.server.sockets.length === 1)
+			assert.equal(s.server.bytesReceived - before, Buffer.byteLength(json))
+			assert.equal(s.server.sockets[0].bytesReceived, Buffer.byteLength(json))
+		} finally {
+			client.close()
+			await waitFor(() => s.server.sockets.length === 0)
+		}
+	})
+
+	it('does not dispatch packed messages when connect disconnects the socket', async () => {
+		const seen = []
+		s.server.events.early = (_sock, data) => seen.push(data)
+		s.server.events.connect = sock => sock.disconnect(true)
+		const client = await bootClient(packedUrl([['early', 1]]))
+		try {
+			await waitFor(() => s.server.sockets.length === 0)
+			await new Promise(r => setTimeout(r, 50))
+			assert.deepEqual(seen, [])
+		} finally {
+			client.close()
+			s.server.events.connect = undefined
+		}
+	})
+
+	it('routes a non-array or unparsable `m` to garbage', async () => {
+		const garbage = []
+		s.server.events.garbage = (_sock, m) => garbage.push(m)
+		const origLog = console.log
+		console.log = () => {}
+		try {
+			const a = await bootClient(`${s.baseUrl}/angelia?m=${encodeURIComponent('{"x":1}')}`)
+			const b = await bootClient(`${s.baseUrl}/angelia?m=not-json`)
+			await waitFor(() => garbage.length === 2)
+			assert.deepEqual(garbage.sort(), ['not-json', '{"x":1}'])
+			a.close()
+			b.close()
+		} finally {
+			console.log = origLog
+			s.server.events.garbage = undefined
+		}
+	})
+})
+
 // ------------------------------------------------------------------
 // Server.on(Class)
 // ------------------------------------------------------------------
@@ -558,7 +481,7 @@ describe('integration: Server.on(Class)', () => {
 })
 
 // ------------------------------------------------------------------
-// Multi-client broadcast / http
+// Multi-client broadcast
 // ------------------------------------------------------------------
 
 describe('integration: multi-client emit + broadcast', () => {
@@ -609,7 +532,7 @@ describe('integration: multi-client emit + broadcast', () => {
 		await waitFor(() => s.server.sockets.length === 2)
 
 		// Three emits, same tick. processQueue runs on next-tick and
-		// flushes them all into a single newline-delimited JSON frame.
+		// flushes them all into a single frame.
 		s.server.emit('m', 1)
 		s.server.emit('m', 2)
 		s.server.emit('m', 3)
@@ -670,50 +593,147 @@ describe('integration: multi-message client → server', () => {
 	})
 })
 
-describe('integration: multi-client http + broadcastHttp', () => {
-	let s, a, b
+// ------------------------------------------------------------------
+// Garbage frames
+// ------------------------------------------------------------------
+
+describe('integration: skipUTF8Validation', () => {
+	// "é" is 0xC3 0xA9; a lone 0xC3 is invalid UTF-8.
+	const invalid = Buffer.from([0x5b, 0x5b, 0x22, 0x78, 0x22, 0x2c, 0x22, 0xc3, 0x22, 0x5d, 0x5d])
+
+	it('accepts invalid UTF-8 by default, decoding it to U+FFFD', async () => {
+		const s = await bootServer()
+		try {
+			const seen = []
+			s.server.events.x = (_sock, data) => seen.push(data)
+			const client = await bootClient(s.url)
+			client.ws.send(invalid, { binary: false })
+			await waitFor(() => seen.length === 1)
+			assert.deepEqual(seen, ['�'])
+			client.close()
+		} finally {
+			await s.stop()
+		}
+	})
+
+	it('closes the connection with 1007 when validation is on', async () => {
+		const s = new Server()
+		const port = pickPort()
+		await s.listen({ port, skipUTF8Validation: false })
+		try {
+			const client = await bootClient(`ws://127.0.0.1:${port}/angelia`)
+			const closed = once(client.ws, 'close')
+			client.ws.send(invalid, { binary: false })
+			const [code] = await closed
+			assert.equal(code, 1007)
+		} finally {
+			await s.stop()
+		}
+	})
+})
+
+describe('integration: malformed and reserved messages', () => {
+	let s, client
 
 	before(async () => {
 		s = await bootServer()
 	})
 	after(async () => {
-		a?.close()
-		b?.close()
+		client?.close()
 		await s.stop()
 	})
 
-	it('Server.http reaches every client over a fresh stream', async () => {
-		a = await bootClient(s.url)
-		b = await bootClient(s.url)
-		await waitFor(() => s.server.sockets.length === 2)
+	it('routes malformed messages to garbage instead of crashing', async () => {
+		const garbage = []
+		const errors = []
+		s.server.events.garbage = (_sock, m) => garbage.push(m)
+		s.server.events.ok = (_sock, v) => garbage.push(['ok', v])
+		const origError = console.error
+		console.error = (...a) => errors.push(a)
+		try {
+			client = await bootClient(s.url)
+			await waitFor(() => s.server.sockets.length === 1)
+			const [sock] = s.server.sockets
+			// A live callback, so a reply with non-array args reaches it.
+			sock.emit('ask', 1, () => {})
+			const ask = JSON.parse(await client.nextFrame())
+			const cbId = ask[0][2]
 
-		const aP = a.nextIncoming()
-		const bP = b.nextIncoming()
-		await s.server.http('big', { hi: 1 })
-
-		assert.deepEqual(await aP, ['big', { hi: 1 }])
-		assert.deepEqual(await bP, ['big', { hi: 1 }])
+			client.send([
+				null,
+				5,
+				'str',
+				[],
+				[123, 'x'],
+				['', null],
+				['', 'x'],
+				['', [cbId, 5]],
+				['', ['1', []]],
+				['ok', 'still dispatched'],
+			])
+			await waitFor(() => garbage.length === 10)
+			assert.deepEqual(garbage, [
+				null,
+				5,
+				'str',
+				[],
+				[123, 'x'],
+				['', null],
+				['', 'x'],
+				['', [cbId, 5]],
+				['', ['1', []]],
+				['ok', 'still dispatched'],
+			])
+			assert.equal(s.server.sockets.length, 1, 'socket still connected')
+		} finally {
+			console.error = origError
+			s.server.events.garbage = undefined
+		}
 	})
 
-	it('Server.broadcastHttp(me, ...) skips the sender', async () => {
-		const [first] = s.server.sockets
-
-		const bP = b.nextIncoming()
-		await s.server.broadcastHttp(first, 'big2', { only: 'b' })
-		assert.deepEqual(await bP, ['big2', { only: 'b' }])
-
-		// `a` (== first) must not receive it.
-		const aGot = await Promise.race([
-			a.nextIncoming(),
-			new Promise(r => setTimeout(() => r(null), 100)),
-		])
-		assert.equal(aGot, null, 'sender must not receive broadcastHttp')
+	it('clients cannot fire lifecycle events', async () => {
+		const fired = []
+		const garbage = []
+		for (const name of ['listen', 'connect', 'disconnect', 'ping', 'timeout', 'incoming', 'outgoing']) {
+			s.server.events[name] = () => fired.push(name)
+		}
+		s.server.events.garbage = (_sock, m) => garbage.push(m[0])
+		try {
+			const c = await bootClient(s.url)
+			await waitFor(() => fired.includes('connect'))
+			fired.length = 0
+			c.send([
+				['listen'],
+				['connect', {}],
+				['disconnect'],
+				['ping'],
+				['timeout', 1],
+				['garbage', 1],
+				['incoming', []],
+				['outgoing', []],
+			])
+			await waitFor(() => garbage.length === 8)
+			assert.deepEqual(garbage, [
+				'listen',
+				'connect',
+				'disconnect',
+				'ping',
+				'timeout',
+				'garbage',
+				'incoming',
+				'outgoing',
+			])
+			// `incoming` is the server's own hook for the batch, not the client's.
+			assert.deepEqual(fired, ['incoming'])
+			c.close()
+			await waitFor(() => s.server.sockets.length <= 1)
+		} finally {
+			for (const name of ['listen', 'connect', 'disconnect', 'ping', 'timeout', 'incoming', 'outgoing', 'garbage']) {
+				s.server.events[name] = undefined
+			}
+		}
 	})
 })
-
-// ------------------------------------------------------------------
-// Garbage frames
-// ------------------------------------------------------------------
 
 describe('integration: garbage messages', () => {
 	let s, client
@@ -894,6 +914,67 @@ describe('integration: room cleanup on disconnect', () => {
 	})
 })
 
+describe('integration: joining after disconnect', () => {
+	let s
+
+	before(async () => {
+		s = await bootServer()
+	})
+	after(async () => {
+		await s.stop()
+	})
+
+	it('a socket that closed before an async join is not added to rooms', async () => {
+		const rooms = new Rooms(Room)
+		const lobby = new Room()
+		/** @type {(v?: unknown) => void} */
+		let authDone = () => {}
+		const auth = new Promise(r => (authDone = r))
+		s.server.events.connect = async sock => {
+			await auth
+			rooms.join(sock, 'r')
+			lobby.join(sock)
+		}
+		const c = await bootClient(s.url)
+		await waitFor(() => s.server.sockets.length === 1)
+		c.close()
+		await waitFor(() => s.server.sockets.length === 0)
+
+		authDone()
+		await new Promise(r => setTimeout(r, 20))
+		assert.equal(rooms.get('r'), undefined, 'no room created')
+		assert.equal(lobby.sockets.length, 0)
+		s.server.events.connect = undefined
+	})
+})
+
+describe('integration: Rooms fan-out with a socket in several rooms', () => {
+	let s, a
+
+	before(async () => {
+		s = await bootServer()
+	})
+	after(async () => {
+		a?.close()
+		await s.stop()
+	})
+
+	it('delivers once and lists the socket once', async () => {
+		const rooms = new Rooms(Room)
+		s.server.events.connect = sock => {
+			rooms.join(sock, 'one')
+			rooms.join(sock, 'two')
+		}
+		a = await bootClient(s.url)
+		await waitFor(() => rooms.list.length === 2)
+		assert.equal(rooms.sockets.length, 1)
+
+		rooms.emit('news', 1)
+		assert.deepEqual(JSON.parse(await a.nextFrame()), [['news', 1]])
+		s.server.events.connect = undefined
+	})
+})
+
 describe('integration: persistent rooms', () => {
 	let s, a
 
@@ -971,7 +1052,7 @@ describe('integration: events.listen', () => {
 		let fired = 0
 		s.events.listen = () => fired++
 		const port = pickPort()
-		await s.listen({ port, cert: CERT_PATH, privKey: KEY_PATH })
+		await s.listen({ port })
 		assert.equal(fired, 1)
 		await s.stop()
 	})
@@ -1114,7 +1195,7 @@ describe('integration: Server.on(Class) chaining', () => {
 })
 
 // ------------------------------------------------------------------
-// Rooms.emit / Rooms.broadcast / Rooms.http / Room.http (live)
+// Rooms.emit / Rooms.broadcast (live)
 // ------------------------------------------------------------------
 
 describe('integration: Rooms.emit / Rooms.broadcast', () => {
@@ -1164,62 +1245,6 @@ describe('integration: Rooms.emit / Rooms.broadcast', () => {
 	})
 })
 
-describe('integration: Rooms.http / Rooms.broadcastHttp / Room.http', () => {
-	let s, a, b
-
-	before(async () => {
-		s = await bootServer()
-	})
-	after(async () => {
-		a?.close()
-		b?.close()
-		await s.stop()
-	})
-
-	it('Rooms.http reaches every member; Rooms.broadcastHttp skips me', async () => {
-		const rooms = new Rooms(Room)
-		s.server.events.connect = sock => rooms.join(sock, 'r')
-
-		a = await bootClient(s.url)
-		b = await bootClient(s.url)
-		await waitFor(() => rooms.get('r')?.sockets.length === 2)
-
-		const aP = a.nextIncoming()
-		const bP = b.nextIncoming()
-		await rooms.http('big', { v: 1 })
-		assert.deepEqual(await aP, ['big', { v: 1 }])
-		assert.deepEqual(await bP, ['big', { v: 1 }])
-
-		const [first] = s.server.sockets
-		const bP2 = b.nextIncoming()
-		await rooms.broadcastHttp(first, 'big2', { only: 'b' })
-		assert.deepEqual(await bP2, ['big2', { only: 'b' }])
-		const aSecond = await Promise.race([
-			a.nextIncoming(),
-			new Promise(r => setTimeout(() => r(null), 100)),
-		])
-		assert.equal(aSecond, null)
-	})
-
-	it('Room.http and Room.broadcastHttp on a single room', async () => {
-		const room = new Room()
-		// Manually push the existing two server sockets into a room
-		// without going through Rooms.
-		for (const sock of s.server.sockets) room.join(sock)
-
-		const aP = a.nextIncoming()
-		const bP = b.nextIncoming()
-		await room.http('rh', 'all')
-		assert.deepEqual(await aP, ['rh', 'all'])
-		assert.deepEqual(await bP, ['rh', 'all'])
-
-		const [first] = s.server.sockets
-		const bP2 = b.nextIncoming()
-		await room.broadcastHttp(first, 'rh2', 'b-only')
-		assert.deepEqual(await bP2, ['rh2', 'b-only'])
-	})
-})
-
 // ------------------------------------------------------------------
 // Server-initiated disconnect
 // ------------------------------------------------------------------
@@ -1256,7 +1281,7 @@ describe('integration: server-initiated disconnect', () => {
 // Drain-loop robustness
 // ------------------------------------------------------------------
 
-describe('integration: http() on a closed socket', () => {
+describe('integration: emit on a closed socket', () => {
 	let s, client
 
 	before(async () => {
@@ -1267,7 +1292,7 @@ describe('integration: http() on a closed socket', () => {
 		await s.stop()
 	})
 
-	it('does not crash the server when the session is already gone', async () => {
+	it('does not crash the server when the connection is already gone', async () => {
 		const c1 = await bootClient(s.url)
 		await waitFor(() => s.server.sockets.length === 1)
 		const [stale] = s.server.sockets
@@ -1275,15 +1300,11 @@ describe('integration: http() on a closed socket', () => {
 		// Client disconnects; app keeps a stale socket reference.
 		c1.close()
 		await waitFor(() => s.server.sockets.length === 0)
-		// Give the session a beat to reach its closed state.
-		await new Promise(r => setTimeout(r, 100))
 
-		// `createUnidirectionalStream()` throws synchronously on a
-		// closed session — this must be swallowed, not crash the
-		// process from the nextTick drain.
-		stale.http('bye', 1)
+		const sentBefore = s.server.messagesSent
 		stale.emit('bye', 1)
-		await new Promise(r => setTimeout(r, 100))
+		await new Promise(r => setTimeout(r, 50))
+		assert.equal(s.server.messagesSent, sentBefore)
 
 		// Server still fully functional for new clients.
 		let got
@@ -1291,7 +1312,7 @@ describe('integration: http() on a closed socket', () => {
 			got = data
 		}
 		client = await bootClient(s.url)
-		await client.send([['stillAlive', 'yes']])
+		client.send([['stillAlive', 'yes']])
 		await waitFor(() => got != null)
 		assert.equal(got, 'yes')
 	})
@@ -1308,15 +1329,11 @@ describe('integration: events.outgoing enqueues mid-drain', () => {
 		await s.stop()
 	})
 
-	it('socket keeps draining when outgoing() emits during a mixed emit+http drain', async () => {
+	it('socket keeps draining when outgoing() emits during a drain', async () => {
 		client = await bootClient(s.url)
 		await waitFor(() => s.server.sockets.length === 1)
 		const [sock] = s.server.sockets
 
-		// Hook that enqueues once, mid-drain. Before the fix this hit
-		// the window where `messages.emit` was reset but `messages.http`
-		// wasn't, so the enqueue never re-scheduled and the socket
-		// stopped delivering queued messages forever.
 		let hooked = false
 		s.server.events.outgoing = socket => {
 			if (!hooked) {
@@ -1325,17 +1342,12 @@ describe('integration: events.outgoing enqueues mid-drain', () => {
 			}
 		}
 
-		// Same tick: both queues non-empty.
 		sock.emit('a', 1)
-		sock.http('b', 2)
 
-		const frames = []
-		// [a] on the control stream, [b] on a fresh unidi stream,
-		// then [from-hook] on the next drain.
-		frames.push(JSON.parse(await client.nextFrame()))
-		assert.deepEqual(await client.nextIncoming(), ['b', 2])
-		frames.push(JSON.parse(await client.nextFrame()))
-		assert.deepEqual(frames, [[['a', 1]], [['from-hook', 1]]])
+		assert.deepEqual(JSON.parse(await client.nextFrame()), [['a', 1]])
+		assert.deepEqual(JSON.parse(await client.nextFrame()), [
+			['from-hook', 1],
+		])
 
 		// And the socket must still drain future emits.
 		sock.emit('later', 3)
@@ -1349,86 +1361,147 @@ describe('integration: events.outgoing enqueues mid-drain', () => {
 // Cert reload (path-based listen + watcher)
 // ------------------------------------------------------------------
 
-describe('integration: cert reload', () => {
+describe('integration: TLS + cert reload', () => {
 	/** @type {string} */
 	let tempDir
 	/** @type {string} */
-	let tempCert
+	let certPath
 	/** @type {string} */
-	let tempKey
+	let keyPath
+
+	/** Write a fresh self-signed cert/key pair over `certPath`/`keyPath`. */
+	const generateCert = () =>
+		execFileSync(
+			'openssl',
+			[
+				'req',
+				'-x509',
+				'-newkey',
+				'ec',
+				'-pkeyopt',
+				'ec_paramgen_curve:prime256v1',
+				'-nodes',
+				'-days',
+				'1',
+				'-subj',
+				'/CN=localhost',
+				'-addext',
+				'subjectAltName=IP:127.0.0.1',
+				'-keyout',
+				keyPath,
+				'-out',
+				certPath,
+			],
+			{ stdio: 'ignore' },
+		)
+
+	/** Connect over wss trusting the cert currently on disk. */
+	const bootTlsClient = async port => {
+		const ca = readFileSync(certPath)
+		const client = await bootClient(`wss://127.0.0.1:${port}/angelia`, {
+			ca,
+		})
+		return client
+	}
+
+	/** Silence and capture console.error while `fn` runs. */
+	const captureErrors = async fn => {
+		const origError = console.error
+		/** @type {any[][]} */
+		const errs = []
+		console.error = (...a) => errs.push(a)
+		try {
+			await fn()
+		} finally {
+			console.error = origError
+		}
+		return errs
+	}
 
 	before(() => {
-		// Mirror the repo's certs into a tempdir so tests can mutate
-		// (touch / rewrite) them without affecting other test runs.
 		tempDir = mkdtempSync(join(tmpdir(), 'angelia-cert-'))
-		tempCert = join(tempDir, 'cert.pem')
-		tempKey = join(tempDir, 'key.pem')
-		copyFileSync(CERT_PATH, tempCert)
-		copyFileSync(KEY_PATH, tempKey)
+		certPath = join(tempDir, 'cert.pem')
+		keyPath = join(tempDir, 'key.pem')
+		generateCert()
 	})
 	after(() => {
 		rmSync(tempDir, { recursive: true, force: true })
 	})
 
-	it('listen({ cert: path, privKey: path }) reads PEM from disk', async () => {
+	it('serves wss when cert and privKey are given', async () => {
 		const s = new Server()
 		const port = pickPort()
-		await s.listen({ port, cert: tempCert, privKey: tempKey })
-		const client = await bootClient(`https://127.0.0.1:${port}/angelia`)
-		await waitFor(() => s.sockets.length === 1)
-		client.close()
-		await s.stop()
-	})
-
-	it('reloadCerts() restarts the server with re-read cert files', async () => {
-		const s = new Server()
-		const port = pickPort()
-		await s.listen({ port, cert: tempCert, privKey: tempKey })
-
-		const oldIo = s.io
-		assert.ok(oldIo, 'io should be set after listen')
-
-		await s.reloadCerts()
-		assert.notEqual(s.io, oldIo, 'reload must replace the underlying server')
-
-		// New clients still connect after the reload (port and cert
-		// hash are the same, so the existing pinning still validates).
-		const c = await bootClient(`https://127.0.0.1:${port}/angelia`)
-		await waitFor(() => s.sockets.length === 1)
-		c.close()
-		await s.stop()
-	})
-
-	it('reloadCerts() is a no-op when files cannot be read', async () => {
-		const s = new Server()
-		const port = pickPort()
-		await s.listen({ port, cert: tempCert, privKey: tempKey })
-		const liveIo = s.io
-
-		// Simulate a renewal that hasn't fully landed — make the cert
-		// file unreadable by removing it, ask for a reload, then
-		// restore. The live server must survive untouched.
-		rmSync(tempCert)
-
-		const origError = console.error
-		/** @type {any[]} */
-		const errs = []
-		console.error = (...a) => errs.push(a)
+		await s.listen({ port, cert: certPath, privKey: keyPath })
 		try {
-			await s.reloadCerts()
+			const client = await bootTlsClient(port)
+			await waitFor(() => s.sockets.length === 1)
+			assert.equal(s.sockets.length, 1)
+			client.close()
 		} finally {
-			console.error = origError
+			await s.stop()
 		}
+	})
 
-		assert.equal(s.io, liveIo, 'live server must survive a failed reload')
-		assert.ok(
-			errs.some(e => /cert reload skipped/i.test(String(e[0]))),
-			'expected a "skipped" log line',
+	it('rejects listen() with only one of cert / privKey', async () => {
+		const s = new Server()
+		await assert.rejects(
+			s.listen({ port: pickPort(), cert: certPath }),
+			/both `cert` and `privKey`/,
 		)
+	})
 
-		// Restore the cert so subsequent tests still work.
-		copyFileSync(CERT_PATH, tempCert)
-		await s.stop()
+	it('reloadCerts() swaps the cert in place without dropping connections', async () => {
+		const s = new Server()
+		const port = pickPort()
+		await s.listen({ port, cert: certPath, privKey: keyPath })
+		try {
+			const before = await bootTlsClient(port)
+			await waitFor(() => s.sockets.length === 1)
+
+			generateCert()
+			await s.reloadCerts()
+
+			// Trusting only the new cert proves new handshakes use it.
+			const afterReload = await bootTlsClient(port)
+			await waitFor(() => s.sockets.length === 2)
+			assert.equal(s.sockets.length, 2)
+			assert.equal(before.ws.readyState, WebSocket.OPEN)
+
+			before.close()
+			afterReload.close()
+		} finally {
+			await s.stop()
+		}
+	})
+
+	it('reloadCerts() keeps the current cert when files cannot be read or parsed', async () => {
+		const s = new Server()
+		const port = pickPort()
+		await s.listen({ port, cert: certPath, privKey: keyPath })
+		const goodCert = readFileSync(certPath)
+		try {
+			rmSync(certPath)
+			const missing = await captureErrors(() => s.reloadCerts())
+			assert.ok(
+				missing.some(e => /cert reload skipped/i.test(String(e[0]))),
+				'expected a "skipped" log line for a missing file',
+			)
+
+			writeFileSync(certPath, 'not a cert')
+			const invalid = await captureErrors(() => s.reloadCerts())
+			assert.ok(
+				invalid.some(e => /invalid cert/i.test(String(e[0]))),
+				'expected an "invalid" log line for a garbage file',
+			)
+
+			// The original cert is still the one being served.
+			writeFileSync(certPath, goodCert)
+			const client = await bootTlsClient(port)
+			await waitFor(() => s.sockets.length === 1)
+			client.close()
+		} finally {
+			await s.stop()
+		}
 	})
 
 	it('watch: true triggers reloadCerts() when the cert file changes', async () => {
@@ -1436,28 +1509,22 @@ describe('integration: cert reload', () => {
 		const port = pickPort()
 		await s.listen({
 			port,
-			cert: tempCert,
-			privKey: tempKey,
+			cert: certPath,
+			privKey: keyPath,
 			watch: true,
 			watchDebounceMs: 100,
 		})
 
-		// Spy on reloadCerts to count invocations without actually
-		// re-running the listen flow during this test.
 		let reloadCalls = 0
-		const realReload = s.reloadCerts.bind(s)
 		s.reloadCerts = async () => {
 			reloadCalls++
 		}
 
-		// Touch the cert file. The watcher should fire within
-		// debounce + filesystem latency.
-		writeFileSync(tempCert, readFileSync(tempCert))
+		writeFileSync(certPath, readFileSync(certPath))
 
 		await waitFor(() => reloadCalls > 0, 40)
 		assert.ok(reloadCalls >= 1, 'expected at least one reload trigger')
 
-		s.reloadCerts = realReload
 		await s.stop()
 	})
 })

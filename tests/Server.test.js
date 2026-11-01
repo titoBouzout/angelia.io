@@ -141,12 +141,14 @@ describe('Server.cacheMessages', () => {
 		assert.equal(s.messagesSentCacheHit, 1)
 	})
 
-	it('returns a Uint8Array of newline-delimited JSON', () => {
+	it('returns a complete unmasked text frame of the JSON batch', () => {
 		const s = new InternalServer()
-		const out = s.cacheMessages([['k', 'v']])
-		assert.ok(out instanceof Uint8Array)
-		const text = new TextDecoder().decode(out)
-		assert.equal(text, '[["k","v"]]\n')
+		const json = '[["k","v"]]'
+		const wire = Buffer.concat(s.cacheMessages([['k', 'v']]))
+		// FIN + text opcode, then the 7-bit length with no mask bit.
+		assert.equal(wire[0], 0x81)
+		assert.equal(wire[1], json.length)
+		assert.equal(wire.subarray(2).toString(), json)
 	})
 })
 

@@ -4,7 +4,7 @@
  * never touches event listeners directly — components read state,
  * actions call `client.*`.
  */
-import Client from '/client.js'
+import Client from '/client/index.js'
 
 import { name, initialRoom } from './identity.js'
 import {
@@ -18,14 +18,10 @@ import {
 } from './state.js'
 
 // 127.0.0.1 (not `localhost`) — Chrome resolves localhost to IPv6 first
-// and our server binds IPv4 (0.0.0.0), which yields ERR_CONNECTION_REFUSED.
-// The cert covers 127.0.0.1 so pinning still works.
+// and our server binds IPv4, which yields ERR_CONNECTION_REFUSED.
 export const client = new Client({
-	url: 'https://127.0.0.1:3001',
+	url: 'ws://127.0.0.1:3001',
 	params: { name, room: initialRoom },
-	serverCertificateHashes: [
-		{ algorithm: 'sha-256', value: new Uint8Array(window.__CERT_HASH) },
-	],
 })
 
 /**
@@ -89,11 +85,10 @@ client.on('shout', ({ from, text }) =>
 	append('shout', { from: `${from} shouts:`, text }),
 )
 
-// `socket.http` from the server lands here — a payload pushed on a
-// fresh unidi stream (separate from the heartbeat / control stream).
+// A server-initiated `socket.emit` with a large payload.
 client.on('push', ({ ts, bytes }) =>
 	append('system', {
-		text: `server pushed ${bytes.toLocaleString()} bytes via http (lag ${Date.now() - ts}ms)`,
+		text: `server pushed ${bytes.toLocaleString()} bytes (lag ${Date.now() - ts}ms)`,
 	}),
 )
 

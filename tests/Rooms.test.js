@@ -170,3 +170,30 @@ describe('Rooms.list / toJSON', () => {
 		assert.equal(json[0].id, 'r1')
 	})
 })
+
+describe('Rooms with closed or shared sockets', () => {
+	it('join ignores a closed socket and creates no room', () => {
+		let creates = 0
+		class R extends Room {
+			onCreate() {
+				creates++
+			}
+		}
+		const list = new Rooms(R)
+		const closed = /** @type {any} */ ({ id: 'c', rooms: [], closed: true })
+		list.join(closed, 'x')
+		assert.equal(list.get('x'), undefined)
+		assert.equal(creates, 0)
+		assert.deepEqual(closed.rooms, [])
+	})
+
+	it('sockets lists a socket in several rooms once', () => {
+		const list = new Rooms(Room)
+		const s = fakeSocket('s')
+		const t = fakeSocket('t')
+		list.join(s, 'a')
+		list.join(s, 'b')
+		list.join(t, 'b')
+		assert.deepEqual(list.sockets, [s, t])
+	})
+})

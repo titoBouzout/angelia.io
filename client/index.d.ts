@@ -8,18 +8,16 @@ import type {
 } from '../server/index.js'
 
 export interface ClientOptions {
+	/** Server origin, as `ws://` or `wss://`. */
 	url: string
 	params?: Record<string, any> | (() => Record<string, any>)
 	noConnect?: boolean
 	/**
-	 * Pin the server certificate by SHA-256 hash. Lets browsers accept
-	 * a self-signed cert (must be ECDSA P-256/P-384, valid ≤ 14 days).
-	 * Use the output of `npm run gen-cert`.
+	 * Run the WebSocket in a Web Worker (default `true`). Ignored where
+	 * `Worker` doesn't exist. Pass `false` under a CSP that blocks
+	 * `worker-src blob:`.
 	 */
-	serverCertificateHashes?: Array<{
-		algorithm: 'sha-256'
-		value: BufferSource
-	}>
+	worker?: boolean
 }
 
 /** Client-side predefined events. Dispatched with no payload. */
@@ -34,16 +32,14 @@ export default class Client {
 	options: ClientOptions
 	connected: boolean
 
-	/** Open the WebTransport session. Auto-reconnects on disconnection. */
+	/** Open the WebSocket. Auto-reconnects on disconnection. */
 	connect(): void
 	/**
-	 * Close the WebTransport session.
+	 * Close the WebSocket.
 	 *
 	 * @param noReconnect Pass `true` to disable the auto-reconnect
 	 *   loop.
-	 * @param reason Human-readable reason carried in QUIC's
-	 *   `CONNECTION_CLOSE` frame; surfaced in server logs and on the
-	 *   server-side `WebTransportError`. Up to 1024 bytes.
+	 * @param reason Close reason sent to the server, up to 123 bytes.
 	 */
 	disconnect: (noReconnect?: boolean, reason?: string) => void
 
@@ -63,22 +59,6 @@ export default class Client {
 		callback: (reply: EventValue<ServerReplies, K>) => R,
 	): Promise<R>
 	emit<K extends EventKey<ServerEvents>, R>(
-		key: K,
-		value: EventValue<ServerEvents, K>,
-		callback: (reply: EventValue<ServerReplies, K>) => R,
-	): Promise<R>
-
-	/** Out-of-band emit over HTTP POST — same shape as {@link emit}. */
-	http<K extends EventKey<ServerEvents>>(key: K): undefined
-	http<K extends EventKey<ServerEvents>>(
-		key: K,
-		value: EventValue<ServerEvents, K>,
-	): undefined
-	http<K extends EventKey<ServerEvents>, R>(
-		key: K,
-		callback: (reply: EventValue<ServerReplies, K>) => R,
-	): Promise<R>
-	http<K extends EventKey<ServerEvents>, R>(
 		key: K,
 		value: EventValue<ServerEvents, K>,
 		callback: (reply: EventValue<ServerReplies, K>) => R,

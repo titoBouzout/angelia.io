@@ -108,3 +108,20 @@ describe('Room hooks', () => {
 		assert.doesNotThrow(() => r.onDelete(fakeSocket('s')))
 	})
 })
+
+describe('Room.join on a closed socket', () => {
+	it('is a no-op: no member, no back-link, no onJoin', () => {
+		let joins = 0
+		class R extends Room {
+			onJoin() {
+				joins++
+			}
+		}
+		const room = new R()
+		const closed = /** @type {any} */ ({ rooms: [], closed: true })
+		room.join(closed)
+		assert.equal(room.sockets.length, 0)
+		assert.deepEqual(closed.rooms, [])
+		assert.equal(joins, 0)
+	})
+})

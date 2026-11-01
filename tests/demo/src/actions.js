@@ -15,18 +15,11 @@ const ts = t => new Date(t).toLocaleTimeString()
 
 // ---------- chat ----------
 
-/** `client.emit` + reply on the control stream. */
+/** `client.emit` + reply. */
 export const sendMessage = async text => {
 	if (!text) return
 	const at = await client.emit('msg', text, t => t)
-	append('ack', { text: `delivered (control) ${ts(at)}` })
-}
-
-/** `client.http` + reply on a fresh unidi stream. */
-export const sendHttp = async text => {
-	if (!text) return
-	const at = await client.http('msg', text, t => t)
-	append('ack', { text: `delivered (http) ${ts(at)}` })
+	append('ack', { text: `delivered ${ts(at)}` })
 }
 
 /**
@@ -39,7 +32,7 @@ export const whisper = text => {
 	append('whisper', { from: 'you whisper:', text })
 }
 
-// ---------- fan-out + transports ----------
+// ---------- fan-out ----------
 
 /** `client.emit` + reply — measure round-trip from click to reply. */
 export const measureRtt = async () => {
@@ -53,16 +46,16 @@ export const shout = () => {
 	client.emit('shout', `hello from ${name}`)
 }
 
-/** `client.http` with a 64KB payload; server replies with byte count. */
+/** `client.emit` with a 64KB payload; server replies with byte count. */
 export const sendBig = async () => {
 	const payload = 'X'.repeat(64 * 1024)
-	const len = await client.http('big', payload, n => n)
+	const len = await client.emit('big', payload, n => n)
 	append('ack', {
-		text: `server confirmed ${len.toLocaleString()} bytes via http`,
+		text: `server confirmed ${len.toLocaleString()} bytes`,
 	})
 }
 
-/** `client.emit` → server replies via `socket.http` on a fresh stream. */
+/** `client.emit` → server pushes a large payload via `socket.emit`. */
 export const askPushMe = () => client.emit('pushme')
 
 // ---------- rooms ----------
@@ -89,16 +82,16 @@ export const fetchStats = async () => {
 
 // ---------- connection control ----------
 
-/** Soft client-side disconnect — auto-reconnect kicks in after 2-4s. */
+/** Soft client-side disconnect — the client reconnects on its own. */
 export const softDisconnect = () => {
 	client.disconnect()
-	append('system', { text: 'disconnected — auto-reconnect in ~3s' })
+	append('system', { text: 'disconnected — reconnecting' })
 }
 
 /** Server-initiated soft disconnect — client auto-reconnects. */
 export const serverKick = () => {
 	client.emit('kick')
-	append('system', { text: 'asked server to close our session' })
+	append('system', { text: 'asked server to close our connection' })
 }
 
 /**

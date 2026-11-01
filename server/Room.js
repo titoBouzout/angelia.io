@@ -12,6 +12,8 @@ export class Room extends Emitter {
 	onLeave(socket) {}
 
 	join(socket) {
+		// Joining after disconnect would never be undone: `onclose` already ran.
+		if (socket.closed) return
 		if (this.sockets.indexOf(socket) === -1) {
 			this.sockets.push(socket)
 			socket.rooms.push(this)

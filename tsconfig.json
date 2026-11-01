@@ -6,7 +6,7 @@
 
     "module": "NodeNext",
     "target": "ESNext",
-    "lib": ["ESNext", "WebWorker"],
+    "lib": ["ESNext", "DOM"],
     "moduleResolution": "NodeNext",
 
     "noEmit": true,
@@ -14,10 +14,7 @@
     /* "strictNullChecks": false,*/
     "noImplicitAny": false,
 
-    /* @fails-components/webtransport ships .d.ts files with extensionless
-     * relative imports that don't resolve under nodenext. Skip checking
-     * library code — we only care about our own. */
     "skipLibCheck": true
   },
-  "exclude": ["type-tests", "tests/demo"]
+  "exclude": ["type-tests", "tests/demo", "bench"]
 }

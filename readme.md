@@ -1,7 +1,7 @@
 # angelia.io
 
-WebTransport (HTTP/3 / QUIC) Server and Client API for Node.js and the
-browser, with rooms support.
+WebSockets Server and Client API for Node.js and the browser, with
+rooms support.
 
 The goal of this project is to provide a developer friendly API that
 just works™.
@@ -9,44 +9,6 @@ just works™.
 ## Installation
 
 `npm install angelia.io`
-
-> The server pulls in `@fails-components/webtransport` plus its
-> `webtransport-transport-http3-quiche` native binding. Prebuilt
-> binaries cover Linux x64/arm64, macOS x64/arm64, and Windows x64;
-> other platforms need a C++ build toolchain (e.g. `g++` /
-> `build-essential` on Debian/Ubuntu, `gcc-c++` on Fedora) on first
-> install.
-
-### Local development cert
-
-WebTransport requires HTTPS. For local dev, run:
-
-```sh
-npm run gen-cert
-```
-
-This writes `certs/key.pem` and `certs/cert.pem` (ECDSA P-256, 14-day
-validity) and prints the SHA-256 fingerprint in three forms. Pass the
-PEM strings to `Server.listen({ cert, privKey })`, and pin the
-fingerprint on the client via `serverCertificateHashes` so the browser
-will accept the self-signed cert without a CA:
-
-```js
-const socket = new Client({
-	url: 'https://localhost:3001',
-	serverCertificateHashes: [
-		{
-			algorithm: 'sha-256',
-			value: new Uint8Array([
-				0xb5, 0x1c /* ... from gen-cert output */,
-			]),
-		},
-	],
-})
-```
-
-The `certs/` folder is gitignored. Regenerate every two weeks (or
-whenever the cert expires).
 
 ## Example
 
@@ -78,19 +40,13 @@ class myConnection {
 }
 Server.on(myConnection)
 
-await Server.listen({
-	port: 3001,
-	cert: './cert.pem',
-	privKey: './key.pem',
-	// Auto-reload on Let's Encrypt renewal (off by default)
-	watch: true,
-})
+await Server.listen({ port: 3001 })
 
 // index.js (browser)
 
 import Client from 'angelia.io/client'
 
-const socket = new Client({ url: 'https://localhost:3001' })
+const socket = new Client({ url: 'ws://localhost:3001' })
 
 socket.emit('typing', true)
 
@@ -110,17 +66,34 @@ socket.on('gotIt', message => {
 
 ### `Server.listen` Options
 
-| name               | kind    | default   | description                                                                                                       |
-| ------------------ | ------- | --------- | ----------------------------------------------------------------------------------------------------------------- |
-| `hostname`         | String  | undefined | the hostname (interface) to bind to; defaults to `0.0.0.0`                                                        |
-| `port`             | Number  | 3001      | the UDP port to use for QUIC                                                                                      |
-| `cert`             | String  | required  | path to PEM-encoded TLS certificate file (read from disk on each `listen()` / `reloadCerts()`)                    |
-| `privKey`          | String  | required  | path to PEM-encoded private key file                                                                              |
-| `timeout`          | Number  | 40000     | time in milliseconds after a socket is considered gone, minimum value is 10000                                    |
-| `secret`           | String  | random    | QUIC retry-token / 0-RTT secret. Pin across rolling restarts so in-flight session tickets survive                 |
-| `trustProxy`       | Boolean | false     | read client IP from `X-Forwarded-For` on the upgrade request (spoofable without a trusted proxy)                  |
-| `watch`            | Boolean | false     | watch the parent directories of `cert` / `privKey` and call `reloadCerts()` on change (Let's Encrypt-style atomic-rename renewal) |
-| `watchDebounceMs`  | Number  | 1000      | how long to wait after a watcher event before reloading. LE writes cert + key in quick succession, so coalesce    |
+| name              | kind    | default     | description                                                                                                   |
+| ----------------- | ------- | ----------- | ------------------------------------------------------------------------------------------------------------- |
+| `hostname`        | String  | `127.0.0.1` | the hostname (interface) to bind to                                                                           |
+| `port`            | Number  | 3001        | the TCP port to listen on                                                                                     |
+| `timeout`         | Number  | 60000       | time in milliseconds after a socket is considered gone, minimum value is 10000                                |
+| `maxMessageSize`  | Number  | 5           | max size of a single incoming message, in megabytes                                                           |
+| `skipUTF8Validation` | Boolean | true     | skip UTF-8 validation of incoming frames; pass `false` to close connections that send invalid UTF-8           |
+| `cert`            | String  | undefined   | path to a PEM-encoded TLS certificate file. With `privKey`, the server speaks `wss://`; otherwise `ws://`      |
+| `privKey`         | String  | undefined   | path to the PEM-encoded private key file                                                                      |
+| `trustProxy`      | Boolean | false       | read client IP from `X-Forwarded-For` on the upgrade request (spoofable without a trusted proxy)              |
+| `watch`           | Boolean | false       | watch the parent directories of `cert` / `privKey` and call `reloadCerts()` on change (Let's Encrypt renewal) |
+| `watchDebounceMs` | Number  | 1000        | how long to wait after a watcher event before reloading, so cert + key written together reload once          |
+
+### TLS
+
+Pass `cert` and `privKey` to serve `wss://` directly, or terminate TLS
+at a proxy in front and listen on plain `ws://` (with `trustProxy` so
+`socket.ip` comes from `X-Forwarded-For`).
+
+```js
+await Server.listen({
+	port: 3001,
+	cert: '/etc/letsencrypt/live/example.com/fullchain.pem',
+	privKey: '/etc/letsencrypt/live/example.com/privkey.pem',
+	// Auto-reload on Let's Encrypt renewal (off by default)
+	watch: true,
+})
+```
 
 ### `Server` Object
 
@@ -143,14 +116,13 @@ The `server` object can be accessed from everywhere
 | `messagesSent`                        | Number   | count of messages ever sent                                                            |
 | `messagesSentCacheHit`                | Number   | count of messages ever sent that were cached                                           |
 | `serverErrors`                        | Number   | count of server errors                                                                 |
+| `socketErrors`                        | Number   | count of socket errors                                                                 |
 | `events`                              | Object   | ref to events, ex: server.events.typing() to dispatch typing to anyone listening to it |
 | `on(Class)`                           | Function | attaches all methods of a `Class` as listeners                                         |
-| `emit(key, [value])`                  | Function | emits to all connected sockets (control stream)                                        |
+| `emit(key, [value])`                  | Function | emits to all connected sockets                                                         |
 | `broadcast(sender, key, [value])`     | Function | emits to all connected sockets except sender                                           |
-| `http(key, [value])`                  | Function | out-of-band emit — opens a fresh stream per recipient so big payloads don't HoL-block  |
-| `broadcastHttp(sender, key, [value])` | Function | like `http` but skip the sender                                                        |
 | `sockets`                             | Array    | an Array with all the current connected sockets                                        |
-| `reloadCerts()`                       | Function | re-read `cert`/`privKey` from disk and restart the server. Existing sessions are torn down and clients reconnect. Safe to call manually (e.g. on `SIGHUP`); the watcher uses it internally |
+| `reloadCerts()`                       | Function | re-read `cert`/`privKey` from disk and swap them in. Open connections are untouched. Safe to call manually (e.g. on `SIGHUP`); the watcher uses it internally |
 
 ### `Socket` Object
 
@@ -163,7 +135,7 @@ The `socket` object is given to you by a listener
 | `server`                       | Object   | reference to the server                                                                                                                                                                                                           |
 | `ip`                           | String   | ip of the socket                                                                                                                                                                                                                  |
 | `userAgent`                    | String   | user agent of the socket                                                                                                                                                                                                          |
-| `params`                       | Object   | the params sent via the client constructor (parsed from the WebTransport URL query); includes `connid`, a per-client id stable across reconnects. The reserved `m` param (URL-packed messages) is parsed off and not exposed here |
+| `params`                       | Object   | the params sent via the client constructor (parsed from the WebSocket URL query); includes `connid`, a per-client id stable across reconnects. The reserved `m` param (URL-packed messages) is parsed off and not exposed here |
 | `since`                        | Number   | timestamp of first seen                                                                                                                                                                                                           |
 | `seen`                         | Number   | timestamp of last received message                                                                                                                                                                                                |
 | `ping`                         | Number   | delay with the socket in milliseconds (full round trip)                                                                                                                                                                           |
@@ -173,9 +145,8 @@ The `socket` object is given to you by a listener
 | `messagesSent`                 | Number   | count of messages sent to this socket                                                                                                                                                                                             |
 | `messagesReceived`             | Number   | count of messages received from this socket                                                                                                                                                                                       |
 | `rooms`                        | Array    | an array with the rooms where this socket is in                                                                                                                                                                                   |
-| `emit(key, [value, callback])` | Function | emits to client on the control stream                                                                                                                                                                                             |
-| `http(key, [value, callback])` | Function | queues `[k, v]` for the next out-of-band batch (fresh send-only stream)                                                                                                                                                           |
-| `disconnect([noReconnect])`    | Function | closes the WebTransport session, pass `true` to prevent re-connections                                                                                                                                                            |
+| `emit(key, [value, callback])` | Function | emits to client                                                                                                                                                                                                                   |
+| `disconnect([noReconnect, reason])` | Function | closes the WebSocket, pass `true` to prevent re-connections; `reason` (up to 123 bytes) is sent to the client                                                                                                              |
 
 ### Server Listeners
 
@@ -240,7 +211,9 @@ Server.on(Chat)
 
 #### List of Predefined `Server` Events
 
-There's a bunch of handy predefined events dispatched
+There's a bunch of handy predefined events dispatched. They are fired
+by the server only: a client message using one of these names goes to
+`garbage`, as does any message that isn't a `[key, value?]` array.
 
 | signature                    | description                                                                                                                                       |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -253,19 +226,6 @@ There's a bunch of handy predefined events dispatched
 | `incoming(socket, messages)` | for debugging: ref to array of incoming messages received before dispatching to listeners                                                         |
 | `outgoing(socket, messages)` | for debugging: ref to array of outgoing messages before sending to socket                                                                         |
 
-### `http` — out-of-band delivery for big payloads
-
-WebTransport multiplexes streams natively over QUIC, so big payloads
-don't head-of-line-block small ones. `socket.http(k, v)` queues the
-message; on the next tick the queue is encoded once and pushed onto a
-fresh **send-only** stream. Multiple `http()` calls in the same tick
-coalesce into one stream; fan-out helpers (`Server.http`, `Room.http`,
-`Rooms.http`) share the same encoded bytes across all recipients so a
-broadcast pays the encoding cost once. The control stream (used for
-`emit` / `broadcast`) keeps flowing in parallel. On the receiving side
-`http` messages dispatch into the same `(data, reply?)` listener as a
-regular emit — handlers don't care which stream a message arrived on.
-
 ## Client API (Browser)
 
 ### `Client` Options
@@ -274,7 +234,7 @@ Arguments for the constructor
 
 ```js
 const socket = new Client({
-	url: 'https://localhost:3001',
+	url: 'ws://localhost:3001',
 	params: function () {
 		return { fast: 'data', test: 'a space' }
 	},
@@ -282,6 +242,20 @@ const socket = new Client({
 })
 socket.connect()
 ```
+
+#### Web Worker
+
+By default the WebSocket runs in a Web Worker: messages are still
+stringified and parsed on the main thread, but the browser's own send
+and receive work and the heartbeat reply happen off it. In Chromium
+that work is the expensive part of moving large payloads; Firefox
+still routes a worker's socket events through the main thread, so it
+gains less. `npm run bench:worker` measures it.
+
+The worker is built from a `blob:` URL so the package needs no extra
+file. Under a Content Security Policy without `worker-src blob:`, pass
+`worker: false` to keep the socket on the main thread. Environments
+without `Worker` (Node.js) use the main thread automatically.
 
 ### `Client` API
 
@@ -291,10 +265,9 @@ The client API is similar to regular event handling
 | ------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `connected`                    | Boolean  | `true` when the socket is connected else `false`                                                                                                           |
 | `connect()`                    | Function | connects to the server, it auto-connects on disconnection                                                                                                  |
-| `disconnect([noReconnect])`    | Function | disconnects from the server, pass `true` to prevent re-connections                                                                                         |
+| `disconnect([noReconnect, reason])` | Function | disconnects from the server, pass `true` to prevent re-connections; `reason` (up to 123 bytes) is sent to the server                                  |
 | `on(key, callback)`            | Function | listens for an event, returns an `off` function to stop listening                                                                                          |
 | `emit(key, [value, callback])` | Function | emits data to the server                                                                                                                                   |
-| `http(key, [value, callback])` | Function | out-of-band: sends on a fresh send-only stream so big payloads don't head-of-line-block the control stream (replies still come back on the control stream) |
 
 #### List of Predefined `Client` Events
 
@@ -306,10 +279,25 @@ As in `socket.on('connect', () => console.log('connect happened!'))`
 | `reconnect`  | if we were connected at least once, then any re-connection will dispatch this event instead of `connect` |
 | `disconnect` | when we disconnect from the server                                                                       |
 
+#### Messages sent before connecting
+
+Messages emitted before the first connection opens ride on the connect
+URL (as many as fit, in order) and are dispatched as soon as the
+server accepts the socket; the rest follow over the socket. Packing
+keeps the handshake's request line within nginx's default 8 KB header
+buffer. If that connection fails, they are queued again and later
+attempts send everything over the socket, in case the URL itself was
+rejected. Packed messages show up in proxy and server access logs.
+
 #### Reconnect behavior
 
+When a connection that was up for a while drops, the client reconnects
+right away. Failed attempts, and connections dropped as soon as they
+opened, are retried after a random 2–4s delay so clients don't all
+come back at once.
+
 On reconnect, any messages still queued for send are dropped, and
-pending `emit` / `http` reply promises reject with `Error('reconnecting')`.
+pending `emit` reply promises reject with `Error('reconnecting')`.
 The library can't tell which queued messages are safe to replay (a
 typing indicator: yes; a "transfer $100": maybe not), so recovery is
 the application's responsibility — listen for the `reconnect` event
@@ -381,12 +369,10 @@ Server.listen()
 | `get(id)`                             | method | gets room with such an `id`                    |
 | `join(socket, [id])`                  | method | adds socket to room `id`                       |
 | `leave(socket, [id])`                 | method | removes socket from room `id`                  |
-| `sockets`                             | Array  | sockets across every room in this room list    |
+| `sockets`                             | Array  | sockets across every room in this list, each once |
 | `list`                                | Array  | every room in this room list                   |
 | `emit(key, [value])`                  | method | emits to all sockets in this room list         |
 | `broadcast(socket, key, [value])`     | method | emits to other sockets in this room list       |
-| `http(key, [value])`                  | method | out-of-band HTTP to all sockets in this list   |
-| `broadcastHttp(socket, key, [value])` | method | out-of-band HTTP to other sockets in this list |
 
 ### Via a `Room`
 
@@ -437,8 +423,6 @@ Server.listen()
 | `sockets`                             | Array   | sockets in the room                              |
 | `emit(key, [value])`                  | method  | emits to all sockets in the room                 |
 | `broadcast(socket, key, [value])`     | method  | emits to other sockets in the room               |
-| `http(key, [value])`                  | method  | out-of-band HTTP to all sockets in the room      |
-| `broadcastHttp(socket, key, [value])` | method  | out-of-band HTTP to other sockets in the room    |
 | `id`                                  | any     | the room id                                      |
 | `join(socket)`                        | method  | adds a socket to the room                        |
 | `leave(socket)`                       | method  | remves a socket from the room                    |

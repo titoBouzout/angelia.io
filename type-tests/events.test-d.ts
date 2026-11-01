@@ -80,7 +80,7 @@ class WrongReply {
 // @ts-expect-error `theMessage.reply` should take string, not number
 Server.on(WrongReply)
 
-// ---------------- Socket.emit / socket.http ----------------
+// ---------------- Socket.emit ----------------
 
 declare const socket: Socket
 
@@ -93,16 +93,10 @@ socket.emit('bigState', { rows: [42] })
 // @ts-expect-error 'unknown' is not a ClientEvents key
 socket.emit('unknown', 'x')
 
-socket.http('bigState', { rows: ['a'] })
-// @ts-expect-error 'bigState' shape wrong
-socket.http('bigState', 'not an object')
-
-// ---------------- Server / Room broadcast + http ----------------
+// ---------------- Server / Room broadcast ----------------
 
 Server.emit('gotIt', 'hello')
 Server.broadcast(socket, 'gotIt', 'hi')
-Server.http('bigState', { rows: [] })
-Server.broadcastHttp(socket, 'bigState', { rows: [] })
 
 const room = new Room()
 room.emit('gotIt', 'hello')
@@ -111,8 +105,6 @@ room.emit('gotIt', 123)
 room.broadcast(socket, 'gotIt', 'hello')
 // @ts-expect-error broadcast wrong value type
 room.broadcast(socket, 'gotIt', 123)
-await room.http('bigState', { rows: ['a'] })
-await room.broadcastHttp(socket, 'bigState', { rows: ['a'] })
 
 // ---------------- Rooms<R> ----------------
 
@@ -135,7 +127,7 @@ games.emit('gotIt', 1)
 
 // ---------------- Client.emit ----------------
 
-const client = new Client({ url: 'https://localhost:3001' })
+const client = new Client({ url: 'ws://localhost:3001' })
 
 client.emit('typing', true)
 client.emit('theMessage', 'hi there')
@@ -154,22 +146,6 @@ void p
 
 // @ts-expect-error reply for theMessage is a string — .toFixed isn't there
 client.emit('theMessage', 'q', reply => reply.toFixed())
-
-// ---------------- Client.http (out-of-band emit) ----------------
-
-client.http('typing', true)
-client.http('theMessage', 'big payload')
-// @ts-expect-error 'typing' takes boolean
-client.http('typing', 'no')
-// @ts-expect-error unknown key
-client.http('unknown', 1)
-
-const httpReply: Promise<number> = client.http(
-	'theMessage',
-	'q',
-	reply => reply.length,
-)
-void httpReply
 
 // ---------------- Client.on ----------------
 

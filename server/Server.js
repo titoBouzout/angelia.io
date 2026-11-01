@@ -1,14 +1,14 @@
 import {
 	empty,
-	encode,
+	frame,
 	isArray,
 	ListenerTemplate,
 	now,
-	parse,
 	stringify,
 } from './utils.js'
 
 import {
+	DEFAULT_MAX_MESSAGE_SIZE_MB,
 	DEFAULT_PORT,
 	DEFAULT_TIMEOUT_MS,
 	MAX_PORT,
@@ -19,43 +19,33 @@ import { Socket } from './Socket.js'
 import { Emitter } from './Emitter.js'
 
 import { nextTick } from 'node:process'
-import { randomBytes } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { watch as fsWatch } from 'node:fs'
 import { dirname, basename } from 'node:path'
+import { createServer as createHttpServer } from 'node:http'
+import { createServer as createHttpsServer } from 'node:https'
 
-const randomSecret = () => randomBytes(32).toString('hex')
+import { WebSocketServer } from 'ws'
 
-// Ping/pong frame is a constant byte — encode once, reuse forever.
-const PING = encode('\n')
+// The heartbeat is a constant empty message — frame once, reuse forever.
+const PING = frame('')
 
-// Default debounce for cert-reload after a watcher event. Let's
-// Encrypt writes the cert and key in quick succession; coalescing
-// avoids two restarts back-to-back.
+// Let's Encrypt writes the cert and key in quick succession; coalescing
+// avoids two reloads back-to-back.
 const DEFAULT_WATCH_DEBOUNCE_MS = 1000
+
+/** @param {{ cert: string; privKey: string }} paths */
+const readCerts = ({ cert, privKey }) =>
+	Promise.all([readFile(cert, 'utf8'), readFile(privKey, 'utf8')])
 
 /** Creates a new Socket Server (singleton). */
 export default new (class Server extends Emitter {
-	/**
-	 * QUIC retry-token secret. Resolved once on first `listen()`,
-	 * pinned across cert reloads so in-flight session tickets stay
-	 * valid. Cleared by `stop()` so a fresh listen picks a new one.
-	 *
-	 * @type {string | null}
-	 */
-	#secret = null
-	/**
-	 * Snapshot of the options passed to `listen()`, used by
-	 * `reloadCerts()` to relisten with the same config.
-	 *
-	 * @type {import('./Server.js').ServerListenOptions | null}
-	 */
+	/** @type {import('./Server.js').ServerListenOptions | null} */
 	#listenOptions = null
 	/** @type {import('node:fs').FSWatcher[]} */
 	#certWatchers = []
 	/** @type {NodeJS.Timeout | null} */
 	#certReloadTimer = null
-	#isReloading = false
 
 	constructor() {
 		super()
@@ -67,6 +57,8 @@ export default new (class Server extends Emitter {
 
 		this.timeout = DEFAULT_TIMEOUT_MS
 		this.timeoutCheck = DEFAULT_TIMEOUT_MS / 2
+
+		this.maxMessageSize = DEFAULT_MAX_MESSAGE_SIZE_MB
 
 		/**
 		 * When true, read `x-forwarded-for` from the upgrade headers for
@@ -85,6 +77,7 @@ export default new (class Server extends Emitter {
 		this.messagesSent = 0
 		this.messagesSentCacheHit = 0
 		this.serverErrors = 0
+		this.socketErrors = 0
 
 		this.queue = []
 
@@ -93,52 +86,105 @@ export default new (class Server extends Emitter {
 		this.cache = empty()
 
 		this.events = empty()
+
+		/** @type {WebSocketServer | null} */
+		this.io = null
+		/** @type {import('node:http').Server | null} */
+		this.httpServer = null
 	}
 
 	/**
-	 * Start listening over WebTransport (HTTP/3 / QUIC).
+	 * Start listening for WebSocket connections. Serves `wss://` when
+	 * `cert` and `privKey` are given, plain `ws://` otherwise.
 	 *
-	 * @param {import('./Server.js').ServerListenOptions} options
+	 * @param {import('./Server.js').ServerListenOptions} [options]
 	 */
-	async listen(options) {
-		// Guard against double-listen: would otherwise overwrite
-		// `this.io`/`this.pingTimer`/`this.nowTimer` and leak the old
-		// server + intervals (no way to clear them after reassignment).
+	async listen(options = {}) {
+		// Double-listen would leak the old server and intervals.
 		if (this.io) {
 			throw new Error(
 				'Server.listen() already called; call stop() first.',
 			)
 		}
 
-		if (!options.cert || !options.privKey) {
+		if (!options.cert !== !options.privKey) {
 			throw new Error(
-				'listen() requires `cert` and `privKey` file paths for WebTransport.',
+				'listen() requires both `cert` and `privKey`, or neither.',
 			)
 		}
 
-		// Read PEMs from disk before mutating any state. If reading
-		// fails the caller's existing setup is untouched.
-		const [certPem, privKeyPem] = await Promise.all([
-			readFile(options.cert, 'utf8'),
-			readFile(options.privKey, 'utf8'),
-		])
+		// Read PEMs before mutating any state, so a failed read leaves
+		// the server untouched.
+		const pems =
+			options.cert && options.privKey
+				? await readCerts({
+						cert: options.cert,
+						privKey: options.privKey,
+					})
+				: null
 
 		this.hostname = options.hostname || this.hostname
 
 		const port = +(options.port ?? 0)
 		this.port = port > 0 && port <= MAX_PORT ? port : this.port
 
-		this.now = now()
-		this.since = this.now
-
 		const timeout = +(options.timeout ?? 0)
 		this.timeout =
 			timeout >= MIN_TIMEOUT_MS ? timeout : DEFAULT_TIMEOUT_MS
 
+		const maxMessageSize = +(options.maxMessageSize ?? 0)
+		this.maxMessageSize =
+			maxMessageSize > 0 ? maxMessageSize : DEFAULT_MAX_MESSAGE_SIZE_MB
+
 		this.trustProxy = !!options.trustProxy
 
-		// updates ping and checks for disconnections. `unref` so a
-		// stopped server doesn't hold the process alive on its own.
+		// No plain-HTTP endpoints: everything but the upgrade is a 404.
+		/** @type {import('node:http').RequestListener} */
+		const notFound = (_request, response) => {
+			response.writeHead(404).end()
+		}
+		const httpServer = pems
+			? createHttpsServer({ cert: pems[0], key: pems[1] }, notFound)
+			: createHttpServer(notFound)
+
+		const io = new WebSocketServer({
+			server: httpServer,
+			path: '/angelia',
+			perMessageDeflate: false,
+			clientTracking: false,
+			maxPayload: this.maxMessageSize * 1024 * 1024,
+			backlog: 1024,
+			// Invalid UTF-8 only decodes to U+FFFD, and browsers never send
+			// it, so validating every frame is wasted work by default.
+			skipUTF8Validation: options.skipUTF8Validation ?? true,
+		})
+		io.on('connection', this.#onconnection)
+		io.on('error', this.#onerror)
+
+		try {
+			await new Promise((resolve, reject) => {
+				httpServer.once('error', reject)
+				httpServer.listen(this.port, this.hostname, () => {
+					httpServer.off('error', reject)
+					resolve(undefined)
+				})
+			})
+		} catch (err) {
+			io.close()
+			throw err
+		}
+		httpServer.on('error', this.#onerror)
+
+		this.io = io
+		this.httpServer = httpServer
+		this.#listenOptions = options
+
+		this.now = now()
+		this.since = this.now
+
+		// `unref` so a stopped server doesn't hold the process alive.
+		// `timeoutCheck` is shortened so a socket seen just after a sweep
+		// still gets pinged before the following sweep times it out.
 		this.timeoutCheck = this.timeout / 2
 		this.pingTimer = setInterval(this.ping, this.timeoutCheck)
 		this.pingTimer.unref()
@@ -147,78 +193,14 @@ export default new (class Server extends Emitter {
 		this.nowTimer = setInterval(this.#updateNow, 500)
 		this.nowTimer.unref()
 
-		// Pin the QUIC retry-token secret across cert reloads so
-		// in-flight session tickets stay valid. Initial listen picks
-		// the user-provided secret (or a random one); cleared on stop.
-		if (!this.#secret) {
-			this.#secret = options.secret || randomSecret()
-		}
-
-		// Lazy-loaded so that `import Server from 'angelia.io/server'`
-		// without calling listen() doesn't require the native dep.
-		const { Http3Server } =
-			await import('@fails-components/webtransport')
-		const server = new Http3Server({
-			port: this.port,
-			host: this.hostname,
-			secret: this.#secret,
-			cert: certPem,
-			privKey: privKeyPem,
-			// QUIC negotiates per-direction stream limits. Without an
-			// explicit cap, the server-side limit for outgoing unidi
-			// streams defaults to ~0, so `socket.http()` / `Server.http()`
-			// would silently fail. Lift it well above realistic burst
-			// sizes for fan-out broadcasts.
-			initialBidirectionalStreams: 1000,
-			initialUnidirectionalStreams: 1000,
-		})
-		this.io = server
-
-		// The native dispatcher matches the registered path EXACTLY
-		// (including query string), so `/angelia?foo=bar` would be
-		// rejected. We strip the query, accept only `/angelia`, and
-		// remap to the registered controller via `path`. Anything else
-		// gets a 404 so a stranger pointing a WebTransport client at
-		// some other URL on the same port doesn't land in our event
-		// loop. Setting a request callback at all is also what makes
-		// the binding populate `session.header` (otherwise the `:path`
-		// pseudo-header — and every URL param — would be lost).
-		server.setRequestCallback(async ({ header }) => {
-			const path = (header[':path'] || '').split('?')[0]
-			if (path !== '/angelia') {
-				return { status: 404, path: '/angelia' }
-			}
-			return { status: 200, path: '/angelia' }
-		})
-
-		// IMPORTANT: register path BEFORE startServer so the session
-		// dispatcher knows where to route. Matches the package's
-		// reference echoserver pattern.
-		const sessions = server.sessionStream('/angelia')
-		const reader = sessions.getReader()
-		this.sessionReader = reader
-
-		server.startServer()
-		await server.ready
-
 		console.log(
-			`[angelia.io] server listening on ${this.hostname}:${this.port}`,
+			`[angelia.io] server listening on ${pems ? 'wss' : 'ws'}://${this.hostname}:${this.port}`,
 		)
 
-		this.#acceptSessions(reader)
-
-		// Remember the original options so reloadCerts() can relisten
-		// with the same config. Stored AFTER `await server.ready` so a
-		// failed listen leaves prior state intact.
-		this.#listenOptions = options
-
-		// Opt-in cert auto-reload (Let's Encrypt renewal etc.). Watches
-		// the parent directories of cert/privKey and debounces a
-		// `reloadCerts()` call when either file changes.
-		if (options.watch) {
+		if (pems && options.watch) {
 			this.#startCertWatcher(
-				options.cert,
-				options.privKey,
+				/** @type {string} */ (options.cert),
+				/** @type {string} */ (options.privKey),
 				options.watchDebounceMs ?? DEFAULT_WATCH_DEBOUNCE_MS,
 			)
 		}
@@ -227,62 +209,40 @@ export default new (class Server extends Emitter {
 	}
 
 	/**
-	 * Re-read cert/privKey from disk and restart the underlying server.
-	 * Existing sessions are torn down; clients reconnect via their
-	 * auto-reconnect loop. Safe to call manually (e.g. on SIGHUP) or
-	 * via the file watcher when `watch: true`.
-	 *
-	 * If the new files can't be read, the running server is left
-	 * untouched.
+	 * Re-read cert/privKey from disk and swap them into the running
+	 * server. Open connections are untouched; new handshakes use the
+	 * new cert. If the files can't be read or don't parse, the current
+	 * cert stays in place.
 	 */
 	async reloadCerts() {
-		if (this.#isReloading) return
-		if (!this.io || !this.#listenOptions) return
+		const options = this.#listenOptions
+		const httpServer = this.httpServer
+		if (!options?.cert || !options.privKey || !httpServer) return
 
-		this.#isReloading = true
+		let pems
 		try {
-			const opts = this.#listenOptions
-
-			// Pre-validate: skip the reload if the new files aren't
-			// readable yet (atomic-rename windows etc.).
-			try {
-				await Promise.all([
-					readFile(opts.cert, 'utf8'),
-					readFile(opts.privKey, 'utf8'),
-				])
-			} catch (err) {
-				console.error(
-					'[angelia.io] cert reload skipped — failed to read new files:',
-					/** @type {Error} */ (err).message,
-				)
-				return
-			}
-
-			console.log(
-				'[angelia.io] reloading certs and restarting server...',
+			pems = await readCerts({
+				cert: options.cert,
+				privKey: options.privKey,
+			})
+		} catch (err) {
+			console.error(
+				'[angelia.io] cert reload skipped — failed to read new files:',
+				/** @type {Error} */ (err).message,
 			)
+			return
+		}
 
-			// Partial stop: tear down the live server but preserve
-			// `#secret` and `#listenOptions` so listen() reuses them.
-			this.#stopCertWatcher()
-			clearInterval(this.pingTimer)
-			clearInterval(this.nowTimer)
-			try {
-				this.sessionReader?.cancel()
-			} catch {}
-			try {
-				this.io?.stopServer()
-			} catch {}
-			this.io = null
-
-			try {
-				await this.listen(opts)
-				console.log('[angelia.io] cert reload complete')
-			} catch (err) {
-				console.error('[angelia.io] cert reload failed:', err)
-			}
-		} finally {
-			this.#isReloading = false
+		try {
+			/** @type {import('node:https').Server} */ (
+				httpServer
+			).setSecureContext({ cert: pems[0], key: pems[1] })
+			console.log('[angelia.io] cert reload complete')
+		} catch (err) {
+			console.error(
+				'[angelia.io] cert reload skipped — invalid cert/key:',
+				/** @type {Error} */ (err).message,
+			)
 		}
 	}
 
@@ -298,43 +258,27 @@ export default new (class Server extends Emitter {
 				() => this.reloadCerts(),
 				debounceMs,
 			)
-			this.#certReloadTimer.unref?.()
+			this.#certReloadTimer.unref()
 		}
 
-		const certDir = dirname(certPath)
-		const certName = basename(certPath)
-		const keyDir = dirname(privKeyPath)
-		const keyName = basename(privKeyPath)
-
-		// `fs.watch` on the parent directory (rather than the file
-		// itself) is what catches Let's Encrypt's atomic-rename
-		// renewal — the symlink target swaps in the parent dir, which
-		// shows up as a `rename` event for the basename. `persistent:
-		// false` keeps a watching process from being held alive solely
-		// by the watcher.
-		const watchOne = (dir, name) => {
-			const w = fsWatch(dir, { persistent: false }, (_, filename) => {
-				if (filename === name) trigger(filename)
-			})
-			this.#certWatchers.push(w)
+		// Watching the parent directory (not the file) catches Let's
+		// Encrypt's atomic-rename renewal, which swaps the symlink target.
+		/** @type {Map<string, Set<string>>} */
+		const names = new Map()
+		for (const path of [certPath, privKeyPath]) {
+			const dir = dirname(path)
+			if (!names.has(dir)) names.set(dir, new Set())
+			names.get(dir)?.add(basename(path))
 		}
-
-		if (certDir === keyDir) {
-			// Same directory (typical Let's Encrypt layout) — one
-			// watcher, two basenames.
-			const w = fsWatch(
-				certDir,
+		for (const [dir, files] of names) {
+			const watcher = fsWatch(
+				dir,
 				{ persistent: false },
 				(_, filename) => {
-					if (filename === certName || filename === keyName) {
-						trigger(filename)
-					}
+					if (filename && files.has(filename)) trigger(filename)
 				},
 			)
-			this.#certWatchers.push(w)
-		} else {
-			watchOne(certDir, certName)
-			watchOne(keyDir, keyName)
+			this.#certWatchers.push(watcher)
 		}
 
 		console.log(
@@ -343,50 +287,13 @@ export default new (class Server extends Emitter {
 	}
 
 	#stopCertWatcher() {
-		for (const w of this.#certWatchers) {
-			try {
-				w.close()
-			} catch {}
+		for (const watcher of this.#certWatchers) {
+			watcher.close()
 		}
 		this.#certWatchers = []
 		if (this.#certReloadTimer) {
 			clearTimeout(this.#certReloadTimer)
 			this.#certReloadTimer = null
-		}
-	}
-
-	/**
-	 * Long-lived loop that pulls newly-arrived QUIC sessions off the
-	 * dispatcher and hands each to `#onsession`. Errors are logged and
-	 * the loop continues — one bad session shouldn't take the server
-	 * down.
-	 */
-	async #acceptSessions(reader) {
-		while (true) {
-			try {
-				const { value, done } = await reader.read()
-				if (done) break
-				this.#onsession(value)
-			} catch (err) {
-				this.#onerror(err)
-			}
-		}
-	}
-
-	/**
-	 * Per-session loop that pulls each incoming unidi payload stream
-	 * and feeds it to `socket.pump`. Exits when the session ends or the
-	 * reader rejects (typical at session close).
-	 */
-	async #acceptPayloads(reader, socket) {
-		while (true) {
-			try {
-				const { value, done } = await reader.read()
-				if (done) break
-				socket.pump(value)
-			} catch {
-				break
-			}
 		}
 	}
 
@@ -401,8 +308,7 @@ export default new (class Server extends Emitter {
 		const instance = new listener()
 
 		// Single-level prototype lookup is intentional: methods on a
-		// base class stay hidden from registration. See the readme's
-		// "Restricting which methods become listeners" section.
+		// base class stay hidden from registration.
 		const methods = listener.listeners || [
 			...Object.getOwnPropertyNames(Object.getPrototypeOf(instance)),
 			...Object.getOwnPropertyNames(instance),
@@ -425,40 +331,14 @@ export default new (class Server extends Emitter {
 
 	// private
 
-	#onsession = async session => {
-		try {
-			await session.ready
-		} catch (err) {
-			this.serverErrors++
-			console.error('Server.onsession ready failed', err)
-			return
-		}
-
-		// First incoming bidi stream is the "control" stream — carries
-		// the message queue. Everything else is a per-call payload.
-		const incoming = session.incomingBidirectionalStreams.getReader()
-		const first = await incoming.read()
-		if (first.done) {
-			try {
-				session.close()
-			} catch {}
-			return
-		}
-
-		const socket = new Socket(session, first.value, this)
+	/**
+	 * @param {import('ws').WebSocket} io
+	 * @param {import('node:http').IncomingMessage} request
+	 */
+	#onconnection = (io, request) => {
+		const socket = new Socket(io, request, this)
 
 		socket.listen()
-
-		// Per-call payloads (client.http) arrive on send-only streams —
-		// the client never reads from them. Bidi is reserved for the
-		// control stream we already consumed above. Each payload is a
-		// JSON-array batch with no trailing newline; `socket.pump`
-		// handles both control and payload shapes via its end-of-stream
-		// flush.
-		this.#acceptPayloads(
-			session.incomingUnidirectionalStreams.getReader(),
-			socket,
-		)
 
 		this.served++
 
@@ -469,36 +349,37 @@ export default new (class Server extends Emitter {
 		const { m, ...rest } = socket.params
 		if (m !== undefined) socket.params = rest
 
-		// Pass the upgrade request shape to the connect handler so apps
-		// can read headers (cookies, auth, custom proxy headers) at
-		// connect time without us having to keep it on the socket.
-		const headers = session.header || {}
-		const request = {
-			headers,
-			url: headers[':path'] || '',
-		}
+		this.events.connect?.(socket, {
+			headers: request.headers,
+			url: request.url || '',
+		})
 
-		this.events.connect?.(socket, request)
-
-		if (m !== undefined) {
-			try {
-				const packed = parse(m)
-				if (isArray(packed)) socket.dispatch(packed)
-			} catch {}
+		// A `connect` listener may have already disconnected the socket.
+		if (m !== undefined && !socket.closed) {
+			const bytes = Buffer.byteLength(m)
+			this.bytesReceived += bytes
+			socket.bytesReceived += bytes
+			const packed = socket.parse(m)
+			if (packed && isArray(packed)) {
+				socket.dispatch(packed)
+			} else {
+				this.messagesGarbage++
+				this.events.garbage?.(socket, m)
+			}
 		}
 
 		// ping on connect is usually high
-		setTimeout(() => this.#pingSocket(socket), 200)
+		setTimeout(() => this.#pingSocket(socket), 200).unref()
 	}
 
 	#onerror = err => {
 		this.serverErrors++
-		console.error('Server.onerror', err)
+		console.error('[angelia.io] server error', err)
 	}
 
 	// queue
 
-	/** @internal Called from Socket.enqueue. */
+	/** @internal Called from Socket.emit. */
 	nextQueue(socket) {
 		if (!this.queue.length) {
 			nextTick(this.#processQueue)
@@ -516,10 +397,9 @@ export default new (class Server extends Emitter {
 	}
 
 	/**
-	 * Cache the encoded form of `messages` keyed by message identity.
-	 * Returns a Uint8Array ready to write to a control stream
-	 * (newline-delimited JSON). Byte counters are bumped in
-	 * `Socket.write` so cache hits are counted accurately too.
+	 * Cache the framed form of `messages` keyed by message identity, so a
+	 * fan-out stringifies and frames once per tick. Byte counters are
+	 * bumped in `Socket.write`.
 	 *
 	 * @internal Called from Socket.processQueue.
 	 */
@@ -532,7 +412,7 @@ export default new (class Server extends Emitter {
 			id += m[this.cacheSymbol] + ','
 		}
 		if (!this.cache[id]) {
-			this.cache[id] = encode(stringify(messages) + '\n')
+			this.cache[id] = frame(stringify(messages))
 		} else {
 			this.messagesSentCacheHit++
 		}
@@ -548,19 +428,14 @@ export default new (class Server extends Emitter {
 
 	ping = () => {
 		this.#updateNow()
-		for (const socket of this.sockets) {
-			// Skip sockets we already kicked: QUIC graceful close can
-			// take seconds, during which `socket.seen` stays frozen and
-			// we'd re-fire `events.timeout` on every tick.
-			if (socket.timedout) continue
+		// Snapshot: `terminate()` can remove sockets mid-loop.
+		for (const socket of this.sockets.slice()) {
 			const delay = this.now - socket.seen
 
 			if (delay > this.timeout) {
 				socket.timedout = true
 				this.events.timeout?.(socket, delay)
-				try {
-					socket.session.close()
-				} catch {}
+				socket.io.terminate()
 			} else if (delay > this.timeoutCheck) {
 				this.#pingSocket(socket)
 			}
@@ -573,7 +448,7 @@ export default new (class Server extends Emitter {
 		socket.write(PING)
 	}
 
-	/** @internal Called from Socket.onframe on heartbeat receipt. */
+	/** @internal Called from Socket.onmessage on heartbeat receipt. */
 	pong(socket) {
 		this.#updateNow()
 		socket.seen = this.now
@@ -582,33 +457,32 @@ export default new (class Server extends Emitter {
 		this.events.ping?.(socket)
 	}
 
-	/** Stop listening. Closes existing sessions and frees the port. */
+	/** Stop listening. Drops existing connections and frees the port. */
 	async stop() {
-		// Snapshot before the partial cleanup nulls things out — we
-		// only want to log "stopped" once, and only if there was
-		// actually something to stop (calling stop() on a never-started
-		// server should stay quiet).
-		const wasRunning = !!this.io
-		const port = this.port
+		const httpServer = this.httpServer
+		const io = this.io
 
 		this.#stopCertWatcher()
 		clearInterval(this.pingTimer)
 		clearInterval(this.nowTimer)
-		try {
-			this.sessionReader?.cancel()
-		} catch {}
-		try {
-			this.io?.stopServer()
-		} catch {}
 		this.io = null
-		// Forget the listen config and pinned secret; the next listen()
-		// is a fresh start (different cert, different secret possible).
+		this.httpServer = null
 		this.#listenOptions = null
-		this.#secret = null
 
-		if (wasRunning) {
-			console.log(`[angelia.io] server stopped (was on port ${port})`)
+		if (!httpServer || !io) return
+
+		for (const socket of this.sockets.slice()) {
+			socket.io.terminate()
 		}
+		io.close()
+		await new Promise((resolve, reject) => {
+			httpServer.close(err => (err ? reject(err) : resolve(undefined)))
+			httpServer.closeAllConnections()
+		})
+
+		console.log(
+			`[angelia.io] server stopped (was on port ${this.port})`,
+		)
 	}
 
 	toJSON() {

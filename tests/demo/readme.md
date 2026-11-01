@@ -14,12 +14,10 @@ one feature so it's easy to see what produces what on the wire.
 
 **Messaging**
 
-- `client.emit(k, v)` — control-stream send (the **send** button)
-- `client.http(k, v)` — same payload on a fresh unidi stream (**via
-  http**, plus **send 64KB via http** for a large payload)
-- `client.emit(k, v, cb)` / `client.http(k, v, cb)` — the reply-callback
-  promise. Used for chat ack, RTT measurement, and the big-payload
-  size confirmation.
+- `client.emit(k, v)` — send (the **send** button, plus **send 64KB**
+  for a large payload)
+- `client.emit(k, v, cb)` — the reply-callback promise. Used for chat
+  ack, RTT measurement, and the big-payload size confirmation.
 
 **Fan-out**
 
@@ -32,15 +30,14 @@ one feature so it's easy to see what produces what on the wire.
 **Server-initiated**
 
 - `socket.emit` — server pushes `roster` / `joined` / `left`
-- `socket.http` — **ask server to push** has the server push an 8KB
-  payload back on a fresh unidi stream
+- **ask server to push** has the server `socket.emit` an 8KB payload
 - `socket.disconnect(noReconnect, reason)` — **server-side disconnect**
-  closes the QUIC session with a reason; client auto-reconnects
+  closes the connection with a reason; client auto-reconnects
 
 **Disconnect / reconnect**
 
-- `client.disconnect()` — soft, auto-reconnect kicks in after a 2–4s
-  jittered backoff
+- `client.disconnect()` — soft, the client reconnects on its own (at
+  once if the connection had been up a while, else after 2–4s)
 - `client.disconnect(true, reason)` — hard, disables auto-reconnect.
   The page exposes a **reload** button to recreate the Client.
 
@@ -52,15 +49,11 @@ one feature so it's easy to see what produces what on the wire.
 
 ## Run
 
-1. Generate a self-signed cert (once every two weeks):
+1. Boot both servers:
    ```sh
-   npm run gen-cert
+   npm run demo
    ```
-2. Boot both servers:
-   ```sh
-   node tests/demo/server.js
-   ```
-3. Open <http://localhost:8000> in Chrome or Edge. Open multiple tabs
+2. Open <http://localhost:8000>. Open multiple tabs
    to chat with yourself. Each tab can be in a different room — the
    room follows the URL hash, so:
    - <http://localhost:8000/#general>
@@ -83,9 +76,9 @@ tests/demo/
         ├── Header.js       — status pill + RTT + identity
         ├── RoomBar.js      — room label + switch input
         ├── ChatLog.js      — message log + typing indicator
-        ├── ChatForm.js     — chat input + send / via http / whisper
+        ├── ChatForm.js     — chat input + send / whisper
         ├── Roster.js       — "in this room: …"
-        ├── FanOut.js       — fan-out + transport buttons
+        ├── FanOut.js       — fan-out + payload buttons
         ├── Stats.js        — server / socket / rooms snapshot
         └── Connection.js   — disconnect / reconnect controls
 ```
@@ -104,16 +97,11 @@ The flow is:
 
 On the server side, `server.js` registers three listener classes —
 `Chat`, `Probes`, `Admin` — via three `Server.on()` calls. Each class
-covers one slice of the demo (chat lifecycle, transport probes,
+covers one slice of the demo (chat lifecycle, payload probes,
 introspection + kick). A `DemoRoom extends Room` flags the `lobby`
 room as persistent in `onCreate`, so it sticks around when empty.
 
-The page server (in `server.js`) injects the cert SHA-256 into the
-HTML so the browser can pin it without needing a real CA, and serves
+The page server (in `server.js`) serves
 [pota](https://pota.quack.uy/) source straight out of `node_modules`
 so the importmap can resolve `pota`/`pota/xml` without a CDN or
 bundler.
-
-WebTransport requires a secure context. `http://localhost` counts as
-secure for browsers, so the page itself doesn't need TLS — only the
-WebTransport server does.

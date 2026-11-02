@@ -17,9 +17,6 @@ changed: upgrade the client and the server together.
   listening again.
 - **Default `hostname` is `127.0.0.1`.** It used to listen on every
   interface. Pass `hostname: '0.0.0.0'` when no proxy sits in front.
-- **The client needs a browser with Web Workers**: it throws where
-  there is no `Worker`, and a Content Security Policy must allow
-  `worker-src blob:`.
 - **`client.connected` is read-only.**
 - **Client `url` must be `ws://` or `wss://`**, passed as
   `{ url }`; the `new Client('ws://…')` string form is gone. A path in
@@ -34,29 +31,31 @@ changed: upgrade the client and the server together.
 - **`X-Forwarded-For` is only read with `trustProxy: true`.**
 - **`skipUTF8Validation` defaults to `true`.**
 - **Removed:** `once` / `broadcastOnce`, `connections` (use
-  `sockets.size`), `Rooms.map` / `Rooms.filter` / `Rooms.list` (use the
-  `Rooms.rooms` Map), `maxPostSize`, and the client's `decode()` with its
-  Blob / ArrayBuffer encoding. Binary support is being redesigned.
+  `sockets.size`), `Rooms.map` / `Rooms.filter` (use the `Rooms.rooms`
+  Map), `maxPostSize`, and the client's `decode()` with its Blob /
+  ArrayBuffer encoding.
 - **`Rooms.sockets` is a `Set`**, like `Server.sockets`,
   `Room.sockets` and `socket.rooms`, and lists each socket once.
 
 ### Added
 
 - TLS: `cert` / `privKey` serve `wss://`; `watch` and `reloadCerts()`
-  swap renewed certs in without dropping connections. `stop()`.
-- `path` option, and `port: 0` for an OS-assigned port.
+  swap renewed certs in without dropping connections.
+- `stop()`, and the `path`, `trustProxy` and `port: 0` (OS-assigned)
+  options.
 - `socket.emit(k, v, cb)` returns a promise for the callback's result,
   rejected with `Error('disconnected')` if the socket closes first.
-- `disconnect(socket, code, reason)` gets the close reason, and both
-  `disconnect()` methods take a `reason`.
+- `socket.disconnect()` and `client.disconnect()` take a close
+  `reason`; the server's `disconnect` hook receives the client's.
 - `request(key, value)` on the client and on sockets: emit and get a
   promise for the reply.
 - `on(key, fn, { signal })` stops listening when the signal aborts.
 - The `Server` class is exported, for running more than one server.
 - `await using server = new Server()` and `using client = new Client(…)`
   stop / disconnect at scope end.
-- TypeScript declarations with typed event maps, generated from the
-  sources' JSDoc.
+- Typed event maps: augment `ServerEvents`, `ClientEvents`,
+  `ServerReplies` and `ClientReplies` to type `emit`, `on`, replies and
+  `Server.on(Class)` end to end.
 
 ### Changed
 

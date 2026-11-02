@@ -314,9 +314,11 @@ rejected. Packed messages show up in proxy and server access logs.
 #### Reconnect behavior
 
 When a connection that was up for a while drops, the client reconnects
-right away. Failed attempts, and connections dropped as soon as they
-opened, are retried after a random 2–4s delay so clients don't all
-come back at once.
+right away. Failed attempts, connections dropped as soon as they
+opened, and closes with code 1001 ("going away": a server shutting
+down, or the page itself unloading) are retried after a random 2–4s
+delay, so clients don't all come back at once and a page being
+reloaded doesn't open a second connection on its way out.
 
 On reconnect, any messages still queued for send are dropped, and
 pending reply promises (from `request`, or `emit` with a callback)

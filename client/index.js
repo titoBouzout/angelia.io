@@ -33,8 +33,8 @@ const encodedLength = text =>
 	PACKED_PARAM.length -
 	1
 
-// Close code browsers send when the page navigates away. Firefox fires
-// it on reload too; reconnecting then would open a second connection.
+// "Going away": a server shutting down, or the page unloading. Firefox
+// closes the page's sockets with it during a reload, before `pagehide`.
 const GOING_AWAY = 1001
 
 // Retries wait RETRY_MIN_MS plus up to RETRY_JITTER_MS, so a server
@@ -211,14 +211,15 @@ export default class Client {
 		}
 		if (!this.#reconnect) {
 			this.#shutdown()
-		} else if (code === GOING_AWAY) {
-			return
-		} else if (uptime >= RETRY_MIN_MS) {
+		} else if (uptime >= RETRY_MIN_MS && code !== GOING_AWAY) {
 			// A working connection dropped: get back right away.
 			this.connect()
 		} else {
-			// A failed attempt, or a connection dropped as soon as it
-			// opened (which would otherwise loop as fast as it can).
+			// A failed attempt, a connection dropped as soon as it opened
+			// (which would otherwise loop as fast as it can), or "going
+			// away": an unloading page is gone before the delay ends, so it
+			// doesn't open a second connection, while a server that went
+			// away still gets a retry.
 			// `unref?.()` keeps a leaked Client from pinning a Node
 			// process alive; browsers return a number and skip it.
 			setTimeout(

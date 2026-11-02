@@ -915,6 +915,47 @@ for (const browserType of [chromium, firefox]) {
 				}
 			})
 
+			it('reconnects after a delay when the server goes away (1001)', async () => {
+				const s = await bootServer()
+				const page = await open(s.baseUrl)
+				try {
+					await waitFor(() => connected(page))
+					// Past the retry minimum, where a plain drop reconnects at once.
+					await sleep(2100)
+					const [sock] = s.server.sockets
+					const dropped = Date.now()
+					sock.io.close(1001, 'server restarting')
+					await sleep(1500)
+					assert.equal(s.server.served, 1, 'not at once: it may be the page leaving')
+					await waitFor(() => s.server.served === 2, 160)
+					const took = Date.now() - dropped
+					assert.ok(took >= 1900 && took < 4500, `reconnected after ${took}ms`)
+				} finally {
+					await page.close()
+					await s.stop()
+				}
+			})
+
+			it('a page reload does not open a second connection', async () => {
+				const s = await bootServer()
+				const page = await open(s.baseUrl)
+				try {
+					await waitFor(() => connected(page))
+					// Past the retry minimum: a reconnect would be immediate.
+					await sleep(2100)
+					await page.reload()
+					await page.waitForFunction(() => window.Client)
+					await page.evaluate(url => window.make(url), s.baseUrl)
+					await waitFor(() => connected(page))
+					await sleep(500)
+					assert.equal(s.server.served, 2, 'one connection before, one after')
+					assert.equal(s.server.sockets.size, 1)
+				} finally {
+					await page.close()
+					await s.stop()
+				}
+			})
+
 			it('waits 2–4s before retrying a failed attempt', async () => {
 				const port = await freePort()
 				const page = await open(`ws://127.0.0.1:${port}`)

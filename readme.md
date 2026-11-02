@@ -293,7 +293,9 @@ The client API is similar to regular event handling
 
 #### List of Predefined `Client` Events
 
-As in `socket.on('connect', () => console.log('connect happened!'))`
+As in `socket.on('connect', () => console.log('connect happened!'))`.
+Don't give server events these names: a server `emit` named `connect`,
+`reconnect` or `disconnect` reaches the same listeners.
 
 | signature    | description                                                                                              |
 | ------------ | -------------------------------------------------------------------------------------------------------- |

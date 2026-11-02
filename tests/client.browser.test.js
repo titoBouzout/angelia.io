@@ -190,7 +190,7 @@ for (const browserType of [chromium, firefox]) {
 					await page.waitForFunction(() => window.Client)
 					await page.evaluate(() => window.make('ws://127.0.0.1:1'))
 					assert.ok(
-						await waitFor(() => errors.some(e => e.startsWith('client'))),
+						await waitFor(() => errors.some(e => e.startsWith('[angelia.io] client'))),
 						`expected the client to report it, got ${JSON.stringify(errors)}`,
 					)
 				} finally {
@@ -692,7 +692,7 @@ for (const browserType of [chromium, firefox]) {
 						window.client.disconnect(true)
 						return pending
 					})
-					assert.equal(message, 'disconnected')
+					assert.match(message, /^disconnected:/)
 				} finally {
 					await page.close()
 				}
@@ -713,7 +713,8 @@ for (const browserType of [chromium, firefox]) {
 							.catch(err => err.message)
 						return [plain === undefined, message]
 					})
-					assert.deepEqual(result, [true, 'disconnected'])
+					assert.equal(result[0], true)
+					assert.match(result[1], /^disconnected:/)
 					await sleep(100)
 					assert.deepEqual(seen, [])
 				} finally {
@@ -818,7 +819,7 @@ for (const browserType of [chromium, firefox]) {
 					})
 					await waitFor(async () => !(await connected(page)))
 					await page.evaluate(() => window.client.connect())
-					assert.equal(await page.evaluate(() => window.pending), 'reconnecting')
+					assert.match(await page.evaluate(() => window.pending), /^reconnecting:/)
 				} finally {
 					await page.close()
 					await s.stop()
@@ -838,7 +839,7 @@ for (const browserType of [chromium, firefox]) {
 						window.client.disconnect(true)
 						return pending
 					})
-					assert.equal(message, 'disconnected')
+					assert.match(message, /^disconnected:/)
 				} finally {
 					await page.close()
 					await s.stop()

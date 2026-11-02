@@ -30,7 +30,7 @@ export function assertCloseReason(reason) {
 	const bytes = encoder.encode(reason).length
 	if (bytes > MAX_CLOSE_REASON_BYTES) {
 		throw new RangeError(
-			`close reason is ${bytes} bytes; the limit is ${MAX_CLOSE_REASON_BYTES}`,
+			`close reason is ${bytes} bytes; the limit is ${MAX_CLOSE_REASON_BYTES}. WebSocket close frames can't carry more, so shorten it.`,
 		)
 	}
 }

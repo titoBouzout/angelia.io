@@ -8,6 +8,13 @@ import {
 } from '../shared/protocol.js'
 
 const error = console.error
+
+// Rejection messages for replies that can no longer arrive.
+const RECONNECTING =
+	'reconnecting: the connection dropped before the server replied'
+const DISCONNECTED =
+	'disconnected: disconnect(true) was called, so nothing more is sent or answered'
+const EMPTY_KEY = "[angelia.io] the empty key '' is reserved for replies"
 const stringify = JSON.stringify
 const parse = JSON.parse
 const isArray = Array.isArray
@@ -103,13 +110,13 @@ export default class Client {
 		const { protocol } = new URL(options.url)
 		if (protocol !== 'ws:' && protocol !== 'wss:') {
 			throw new TypeError(
-				`Client url must be ws:// or wss://, got ${protocol}//`,
+				`Client url must be ws:// or wss://, got ${protocol}//. Give the server's WebSocket address, e.g. ws://localhost:3001.`,
 			)
 		}
 
 		if (typeof Worker === 'undefined') {
 			throw new TypeError(
-				'angelia.io/client runs its socket in a Web Worker; this environment has none',
+				'angelia.io/client runs its socket in a Web Worker; this environment has none. The client needs a browser.',
 			)
 		}
 
@@ -180,7 +187,8 @@ export default class Client {
 				}
 				this.#handleClosed(code, openedAt)
 			},
-			onerror: err => error('client', err),
+			onerror: err =>
+				error('[angelia.io] client socket error. The client keeps going:', err),
 		})
 		this.#io = io
 	}
@@ -196,7 +204,7 @@ export default class Client {
 		// drops the queue, so none can come now. A connection that never
 		// opened sent nothing: its messages and callbacks wait for the next
 		// attempt.
-		if (openedAt !== null && this.#reconnect) this.#cancelPending('reconnecting')
+		if (openedAt !== null && this.#reconnect) this.#cancelPending(RECONNECTING)
 		if (this.#connected) {
 			this.#connected = false
 			this.#dispatch([['disconnect', undefined]])
@@ -247,8 +255,8 @@ export default class Client {
 
 	/**
 	 * Emit to the server. With a callback, returns a promise for the
-	 * callback's result, rejected with `Error('reconnecting')` if the
-	 * connection drops before the reply arrives, or `Error('disconnected')`
+	 * callback's result, rejected with a `reconnecting:` Error if the
+	 * connection drops before the reply arrives, or a `disconnected:` Error
 	 * after `disconnect(true)`.
 	 *
 	 * @template {EventKey<ServerEvents>} K
@@ -288,13 +296,13 @@ export default class Client {
 	 */
 	emit(key, valueOrCallback, callback) {
 		if (key === PROTOCOL_KEY) {
-			error('`key` cannot be empty')
+			error(`${EMPTY_KEY}; this message was not sent.`)
 			return
 		}
 		// After `disconnect(true)` nothing will be sent: don't queue it.
 		if (!this.#reconnect) {
 			return callback || isFunction(valueOrCallback)
-				? Promise.reject(new Error('disconnected'))
+				? Promise.reject(new Error(DISCONNECTED))
 				: undefined
 		}
 
@@ -375,7 +383,7 @@ export default class Client {
 	 */
 	on(key, value, options) {
 		if (key === PROTOCOL_KEY) {
-			error('`key` cannot be empty')
+			error(`${EMPTY_KEY}; this listener was not added.`)
 			return
 		}
 		const signal = options?.signal
@@ -435,7 +443,7 @@ export default class Client {
 	#shutdown() {
 		this.#transport.terminate()
 		this.#messages = []
-		this.#cancelPending('disconnected')
+		this.#cancelPending(DISCONNECTED)
 	}
 
 	/** @param {string} message */
@@ -503,7 +511,9 @@ export default class Client {
 			const reply = e[2]
 				? (...args) => {
 						if (replied) {
-							return error(`reply() already called for "${e[0]}"`)
+							return error(
+								`[angelia.io] reply() already called for "${e[0]}": a message gets one reply, so this one was dropped.`,
+							)
 						}
 						replied = true
 

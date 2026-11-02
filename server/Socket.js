@@ -21,6 +21,9 @@ import { WebSocket } from 'ws'
 
 const DISCONNECT = frame(stringify([[PROTOCOL_KEY, NO_RECONNECT]]))
 
+// Rejection message for replies the client can no longer send.
+const DISCONNECTED = 'disconnected: the socket closed before the client replied'
+
 // Marks a reply promise as handled; shared so no closure is made per call.
 const ignore = () => {}
 
@@ -140,7 +143,7 @@ export class Socket {
 
 	/**
 	 * Emit and resolve with the client's reply; rejected with
-	 * `Error('disconnected')` if the socket closes first.
+	 * a `disconnected:` Error if the socket closes first.
 	 *
 	 * @template {EventKey<ClientEvents>} K
 	 * @overload
@@ -223,7 +226,7 @@ export class Socket {
 
 		// An Error captures a stack trace: only build one when it's needed.
 		if (this.callbacks.size) {
-			const error = new Error('disconnected')
+			const error = new Error(DISCONNECTED)
 			for (const pending of this.callbacks.values()) pending.cancel(error)
 			this.callbacks.clear()
 		}
@@ -241,7 +244,10 @@ export class Socket {
 	/** @internal @param {Error} err */
 	onerror = err => {
 		this.server.socketErrors++
-		console.error('[angelia.io] socket error', err)
+		console.error(
+			'[angelia.io] socket error, counted in socketErrors. ws closes that connection.',
+			err,
+		)
 	}
 
 	// callbacks
@@ -260,7 +266,7 @@ export class Socket {
 		const id = ++this.#lastCallbackId
 		// Already closed: `onclose` won't run again to settle it.
 		if (this.closed) {
-			reject(new Error('disconnected'))
+			reject(new Error(DISCONNECTED))
 			return [id, promise]
 		}
 		this.callbacks.set(id, {
@@ -327,7 +333,7 @@ export class Socket {
 						? (...v) => {
 								if (replied) {
 									console.error(
-										`reply() already called for "${m[0]}"`,
+										`[angelia.io] reply() already called for "${m[0]}": a message gets one reply, so this one was dropped.`,
 									)
 									return
 								}

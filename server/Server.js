@@ -229,13 +229,13 @@ export class Server extends Emitter {
 		// Double-listen would leak the old server and intervals.
 		if (this.io) {
 			throw new Error(
-				'Server.listen() already called; call stop() first.',
+				'Server.listen() already called: this server is already listening. Call stop() first, or create another Server for a second port.',
 			)
 		}
 
 		if (!options.cert !== !options.privKey) {
 			throw new Error(
-				'listen() requires both `cert` and `privKey`, or neither.',
+				'listen() requires both `cert` and `privKey`, or neither: only one was given. Pass both to serve wss://, neither for ws://.',
 			)
 		}
 
@@ -359,7 +359,7 @@ export class Server extends Emitter {
 			})
 		} catch (err) {
 			console.error(
-				'[angelia.io] cert reload skipped — failed to read new files:',
+				'[angelia.io] cert reload skipped: the new cert/key files could not be read. The current cert stays in use.',
 				/** @type {Error} */ (err).message,
 			)
 			return
@@ -372,7 +372,7 @@ export class Server extends Emitter {
 			console.log('[angelia.io] cert reload complete')
 		} catch (err) {
 			console.error(
-				'[angelia.io] cert reload skipped — invalid cert/key:',
+				'[angelia.io] cert reload skipped: invalid cert/key in the new files. The current cert stays in use.',
 				/** @type {Error} */ (err).message,
 			)
 		}
@@ -513,7 +513,10 @@ export class Server extends Emitter {
 
 	#onerror = err => {
 		this.serverErrors++
-		console.error('[angelia.io] server error', err)
+		console.error(
+			'[angelia.io] server error, counted in serverErrors. The server keeps running.',
+			err,
+		)
 	}
 
 	// queue

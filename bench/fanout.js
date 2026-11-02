@@ -92,9 +92,6 @@ async function run(variant, broadcasts, payload) {
 	await once(server, 'message')
 	const client = spawn('clients')
 	await once(client, 'message')
-	// Let the connect-time pings settle.
-	await new Promise(r => setTimeout(r, 400))
-
 	client.send({ total: broadcasts * SOCKETS })
 	const delivered = once(client, 'message')
 	const t0 = performance.now()

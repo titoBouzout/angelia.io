@@ -21,11 +21,12 @@ import { WebSocket } from 'ws'
 import { Server, bootServer, freePort, waitFor } from './helpers.js'
 import { Room } from '../server/Room.js'
 import { Rooms } from '../server/Rooms.js'
+import { TIMEOUT_MS } from '../shared/protocol.js'
 
 /**
  * Open a raw WebSocket to `url`. Returns helpers to send batches and
- * await incoming data frames. Heartbeat pings (empty frames) are
- * counted in `pings` rather than queued, so they never race the
+ * await incoming data frames. Heartbeat answers (empty frames) are
+ * counted in `pongs` rather than queued, so they never race the
  * frames a test is waiting for.
  *
  * @param {string} url
@@ -38,12 +39,12 @@ async function bootClient(url, options) {
 	const inbound = []
 	/** @type {((line: string) => void) | null} */
 	let waiting = null
-	const counters = { pings: 0 }
+	const counters = { pongs: 0 }
 
 	ws.on('message', raw => {
 		const line = raw.toString()
 		if (line === '') {
-			counters.pings++
+			counters.pongs++
 		} else if (waiting) {
 			const w = waiting
 			waiting = null
@@ -58,8 +59,8 @@ async function bootClient(url, options) {
 		ws,
 		counters,
 		send: messages => ws.send(JSON.stringify(messages)),
-		// An empty frame on the wire is the protocol-level pong.
-		pong: () => ws.send(''),
+		// An empty frame on the wire is the protocol-level heartbeat.
+		ping: () => ws.send(''),
 		/** @returns {Promise<string>} */
 		nextFrame: () =>
 			new Promise(resolve => {
@@ -663,7 +664,7 @@ describe('integration: malformed and reserved messages', () => {
 	it('clients cannot fire lifecycle events', async () => {
 		const fired = []
 		const garbage = []
-		for (const name of ['listen', 'connect', 'disconnect', 'ping', 'timeout', 'incoming', 'outgoing']) {
+		for (const name of ['listen', 'connect', 'disconnect', 'timeout', 'incoming', 'outgoing']) {
 			s.server.hooks[name] = () => fired.push(name)
 		}
 		s.server.hooks.garbage = (_sock, m) => garbage.push(m[0])
@@ -675,18 +676,16 @@ describe('integration: malformed and reserved messages', () => {
 				['listen'],
 				['connect', {}],
 				['disconnect'],
-				['ping'],
 				['timeout', 1],
 				['garbage', 1],
 				['incoming', []],
 				['outgoing', []],
 			])
-			await waitFor(() => garbage.length === 8)
+			await waitFor(() => garbage.length === 7)
 			assert.deepEqual(garbage, [
 				'listen',
 				'connect',
 				'disconnect',
-				'ping',
 				'timeout',
 				'garbage',
 				'incoming',
@@ -697,7 +696,7 @@ describe('integration: malformed and reserved messages', () => {
 			c.close()
 			await waitFor(() => s.server.sockets.size <= 1)
 		} finally {
-			for (const name of ['listen', 'connect', 'disconnect', 'ping', 'timeout', 'incoming', 'outgoing', 'garbage']) {
+			for (const name of ['listen', 'connect', 'disconnect', 'timeout', 'incoming', 'outgoing', 'garbage']) {
 				s.server.hooks[name] = undefined
 			}
 		}
@@ -1027,66 +1026,38 @@ describe('integration: hooks.listen', () => {
 	})
 })
 
-describe('integration: hooks.ping', () => {
-	let s, client
-
-	before(async () => {
-		s = await bootServer()
-	})
-	after(async () => {
-		client?.close()
-		await s.stop()
-	})
-
-	it('fires when the client replies with an empty-frame pong', async () => {
-		const pinged = []
-		s.server.hooks.ping = sock => pinged.push(sock)
-
-		client = await bootClient(s.url)
-		await waitFor(() => s.server.sockets.size === 1)
-		const [sock] = s.server.sockets
-
-		// Drive the heartbeat sweep manually: backdate `seen` past
-		// `timeoutCheck` so `ping()` picks this socket (but not past
-		// `timeout`, which would kick it instead).
-		sock.seen = s.server.now - s.server.timeoutCheck - 100
-		s.server.ping()
-		await client.pong()
-		await waitFor(() => pinged.length === 1)
-		assert.deepEqual(pinged, [sock])
-		assert.ok(sock.ping >= 0, 'ping rtt populated')
-	})
-})
-
-describe('integration: heartbeat skips active sockets', () => {
-	it('pings only sockets that have been silent past timeoutCheck', async () => {
+describe('integration: heartbeat', () => {
+	it('answers an empty frame, which counts as hearing from the socket', async () => {
 		const s = await bootServer()
 		try {
-			const active = await bootClient(s.url)
-			const idle = await bootClient(s.url)
-			await waitFor(() => s.server.sockets.size === 2)
-			// Let the one-off connect ping (sent after 200ms) go by.
-			await waitFor(() => active.counters.pings === 1 && idle.counters.pings === 1)
-
-			const [first, second] = s.server.sockets
-			// Whichever socket belongs to `idle` goes quiet; `active` keeps talking.
-			s.server.events.chat = () => {}
-			active.send([['chat', 'still here']])
-			await waitFor(() => first.messagesReceived + second.messagesReceived === 1)
-			const quiet = first.messagesReceived ? second : first
-			quiet.seen = s.server.now - s.server.timeoutCheck - 100
-
-			s.server.ping()
-			await waitFor(() => idle.counters.pings === 2)
-			await new Promise(r => setTimeout(r, 50))
-			assert.equal(idle.counters.pings, 2, 'the silent socket is pinged')
-			assert.equal(active.counters.pings, 1, 'the active socket is not')
-			active.close()
-			idle.close()
+			const client = await bootClient(s.url)
+			await waitFor(() => s.server.sockets.size === 1)
+			const [sock] = s.server.sockets
+			sock.seen = 0
+			client.ping()
+			await waitFor(() => client.counters.pongs === 1)
+			assert.ok(sock.seen > 0)
+			client.close()
 		} finally {
 			await s.stop()
 		}
 	})
+
+	it('never pings: a sweep sends nothing and leaves live sockets alone', async () => {
+		const s = await bootServer()
+		try {
+			const client = await bootClient(s.url)
+			await waitFor(() => s.server.sockets.size === 1)
+			s.server.sweep()
+			await new Promise(r => setTimeout(r, 300))
+			assert.equal(client.counters.pongs, 0)
+			assert.equal(s.server.sockets.size, 1)
+			client.close()
+		} finally {
+			await s.stop()
+		}
+	})
+
 })
 
 describe('integration: stop()', () => {
@@ -1125,13 +1096,13 @@ describe('integration: hooks.timeout', () => {
 		s.server.hooks.timeout = (sk, delay) => fired.push([sk, delay])
 
 		// Simulate a stale client: backdate `seen` past the timeout
-		// window, then trigger the ping check synchronously.
-		sock.seen = s.server.now - (s.server.timeout + 1)
-		s.server.ping()
+		// window, then trigger the sweep synchronously.
+		sock.seen = s.server.now - (TIMEOUT_MS + 1)
+		s.server.sweep()
 
 		assert.equal(fired.length, 1)
 		assert.equal(fired[0][0], sock)
-		assert.ok(fired[0][1] > s.server.timeout)
+		assert.ok(fired[0][1] > TIMEOUT_MS)
 		assert.equal(sock.timedout, true)
 		// Cleaned up at once, not when the close event arrives.
 		assert.equal(sock.closed, true)
@@ -1634,8 +1605,8 @@ describe('integration: disconnect code and reason', () => {
 		const c = await bootClient(s.url)
 		await waitFor(() => s.server.sockets.size === 1)
 		const [stale] = s.server.sockets
-		stale.seen = s.server.now - (s.server.timeout + 1)
-		s.server.ping()
+		stale.seen = s.server.now - (TIMEOUT_MS + 1)
+		s.server.sweep()
 		await waitFor(() => closes.length === 3)
 
 		assert.deepEqual(closes, [

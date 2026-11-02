@@ -59,8 +59,6 @@ export const Stats = () => xml`
 					<dd>${() => stats().socket.ip}</dd>
 					<dt>user agent</dt>
 					<dd class="ua">${() => stats().socket.userAgent}</dd>
-					<dt>heartbeat RTT</dt>
-					<dd>${() => formatMs(stats().socket.pingMs)}</dd>
 					<dt>bytes sent</dt>
 					<dd>${() => formatBytes(stats().socket.bytesSent)}</dd>
 					<dt>bytes received</dt>

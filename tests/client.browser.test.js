@@ -16,8 +16,12 @@ import { build } from 'esbuild'
 import { chromium, firefox } from 'playwright'
 
 import { Server, bootServer, freePort, waitFor } from './helpers.js'
+import { TIMEOUT_MS } from '../shared/protocol.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+// Runs the worker's clock this many times faster, for its heartbeat's fixed times.
+const WORKER_SPEED = 20
 
 // Counts WebSockets built on the main thread, then exposes the Client and
 // `make(url, options)`, which logs the predefined events into `log`.
@@ -25,6 +29,12 @@ const PAGE = `<!doctype html>
 <script type="module">
 	const Native = WebSocket
 	window.mainThreadSockets = 0
+	const NativeBlob = Blob
+	window.Blob = class extends NativeBlob {
+		constructor(parts, options) {
+			super([window.workerPrelude || '', ...parts], options)
+		}
+	}
 	window.WebSocket = class extends Native {
 		constructor(...args) {
 			super(...args)
@@ -73,6 +83,8 @@ async function bootPageServer() {
 		const path = (req.url || '/').split('?')[0]
 		if (path === '/') {
 			res.writeHead(200, { 'content-type': 'text/html' }).end(PAGE)
+		} else if (path === '/elsewhere') {
+			res.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html>')
 		} else if (path === '/no-workers') {
 			// The page under a policy that blocks every worker.
 			res
@@ -128,6 +140,80 @@ async function bootRecording(port = 0) {
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
+
+// Firefox reloads a page holding a socket instead of caching it, and
+// only full Chromium caches pages, with Playwright's switch against it off.
+const caching = {
+	channel: 'chromium',
+	ignoreDefaultArgs: ['--disable-back-forward-cache'],
+}
+
+describe('client in a page kept in the back/forward cache', { skip: !existsSync(chromium.executablePath()) && 'browser not installed' }, () => {
+	/** @type {Awaited<ReturnType<typeof bootPageServer>>} */
+	let pageServer
+	/** @type {import('playwright').Browser} */
+	let browser
+	before(async () => {
+		pageServer = await bootPageServer()
+		browser = await chromium.launch(caching)
+	})
+	after(async () => {
+		await browser?.close()
+		pageServer?.close()
+	})
+
+	/** A page with a connected client, navigated away from. */
+	const leave = async url => {
+		const page = await browser.newPage()
+		page.on('pageerror', err => console.error('[cached page]', err))
+		await page.goto(pageServer.url)
+		await page.waitForFunction(() => window.Client)
+		await page.evaluate(url => {
+			addEventListener('pageshow', e => (window.restored = e.persisted))
+			window.make(url)
+		}, url)
+		await page.waitForFunction(() => window.client.connected)
+		await page.goto(pageServer.url + 'elsewhere')
+		return page
+	}
+	/** Goes back to a page that must come from the cache, and checks it works. */
+	const restored = async (page, s) => {
+		await page.evaluate(() => history.back())
+		await page.waitForFunction(() => window.restored === true)
+		await page.waitForFunction(() => window.client.connected)
+		s.server.events.shout = (_sock, data, reply) => reply(data.toUpperCase())
+		assert.equal(await page.evaluate(() => window.client.request('shout', 'hi')), 'HI')
+		assert.deepEqual(await page.evaluate(() => window.log), ['connect', 'disconnect', 'reconnect'])
+		assert.equal(s.server.sockets.size, 1)
+	}
+
+	it('holds its connection while cached, and reconnects as it is restored', async () => {
+		const s = await bootServer()
+		const page = await leave(s.baseUrl)
+		try {
+			await sleep(500)
+			assert.equal(s.server.sockets.size, 1, 'held while cached')
+			await restored(page, s)
+		} finally {
+			await page.close()
+			await s.stop()
+		}
+	})
+
+	it('is timed out by the server while cached, and reconnects as it is restored', async () => {
+		const s = await bootServer()
+		const page = await leave(s.baseUrl)
+		try {
+			for (const socket of s.server.sockets) socket.seen = s.server.now - (TIMEOUT_MS + 1)
+			s.server.sweep()
+			assert.equal(s.server.sockets.size, 0, 'timed out')
+			await restored(page, s)
+		} finally {
+			await page.close()
+			await s.stop()
+		}
+	})
+})
 
 for (const browserType of [chromium, firefox]) {
 	const name = browserType.name()
@@ -265,28 +351,142 @@ for (const browserType of [chromium, firefox]) {
 				}
 			})
 
-			// Firefox delivers a worker's WebSocket events through the main
-			// thread, so a blocked page delays the worker's pong there too.
-			const answersWhileBlocked = name === 'chromium'
-			it(`heartbeat ${answersWhileBlocked ? 'is' : 'is not'} answered while the main thread is blocked`, async () => {
+			/** Resolves with the time of each heartbeat the server gets from its socket. */
+			const heartbeats = sock => {
+				const times = []
+				sock.io.on('message', raw => raw.length === 0 && times.push(Date.now()))
+				return times
+			}
+
+			/** A page whose client's worker runs on a fast clock. */
+			const openFast = async url => {
+				const page = await open()
+				await page.evaluate(
+					([url, speed]) => {
+						window.workerPrelude = `{
+							const start = Date.now(), now = Date.now, every = setInterval
+							Date.now = () => start + (now() - start) * ${speed}
+							self.setInterval = (run, ms) => every(run, ms / ${speed})
+						};`
+						window.make(url)
+					},
+					[url, WORKER_SPEED],
+				)
+				return page
+			}
+			const heartbeatEvery = (TIMEOUT_MS / 2 / WORKER_SPEED)
+
+			it('heartbeat goes out while the main thread is blocked', async () => {
+				const s = await bootServer()
+				const page = await openFast(s.baseUrl)
+				try {
+					await waitFor(() => s.server.sockets.size === 1)
+					const times = heartbeats([...s.server.sockets][0])
+					await page.evaluate(ms => window.busy(ms), heartbeatEvery * 2)
+					assert.ok(times.length > 0, 'a heartbeat while blocked')
+				} finally {
+					await page.close()
+					await s.stop()
+				}
+			})
+
+			it('sends its heartbeat while only listening', async () => {
+				const s = await bootServer()
+				const page = await openFast(s.baseUrl)
+				const listening = setInterval(() => s.server.emit('news', 1), 200)
+				try {
+					await waitFor(() => s.server.sockets.size === 1)
+					const times = heartbeats([...s.server.sockets][0])
+					await sleep(heartbeatEvery * 2)
+					assert.ok(times.length > 0, 'a heartbeat while only listening')
+				} finally {
+					clearInterval(listening)
+					await page.close()
+					await s.stop()
+				}
+			})
+
+			it('stays connected while only talking, as the server answers', async () => {
+				const s = await bootServer()
+				s.server.events.chat = () => {}
+				const page = await openFast(s.baseUrl)
+				try {
+					await waitFor(() => s.server.sockets.size === 1)
+					await page.evaluate(() => {
+						window.talking = setInterval(() => window.client.emit('chat', 1), 200)
+					})
+					await sleep(heartbeatEvery * 4)
+					assert.deepEqual(await page.evaluate(() => window.log), ['connect'])
+					assert.equal(s.server.served, 1)
+				} finally {
+					await page.close()
+					await s.stop()
+				}
+			})
+
+			it('gives up on a server that stopped answering, and reconnects', async () => {
+				const s = await bootServer()
+				const page = await openFast(s.baseUrl)
+				try {
+					await waitFor(() => s.server.sockets.size === 1)
+					const [sock] = s.server.sockets
+					// The connection stays open, as one the network dropped silently.
+					sock.write = () => {}
+					await page.waitForFunction(() => window.log.includes('reconnect'), null, { timeout: heartbeatEvery * 5 })
+					assert.deepEqual(await page.evaluate(() => window.log), ['connect', 'disconnect', 'reconnect'])
+				} finally {
+					await page.close()
+					await s.stop()
+				}
+			})
+
+			it('going online does nothing while connected', async () => {
 				const s = await bootServer()
 				const page = await open(s.baseUrl)
 				try {
 					await waitFor(() => s.server.sockets.size === 1)
-					const pinged = new Promise(resolve => {
-						s.server.hooks.ping = () => resolve(Date.now())
-					})
-					// Not awaited: the page is now stuck for 1.5s.
-					const blocking = page.evaluate(ms => window.busy(ms), 1500)
-					await sleep(100)
+					await page.evaluate(() => dispatchEvent(new Event('online')))
+					await sleep(300)
+					assert.deepEqual(await page.evaluate(() => window.log), ['connect'])
+					assert.equal(s.server.served, 1)
+				} finally {
+					await page.close()
+					await s.stop()
+				}
+			})
+
+			it('going online reconnects at once instead of waiting for the retry', async () => {
+				const s = await bootServer()
+				const page = await open(s.baseUrl)
+				try {
+					await waitFor(() => s.server.sockets.size === 1)
 					const [sock] = s.server.sockets
-					sock.seen = s.server.now - s.server.timeoutCheck - 100
-					const sent = Date.now()
-					s.server.ping()
-					const waited = (await pinged) - sent
-					await blocking
-					if (answersWhileBlocked) assert.ok(waited < 500, `pong took ${waited}ms`)
-					else assert.ok(waited > 1000, `pong took only ${waited}ms`)
+					// Going away makes the client wait 2-4s before it retries.
+					sock.io.close(1001)
+					await page.waitForFunction(() => window.log.includes('disconnect'))
+					await page.evaluate(() => dispatchEvent(new Event('online')))
+					await page.waitForFunction(() => window.log.includes('reconnect'), null, { timeout: 1500 })
+				} finally {
+					await page.close()
+					await s.stop()
+				}
+			})
+
+			it('going online stays quiet after disconnect(true) and before connect()', async () => {
+				const s = await bootServer()
+				const page = await open(s.baseUrl, { noConnect: true })
+				try {
+					await page.evaluate(() => dispatchEvent(new Event('online')))
+					await sleep(300)
+					assert.equal(s.server.served, 0)
+					await page.evaluate(() => window.client.connect())
+					await waitFor(() => s.server.sockets.size === 1)
+					await page.evaluate(() => {
+						window.client.disconnect(true)
+						dispatchEvent(new Event('online'))
+					})
+					await sleep(300)
+					assert.equal(s.server.served, 1)
 				} finally {
 					await page.close()
 					await s.stop()

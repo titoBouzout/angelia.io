@@ -10,6 +10,9 @@ interface Window {
 	mainThreadSockets: number
 	busy(ms: number): void
 	// Set by individual tests.
+	restored: boolean
+	talking: ReturnType<typeof setInterval>
+	workerPrelude: string
 	off: (() => void) | undefined
 	controller: AbortController
 	pending: Promise<string>

@@ -159,7 +159,6 @@ class Admin {
 			socket: {
 				ip: socket.ip,
 				userAgent: socket.userAgent,
-				pingMs: socket.ping,
 				bytesSent: socket.bytesSent,
 				bytesReceived: socket.bytesReceived,
 				messagesSent: socket.messagesSent,

@@ -104,6 +104,7 @@ export default class Client {
 	#isReconnect = false
 	#reconnect = true
 	#packFailed = false
+	#online = () => this.connect()
 
 	/** @param {ClientOptions} options */
 	constructor(options) {
@@ -135,6 +136,8 @@ export default class Client {
 	/** Open the socket; no-op while open or after `disconnect(true)`. */
 	connect() {
 		if (this.#io || !this.#reconnect) return
+		// The same function again is no second listener.
+		addEventListener('online', this.#online)
 
 		const url = new URL(this.options.url)
 		if (url.pathname === '/') url.pathname = DEFAULT_PATH
@@ -419,6 +422,7 @@ export default class Client {
 
 	/** After `disconnect(true)`: nothing will be sent or answered again. */
 	#shutdown() {
+		removeEventListener('online', this.#online)
 		this.#transport.terminate()
 		this.#messages = []
 		this.#cancelPending(DISCONNECTED)

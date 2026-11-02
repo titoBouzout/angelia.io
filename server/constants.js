@@ -5,7 +5,6 @@ export const LIFECYCLE_EVENTS = new Set([
 	'listen',
 	'connect',
 	'disconnect',
-	'ping',
 	'timeout',
 	'garbage',
 	'incoming',
@@ -14,9 +13,7 @@ export const LIFECYCLE_EVENTS = new Set([
 
 // Server defaults
 export const DEFAULT_PORT = 3001
-export const DEFAULT_TIMEOUT_MS = 60_000
 export const DEFAULT_MAX_MESSAGE_SIZE_MB = 5
 
 // Server bounds
-export const MIN_TIMEOUT_MS = 10_000
 export const MAX_PORT = 65535

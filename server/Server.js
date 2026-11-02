@@ -12,12 +12,14 @@ import {
 import {
 	DEFAULT_MAX_MESSAGE_SIZE_MB,
 	DEFAULT_PORT,
-	DEFAULT_TIMEOUT_MS,
 	LIFECYCLE_EVENTS,
 	MAX_PORT,
-	MIN_TIMEOUT_MS,
 } from './constants.js'
-import { DEFAULT_PATH, PACKED_PARAM } from '../shared/protocol.js'
+import {
+	DEFAULT_PATH,
+	PACKED_PARAM,
+	TIMEOUT_MS,
+} from '../shared/protocol.js'
 
 import { Socket } from './Socket.js'
 import { Emitter } from './Emitter.js'
@@ -30,9 +32,6 @@ import { createServer as createHttpServer } from 'node:http'
 import { createServer as createHttpsServer } from 'node:https'
 
 import { WebSocketServer } from 'ws'
-
-// The heartbeat is a constant empty message — frame once, reuse forever.
-const PING = frame('')
 
 // Close code for a connection that ended without a close frame, which is
 // what `terminate()` does.
@@ -50,8 +49,6 @@ const DEFAULT_WATCH_DEBOUNCE_MS = 1000
  * @property {number} [port] TCP port; `0` lets the OS pick one, readable
  *   from `port` after `listen()`.
  * @property {string} [path] WebSocket path clients connect to.
- * @property {number} [timeout] Milliseconds of silence after which a
- *   socket is considered gone.
  * @property {number} [maxMessageSize] Max size of a single incoming
  *   message, in megabytes.
  * @property {boolean} [skipUTF8Validation] Skip `ws`'s UTF-8 validation
@@ -83,7 +80,6 @@ const DEFAULT_WATCH_DEBOUNCE_MS = 1000
  * @property {() => void} [listen]
  * @property {(socket: Socket, request: ConnectRequest) => void} [connect]
  * @property {(socket: Socket, code: number, reason: string) => void} [disconnect]
- * @property {(socket: Socket) => void} [ping]
  * @property {(socket: Socket, delay: number) => void} [timeout]
  * @property {(socket: Socket, data: any) => void} [garbage]
  * @property {(socket: Socket, messages: any[]) => void} [incoming]
@@ -180,7 +176,6 @@ export class Server extends Emitter {
 		this.port = DEFAULT_PORT
 		this.path = DEFAULT_PATH
 
-		this.timeout = DEFAULT_TIMEOUT_MS
 
 		this.maxMessageSize = DEFAULT_MAX_MESSAGE_SIZE_MB
 
@@ -264,10 +259,6 @@ export class Server extends Emitter {
 
 		this.path = options.path || this.path
 
-		const timeout = +(options.timeout ?? 0)
-		this.timeout =
-			timeout >= MIN_TIMEOUT_MS ? timeout : DEFAULT_TIMEOUT_MS
-
 		const maxMessageSize = +(options.maxMessageSize ?? 0)
 		this.maxMessageSize =
 			maxMessageSize > 0 ? maxMessageSize : DEFAULT_MAX_MESSAGE_SIZE_MB
@@ -323,7 +314,7 @@ export class Server extends Emitter {
 		this.since = this.now
 
 		// `unref` so a stopped server doesn't hold the process alive.
-		this.#pingTimer = setInterval(this.ping, this.timeout / 2)
+		this.#pingTimer = setInterval(this.sweep, TIMEOUT_MS / 2)
 		this.#pingTimer.unref()
 
 		this.#nowTimer = setInterval(this.#updateNow, 500)
@@ -511,8 +502,6 @@ export class Server extends Emitter {
 			else socket.garbage(m)
 		}
 
-		// ping on connect is usually high
-		setTimeout(() => this.#pingSocket(socket), 200).unref()
 	}
 
 	#onerror = err => {
@@ -579,60 +568,24 @@ export class Server extends Emitter {
 		return framed
 	}
 
-	// ping. Only `ping` is public so tests can drive the heartbeat
-	// sweep manually; the rest is internal.
-
-	/**
-	 * @internal Sockets silent for longer than this get pinged. The sweep runs every
-	 * `timeout / 2`; the margin makes sure a socket seen just after one
-	 * sweep is still pinged before the next one times it out.
-	 */
-	get timeoutCheck() {
-		return this.timeout / 2 - 5000
-	}
-
 	#updateNow = () => {
 		this.now = now()
 	}
 
-	/** @internal The heartbeat sweep; public so tests can run it. */
-	ping = () => {
+	/** @internal Drops sockets gone silent; public so tests can run it. */
+	sweep = () => {
 		this.#updateNow()
-		const check = this.timeoutCheck
 		for (const socket of this.sockets) {
 			const delay = this.now - socket.seen
 
-			if (delay > this.timeout) {
+			if (delay > TIMEOUT_MS) {
 				socket.timedout = true
 				this.hooks.timeout?.(socket, delay)
 				socket.io.terminate()
 				// Clean up now, as `disconnect()` does, not on the close event.
 				socket.onclose(ABNORMAL_CLOSURE, '')
-			} else if (delay > check) {
-				// `now` was just updated for the whole sweep.
-				socket.contacted = this.now
-				socket.write(PING)
 			}
 		}
-	}
-
-	/** @param {Socket} socket */
-	#pingSocket(socket) {
-		this.#updateNow()
-		socket.contacted = this.now
-		socket.write(PING)
-	}
-
-	/**
-	 * @internal Called from Socket.onmessage on heartbeat receipt.
-	 * @param {Socket} socket
-	 */
-	pong(socket) {
-		this.#updateNow()
-		socket.seen = this.now
-		socket.ping = this.now - socket.contacted
-
-		this.hooks.ping?.(socket)
 	}
 
 	/** `await using server = …` stops the server when the scope ends. */
@@ -688,7 +641,6 @@ export class Server extends Emitter {
 			sockets: this.sockets.size,
 			served: this.served,
 			since: this.since,
-			timeout: this.timeout,
 			bytesSent: this.bytesSent,
 			bytesReceived: this.bytesReceived,
 			messagesSent: this.messagesSent,

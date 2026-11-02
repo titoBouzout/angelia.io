@@ -20,6 +20,8 @@ import { WebSocket } from 'ws'
 /** @import { Server } from './Server.js' */
 
 const DISCONNECT = frame(stringify([[PROTOCOL_KEY, NO_RECONNECT]]))
+// The answer to a client's heartbeat, an empty message: frame once, reuse forever.
+const PONG = frame('')
 
 // Rejection message for replies the client can no longer send.
 const DISCONNECTED = 'disconnected: the socket closed before the client replied'
@@ -34,9 +36,6 @@ const settle = reply => reply
 export class Socket {
 	/** Last callback id handed out; ids start at 1, as 0 means "none". */
 	#lastCallbackId = 0
-
-	/** @internal When the last ping was sent, to time the pong. */
-	contacted = 0
 
 	/**
 	 * @internal Messages waiting for the next batch.
@@ -78,9 +77,7 @@ export class Socket {
 
 		this.since = server.now
 		this.seen = server.now
-		this.contacted = server.now
 
-		this.ping = 0
 		this.timedout = false
 		this.closed = false
 
@@ -190,11 +187,11 @@ export class Socket {
 
 	/** @internal @param {Buffer} raw */
 	onmessage = raw => {
+		this.seen = this.server.now
 		if (raw.length === 0) {
-			this.server.pong(this)
+			this.write(PONG)
 			return
 		}
-		this.seen = this.server.now
 
 		this.server.bytesReceived += raw.length
 		this.bytesReceived += raw.length
@@ -397,7 +394,6 @@ export class Socket {
 			params: this.params,
 			closed: this.closed,
 			timedout: this.timedout,
-			ping: this.ping,
 			since: this.since,
 			seen: this.seen,
 			rooms: [...this.rooms].map(room => room.id),

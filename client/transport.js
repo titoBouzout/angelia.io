@@ -1,6 +1,6 @@
 /**
  * The Client's socket lives in a Web Worker, so the browser's own
- * send/receive work (expensive in Chromium) and the heartbeat reply stay
+ * send/receive work (expensive in Chromium) and the heartbeat stay
  * off the main thread (see `bench/browser`). Only strings cross
  * `postMessage`; everything else stays in Client.
  *
@@ -21,6 +21,8 @@
  * 	terminate: () => void
  * }} Transport
  */
+
+import { TIMEOUT_MS } from '../shared/protocol.js'
 
 /**
  * The Client only opens a connection after the previous one closed, so
@@ -71,7 +73,7 @@ export function workerTransport() {
 		open(url, handlers) {
 			const live = (worker ??= spawn())
 			current = handlers
-			live.postMessage(['connect', url.toString()])
+			live.postMessage(['connect', url.toString(), TIMEOUT_MS])
 			return {
 				send: text => live.postMessage(text),
 				close: (code, reason) => live.postMessage(['close', code, reason]),
@@ -97,26 +99,67 @@ export function workerTransport() {
 function workerMain(scope) {
 	/** @type {WebSocket | null} */
 	let ws = null
+	/** @type {ReturnType<typeof setInterval> | undefined} */
+	let heartbeat
+	let received = 0
+	let sent = 0
+
+	/**
+	 * @param {WebSocket} socket
+	 * @param {number} code
+	 */
+	const closed = (socket, code) => {
+		if (ws !== socket) return
+		ws = null
+		clearInterval(heartbeat)
+		scope.postMessage(['close', code])
+	}
+
+	/** @param {number} timeout */
+	const watch = timeout => {
+		heartbeat = setInterval(() => {
+			const socket = /** @type {WebSocket} */ (ws)
+			const now = Date.now()
+			if (now - received > timeout) {
+				// A dead connection never finishes the closing handshake: don't wait for it.
+				socket.onmessage = null
+				closed(socket, 1006)
+				socket.close()
+			} else if (now - Math.min(received, sent) > timeout / 2 - 5000) {
+				// Either way: the server times out a client that only listens.
+				sent = now
+				socket.send('')
+			}
+		}, timeout / 2)
+	}
 
 	scope.onmessage = ({ data }) => {
 		if (typeof data === 'string') {
-			if (ws?.readyState === WebSocket.OPEN) ws.send(data)
+			if (ws?.readyState === WebSocket.OPEN) {
+				sent = Date.now()
+				ws.send(data)
+			}
 			return
 		}
-		const [type, value, reason] = data
+		const [type] = data
 		if (type === 'connect') {
-			const socket = new WebSocket(value)
+			const [, url, timeout] = data
+			const socket = new WebSocket(url)
 			ws = socket
-			socket.onopen = () => scope.postMessage(['open'])
-			socket.onclose = e => {
-				if (ws === socket) ws = null
-				scope.postMessage(['close', e.code])
+			socket.onopen = () => {
+				received = sent = Date.now()
+				watch(timeout)
+				scope.postMessage(['open'])
 			}
-			socket.onmessage = e =>
-				e.data === '' ? socket.send('') : scope.postMessage(e.data)
+			socket.onclose = e => closed(socket, e.code)
+			socket.onmessage = e => {
+				received = Date.now()
+				if (e.data !== '') scope.postMessage(e.data)
+			}
 		} else if (type === 'close') {
+			const [, code, reason] = data
 			try {
-				ws?.close(value, reason)
+				ws?.close(code, reason)
 			} catch (err) {
 				scope.postMessage(['error', String(err)])
 			}

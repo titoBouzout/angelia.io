@@ -15,6 +15,9 @@ export const PROTOCOL_KEY = ''
 /** Command telling the client to close and not reconnect. */
 export const NO_RECONNECT = 'disconnect'
 
+/** Milliseconds of silence after which a connection counts as gone. */
+export const TIMEOUT_MS = 60_000
+
 /** WebSocket close frames carry at most this many bytes of reason. */
 const MAX_CLOSE_REASON_BYTES = 123
 

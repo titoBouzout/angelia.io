@@ -74,7 +74,6 @@ socket.on('gotIt', message => {
 | `hostname`        | String  | `127.0.0.1` | the hostname (interface) to bind to                                                                           |
 | `port`            | Number  | 3001        | the TCP port to listen on; `0` lets the OS pick one, read it from `Server.port` after `listen()`              |
 | `path`            | String  | `/angelia`  | the WebSocket path; clients connect to it by putting it in their `url`                                        |
-| `timeout`         | Number  | 60000       | time in milliseconds after a socket is considered gone, minimum value is 10000                                |
 | `maxMessageSize`  | Number  | 5           | max size of a single incoming message, in megabytes                                                           |
 | `skipUTF8Validation` | Boolean | true     | skip UTF-8 validation of incoming frames; pass `false` to close connections that send invalid UTF-8           |
 | `cert`            | String  | undefined   | path to a PEM-encoded TLS certificate file. With `privKey`, the server speaks `wss://`; otherwise `ws://`      |
@@ -115,7 +114,6 @@ them with the exported class: `import { Server } from
 | `port`                                | Number   | port used by this server                                                               |
 | `hostname`                            | String   | the interface the server listens on                                                    |
 | `path`                                | String   | the WebSocket path clients connect to                                                  |
-| `timeout`                             | Number   | after how long the socket is considered gone, in ms                                    |
 | `served`                              | Number   | count of sockets ever connected                                                        |
 | `bytesReceived`                       | Number   | sum of bytes the server has ever received                                              |
 | `bytesSent`                           | Number   | sum of bytes sent by the server                                                        |
@@ -149,7 +147,6 @@ The `socket` object is given to you by a listener
 | `params`                       | Object   | the params sent via the client constructor (parsed from the WebSocket URL query); includes `connid`, a per-client id stable across reconnects. The reserved `m` param (URL-packed messages) is parsed off and not exposed here |
 | `since`                        | Number   | timestamp of first seen                                                                                                                                                                                                           |
 | `seen`                         | Number   | timestamp of last received message                                                                                                                                                                                                |
-| `ping`                         | Number   | delay with the socket in milliseconds (full round trip)                                                                                                                                                                           |
 | `closed`                       | Boolean  | whether the socket has disconnected                                                                                                                                                                                               |
 | `timedout`                     | Boolean  | whether we lost connection with this socket                                                                                                                                                                                       |
 | `bytesSent`                    | Number   | sum of bytes sent to this socket                                                                                                                                                                                                  |
@@ -236,7 +233,6 @@ the right one by name.
 | `listen()`                   | when the server has started listening                                                                                                             |
 | `connect(socket, request)`   | when a socket connects; `request` is `{ headers, url }` from the upgrade — read cookies / auth / custom headers here, it's not kept on the socket |
 | `disconnect(socket, code, reason)` | when a socket gets disconnected, with the WebSocket close code and reason (1006 and `''` when the connection just dropped)                                                                                                                |
-| `ping(socket)`               | when we got an update of the ping for a socket                                                                                                    |
 | `timeout(socket, delay)`     | when we are about to disconnect a timedout socket, gives the delay in milliseconds                                                                |
 | `garbage(socket, data)`      | when the client sends a message with no listener, a malformed one, or one named after a predefined event                                         |
 | `incoming(socket, messages)` | for debugging: ref to array of incoming messages received before dispatching to listeners                                                         |
@@ -267,7 +263,7 @@ to `/angelia`, the server's default; include the path
 
 The WebSocket runs in a Web Worker: messages are still stringified and
 parsed on the main thread, but the browser's own send and receive work
-and the heartbeat reply happen off it. In Chromium that work is the
+and the heartbeat happen off it. In Chromium that work is the
 expensive part of moving large payloads; Firefox still routes a
 worker's socket events through the main thread, so it gains less.
 `npm run bench:worker` measures it.
@@ -321,6 +317,19 @@ opened, and closes with code 1001 ("going away": a server shutting
 down, or the page itself unloading) are retried after a random 2–4s
 delay, so clients don't all come back at once and a page being
 reloaded doesn't open a second connection on its way out.
+
+The client keeps the heartbeat: every 30s it sends an empty
+message to a server it hasn't heard from or written to for
+25s, which the server answers, and it takes a
+connection silent for over 60s for dead and reconnects. The server drops
+a socket it hasn't heard from for as long. These times are fixed.
+
+Going `online` reconnects at once if the client isn't connected, and does
+nothing if it is.
+
+A page Chromium keeps in its back/forward cache holds its connection
+open, unanswering, until the server times it out or the page is
+restored; either way the client reconnects as it is restored.
 
 On reconnect, any messages still queued for send are dropped, and
 pending reply promises (from `request`, or `emit` with a callback)

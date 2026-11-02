@@ -100,18 +100,18 @@ describe('Server.on(Class)', () => {
 		const s = new Server()
 		const calls = []
 		class A {
-			ping() {
+			timeout() {
 				calls.push('a')
 			}
 		}
 		class B {
-			ping() {
+			timeout() {
 				calls.push('b')
 			}
 		}
 		s.on(A)
 		s.on(B)
-		s.hooks.ping?.(/** @type {any} */ ({}))
+		s.hooks.timeout?.(/** @type {any} */ ({}), 0)
 		assert.deepEqual(calls, ['a', 'b'])
 	})
 })
@@ -173,26 +173,6 @@ describe('Server.nextQueue / processQueue', () => {
 		await new Promise(r => setImmediate(r))
 		assert.deepEqual(calls, ['a', 'b'])
 		assert.equal(s.cache.size, 0)
-	})
-})
-
-describe('Server.pong', () => {
-	it('pong updates seen and computes ping from contacted', () => {
-		const s = new Server()
-		s.now = 1000
-		const fakeSock = /** @type {any} */ ({ contacted: 900, seen: 0, ping: 0 })
-		s.pong(fakeSock)
-		assert.ok(fakeSock.seen >= 1000)
-		assert.equal(fakeSock.ping, fakeSock.seen - 900)
-	})
-
-	it('pong fires hooks.ping when wired', () => {
-		const s = new Server()
-		const calls = []
-		s.hooks.ping = sock => calls.push(sock)
-		const fakeSock = /** @type {any} */ ({ contacted: 0, seen: 0, ping: 0 })
-		s.pong(fakeSock)
-		assert.deepEqual(calls, [fakeSock])
 	})
 })
 

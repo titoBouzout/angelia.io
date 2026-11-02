@@ -12,6 +12,7 @@ import { connect, createServer as createNetServer } from 'node:net'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { build } from 'esbuild'
 import { chromium, firefox } from 'playwright'
 
 import { Server, bootServer, freePort, waitFor } from './helpers.js'
@@ -45,8 +46,24 @@ const PAGE = `<!doctype html>
 	}
 </script>`
 
+/**
+ * The client as an app would ship it: bundled and minified, with the
+ * worker's source turned into a string after minification.
+ */
+async function minifiedClient() {
+	const result = await build({
+		entryPoints: [join(root, 'client/index.js')],
+		bundle: true,
+		minify: true,
+		format: 'esm',
+		write: false,
+	})
+	return result.outputFiles[0].text
+}
+
 /** Serves the test page and the client sources, nothing else. */
 async function bootPageServer() {
+	const minified = await minifiedClient()
 	const files = [
 		'/client/index.js',
 		'/client/transport.js',
@@ -64,6 +81,12 @@ async function bootPageServer() {
 					'content-security-policy': "worker-src 'none'",
 				})
 				.end(PAGE)
+		} else if (path === '/minified') {
+			res
+				.writeHead(200, { 'content-type': 'text/html' })
+				.end(PAGE.replace('/client/index.js', '/client.min.js'))
+		} else if (path === '/client.min.js') {
+			res.writeHead(200, { 'content-type': 'text/javascript' }).end(minified)
 		} else if (files.includes(path)) {
 			const body = await readFile(join(root, path))
 			res.writeHead(200, { 'content-type': 'text/javascript' }).end(body)
@@ -195,6 +218,32 @@ for (const browserType of [chromium, firefox]) {
 					)
 				} finally {
 					await page.close()
+				}
+			})
+
+			it('works bundled and minified', async () => {
+				const s = await bootServer()
+				s.server.events.shout = (_sock, data, reply) => reply(data.toUpperCase())
+				const page = await browser.newPage()
+				page.on('pageerror', err => console.error(`[${name}]`, err))
+				try {
+					await page.goto(pageServer.url + 'minified')
+					await page.waitForFunction(() => window.Client)
+					await page.evaluate(url => window.make(url), s.baseUrl)
+					await waitFor(() => connected(page))
+					assert.equal(await page.evaluate(() => window.mainThreadSockets), 0)
+					assert.equal(
+						await page.evaluate(() => window.client.request('shout', 'hi')),
+						'HI',
+					)
+					await page.evaluate(() =>
+						window.client.on('news', v => window.log.push('news:' + v)),
+					)
+					s.server.emit('news', 1)
+					await waitFor(() => page.evaluate(() => window.log.includes('news:1')))
+				} finally {
+					await page.close()
+					await s.stop()
 				}
 			})
 

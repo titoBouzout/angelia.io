@@ -314,6 +314,28 @@ for (const browserType of [chromium, firefox]) {
 				}
 			})
 
+			it('a reply callback that throws rejects its promise', async () => {
+				const s = await bootServer()
+				s.server.events.echo = (_sock, data, reply) => reply(data)
+				const page = await open(s.baseUrl)
+				try {
+					const message = await page.evaluate(() =>
+						window.client
+							.emit('echo', 1, () => {
+								throw new Error('callback failed')
+							})
+							.then(
+								() => 'resolved',
+								err => err.message,
+							),
+					)
+					assert.equal(message, 'callback failed')
+				} finally {
+					await page.close()
+					await s.stop()
+				}
+			})
+
 			it('the server can request a reply from the client', async () => {
 				const s = await bootServer()
 				const page = await open(s.baseUrl)
@@ -436,6 +458,33 @@ for (const browserType of [chromium, firefox]) {
 						'a:1',
 						'b:1',
 						'done',
+					])
+				} finally {
+					await page.close()
+					await s.stop()
+				}
+			})
+
+			it('a listener that removes itself does not make the next one miss the event', async () => {
+				const s = await bootServer()
+				const page = await open(s.baseUrl)
+				try {
+					await page.evaluate(() => {
+						const off = window.client.on('once', v => {
+							off?.()
+							window.log.push('first:' + v)
+						})
+						window.client.on('once', v => window.log.push('second:' + v))
+					})
+					await waitFor(() => connected(page))
+					s.server.emit('once', 1)
+					s.server.emit('once', 2)
+					await waitFor(() => page.evaluate(() => window.log.includes('second:2')))
+					assert.deepEqual(await page.evaluate(() => window.log), [
+						'connect',
+						'first:1',
+						'second:1',
+						'second:2',
 					])
 				} finally {
 					await page.close()
@@ -598,6 +647,30 @@ for (const browserType of [chromium, firefox]) {
 					await sleep(200)
 					assert.equal(s.server.sockets.size, 0)
 					assert.equal(disconnects, 1)
+				} finally {
+					await page.close()
+					await s.stop()
+				}
+			})
+
+			it('emits after disconnect(true) are dropped; replies reject', async () => {
+				const s = await bootServer()
+				const seen = []
+				s.server.events.late = (_sock, v) => seen.push(v)
+				const page = await open(s.baseUrl)
+				try {
+					await waitFor(() => connected(page))
+					const result = await page.evaluate(async () => {
+						window.client.disconnect(true)
+						const plain = window.client.emit('late', 1)
+						const message = await window.client
+							.request('late', 2)
+							.catch(err => err.message)
+						return [plain === undefined, message]
+					})
+					assert.deepEqual(result, [true, 'disconnected'])
+					await sleep(100)
+					assert.deepEqual(seen, [])
 				} finally {
 					await page.close()
 					await s.stop()

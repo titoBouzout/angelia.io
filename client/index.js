@@ -297,6 +297,12 @@ export default class Client {
 			error('`key` cannot be empty')
 			return
 		}
+		// After `disconnect(true)` nothing will be sent: don't queue it.
+		if (!this.#reconnect) {
+			return callback || isFunction(valueOrCallback)
+				? Promise.reject(new Error('disconnected'))
+				: undefined
+		}
 
 		let message
 		let promise
@@ -380,7 +386,8 @@ export default class Client {
 		}
 		const signal = options?.signal
 		if (signal?.aborted) return noop
-		;(this.#listeners[key] ||= []).push(value)
+		// Copy on write: a dispatch already walking the old array is unaffected.
+		this.#listeners[key] = [...(this.#listeners[key] || []), value]
 		const off = () => {
 			this.#off(key, value)
 			signal?.removeEventListener('abort', off)
@@ -441,8 +448,9 @@ export default class Client {
 	#flushSoon = () => queueMicrotask(this.#send)
 
 	#off(k, v) {
-		const i = this.#listeners[k].indexOf(v)
-		if (i !== -1) this.#listeners[k].splice(i, 1)
+		// Copy on write, like `on`: removing a listener mid-dispatch must not
+		// shift the array the dispatch loop is walking.
+		this.#listeners[k] = this.#listeners[k].filter(fn => fn !== v)
 	}
 
 	/** @returns {[number, Promise<any>]} */
@@ -450,7 +458,14 @@ export default class Client {
 		const { promise, resolve, reject } = Promise.withResolvers()
 		const id = ++this.#lastCallbackId
 		this.#callbacks.set(id, {
-			fire: args => resolve(c(...args)),
+			fire: args => {
+				// A throwing callback rejects its promise instead of leaving it pending.
+				try {
+					resolve(c(...args))
+				} catch (err) {
+					reject(err)
+				}
+			},
 			cancel: reject,
 		})
 		return [id, promise]
@@ -501,10 +516,10 @@ export default class Client {
 	#send = () => {
 		const io = this.#io
 		if (io && this.#connected && this.#messages.length) {
-			const text = stringify(this.#messages)
-			// Reuse the queue array: it's serialized, nothing else holds it.
-			this.#messages.length = 0
-			io.send(text)
+			const batch = this.#messages
+			// A fresh array is cheaper for V8 than clearing this one.
+			this.#messages = []
+			io.send(stringify(batch))
 		}
 	}
 }

@@ -583,6 +583,7 @@ export class Server extends Emitter {
 
 	ping = () => {
 		this.#updateNow()
+		const check = this.timeoutCheck
 		for (const socket of this.sockets) {
 			const delay = this.now - socket.seen
 
@@ -590,7 +591,7 @@ export class Server extends Emitter {
 				socket.timedout = true
 				this.hooks.timeout?.(socket, delay)
 				socket.io.terminate()
-			} else if (delay > this.timeoutCheck) {
+			} else if (delay > check) {
 				// `now` was just updated for the whole sweep.
 				socket.contacted = this.now
 				socket.write(PING)

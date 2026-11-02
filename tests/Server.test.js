@@ -1,22 +1,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import serverSingleton from '../server/Server.js'
+import { Server } from '../server/Server.js'
 
-// Server is exported as a pre-built singleton; for isolation we
-// instantiate fresh copies via its constructor for each test.
-const Server = /** @type {new () => typeof serverSingleton} */ (
-	/** @type {unknown} */ (serverSingleton.constructor)
-)
-
-// Same constructor, but typed as `any` for the describe blocks that
-// exercise @internal methods (`cacheMessages`, `nextQueue`, `pong`).
-// We don't expose these on the public type, but they're worth covering
-// at the unit-test level — this keeps tsc happy without polluting
-// `Server.d.ts`.
-const InternalServer = /** @type {new () => any} */ (
-	/** @type {unknown} */ (serverSingleton.constructor)
-)
 
 describe('Server defaults', () => {
 	it('initializes counters to zero', () => {
@@ -132,7 +118,7 @@ describe('Server.on(Class)', () => {
 
 describe('Server.cacheMessages', () => {
 	it('caches by message identity sequence; second call is a hit', () => {
-		const s = new InternalServer()
+		const s = new Server()
 		const m1 = ['k', 'v']
 		const m2 = ['k2', 'v2']
 		const a = s.cacheMessages([m1, m2])
@@ -142,7 +128,7 @@ describe('Server.cacheMessages', () => {
 	})
 
 	it('returns a complete unmasked text frame of the JSON batch', () => {
-		const s = new InternalServer()
+		const s = new Server()
 		const json = '[["k","v"]]'
 		const wire = Buffer.concat(s.cacheMessages([['k', 'v']]))
 		// FIN + text opcode, then the 7-bit length with no mask bit.
@@ -154,13 +140,13 @@ describe('Server.cacheMessages', () => {
 
 describe('Server.nextQueue / processQueue', () => {
 	it('first nextQueue schedules processQueue on next tick', async () => {
-		const s = new InternalServer()
+		const s = new Server()
 		const drained = []
-		const fakeSock = {
+		const fakeSock = /** @type {any} */ ({
 			processQueue() {
 				drained.push(this)
 			},
-		}
+		})
 		s.nextQueue(fakeSock)
 		assert.equal(s.queue.length, 1)
 		await new Promise(r => setImmediate(r))
@@ -169,18 +155,18 @@ describe('Server.nextQueue / processQueue', () => {
 	})
 
 	it('processQueue drains every queued socket and clears cache', async () => {
-		const s = new InternalServer()
+		const s = new Server()
 		const calls = []
-		const a = {
+		const a = /** @type {any} */ ({
 			processQueue() {
 				calls.push('a')
 			},
-		}
-		const b = {
+		})
+		const b = /** @type {any} */ ({
 			processQueue() {
 				calls.push('b')
 			},
-		}
+		})
 		s.cacheMessages([['k', 'v']])
 		s.nextQueue(a)
 		s.nextQueue(b)
@@ -192,19 +178,19 @@ describe('Server.nextQueue / processQueue', () => {
 
 describe('Server.pong', () => {
 	it('pong updates seen and computes ping from contacted', () => {
-		const s = new InternalServer()
+		const s = new Server()
 		s.now = 1000
-		const fakeSock = { contacted: 900, seen: 0, ping: 0 }
+		const fakeSock = /** @type {any} */ ({ contacted: 900, seen: 0, ping: 0 })
 		s.pong(fakeSock)
 		assert.ok(fakeSock.seen >= 1000)
 		assert.equal(fakeSock.ping, fakeSock.seen - 900)
 	})
 
 	it('pong fires hooks.ping when wired', () => {
-		const s = new InternalServer()
+		const s = new Server()
 		const calls = []
 		s.hooks.ping = sock => calls.push(sock)
-		const fakeSock = { contacted: 0, seen: 0, ping: 0 }
+		const fakeSock = /** @type {any} */ ({ contacted: 0, seen: 0, ping: 0 })
 		s.pong(fakeSock)
 		assert.deepEqual(calls, [fakeSock])
 	})

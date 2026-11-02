@@ -4,6 +4,6 @@
     "allowJs": false,
     "checkJs": false
   },
-  "include": ["./**/*.ts", "../server/**/*.d.ts", "../client/**/*.d.ts"],
+  "include": ["./**/*.ts"],
   "exclude": []
 }

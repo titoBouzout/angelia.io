@@ -38,23 +38,112 @@ const PING = frame('')
 // avoids two reloads back-to-back.
 const DEFAULT_WATCH_DEBOUNCE_MS = 1000
 
+/** @import { EventValue, ServerEvents, ServerReplies } from './index.js' */
+
+/**
+ * @typedef {object} ServerListenOptions
+ * @property {string} [hostname] Interface to bind to.
+ * @property {number} [port] TCP port; `0` lets the OS pick one, readable
+ *   from `port` after `listen()`.
+ * @property {string} [path] WebSocket path clients connect to.
+ * @property {number} [timeout] Milliseconds of silence after which a
+ *   socket is considered gone.
+ * @property {number} [maxMessageSize] Max size of a single incoming
+ *   message, in megabytes.
+ * @property {boolean} [skipUTF8Validation] Skip `ws`'s UTF-8 validation
+ *   of incoming text frames; `false` closes connections that send
+ *   invalid UTF-8.
+ * @property {string} [cert] Path to the PEM-encoded TLS certificate.
+ *   With `privKey` the server speaks `wss://`, otherwise `ws://`.
+ * @property {string} [privKey] Path to the PEM-encoded private key.
+ * @property {boolean} [trustProxy] Read the client IP from
+ *   `X-Forwarded-For`; only behind a trusted proxy, it's spoofable.
+ * @property {boolean} [watch] Watch `cert` / `privKey` and call
+ *   `reloadCerts()` when they change (Let's Encrypt renewals).
+ * @property {number} [watchDebounceMs] Wait after a watcher event before
+ *   reloading, so cert and key written together reload once.
+ */
+
+/**
+ * Info about the upgrade request, passed to `connect`.
+ *
+ * @typedef {object} ConnectRequest
+ * @property {import('node:http').IncomingHttpHeaders} headers
+ * @property {string} url
+ */
+
+/**
+ * Events the server fires itself.
+ *
+ * @typedef {object} PredefinedServerHandlers
+ * @property {() => void} [listen]
+ * @property {(socket: Socket, request: ConnectRequest) => void} [connect]
+ * @property {(socket: Socket, code: number, reason: string) => void} [disconnect]
+ * @property {(socket: Socket) => void} [ping]
+ * @property {(socket: Socket, delay: number) => void} [timeout]
+ * @property {(socket: Socket, data: any) => void} [garbage]
+ * @property {(socket: Socket, messages: any[]) => void} [incoming]
+ * @property {(socket: Socket, messages: any[]) => void} [outgoing]
+ */
+
+/**
+ * Handlers for the events clients send.
+ *
+ * @typedef {{
+ * 	[K in keyof ServerEvents]?: (
+ * 		socket: Socket,
+ * 		data: ServerEvents[K],
+ * 		reply?: (v: EventValue<ServerReplies, K>) => void,
+ * 	) => void
+ * }} UserHandlers
+ */
+
+/**
+ * Shape a listener class instance must satisfy for `Server.on(Class)`.
+ *
+ * @typedef {UserHandlers & PredefinedServerHandlers} ServerListener
+ */
+
 /** @param {{ cert: string; privKey: string }} paths */
 const readCerts = ({ cert, privKey }) =>
 	Promise.all([readFile(cert, 'utf8'), readFile(privKey, 'utf8')])
 
-/** Creates a new Socket Server (singleton). */
-export default new (class Server extends Emitter {
-	/** @type {import('./Server.js').ServerListenOptions | null} */
+/**
+ * A WebSocket server. Most apps use the shared instance (the default
+ * export); create more with `new Server()` to listen on several ports.
+ */
+export class Server extends Emitter {
+	/** @type {ServerListenOptions | null} */
 	#listenOptions = null
 	/** @type {import('node:fs').FSWatcher[]} */
 	#certWatchers = []
 	/** @type {NodeJS.Timeout | null} */
 	#certReloadTimer = null
 
+	/**
+	 * @internal Sockets with messages to send.
+	 * @type {Socket[]}
+	 */
+	queue = []
+	/**
+	 * @internal `queue`'s other buffer.
+	 * @type {Socket[]}
+	 */
+	drained = []
+	/** @internal */
+	cacheSymbol = Symbol('cache')
+	/** @internal */
+	cached = 1
+	/**
+	 * @internal This tick's frames, see `cacheMessages`.
+	 * @type {Map<unknown, Buffer[]>}
+	 */
+	cache = new Map()
+
 	constructor() {
 		super()
 
-		/** @type {Set<import('./Socket.js').Socket>} */
+		/** @type {Set<Socket>} Every connected socket. */
 		this.sockets = new Set()
 
 		this.hostname = '127.0.0.1'
@@ -85,18 +174,18 @@ export default new (class Server extends Emitter {
 		this.serverErrors = 0
 		this.socketErrors = 0
 
-		this.queue = []
-		/** The other half of `queue`'s double buffer; see `#processQueue`. */
-		this.drained = []
-
-		this.cacheSymbol = Symbol('cache')
-		this.cached = 1
-		/** Framed batches of the current tick, see `cacheMessages`. */
-		this.cache = new Map()
-
-		/** Handlers for messages clients send, by event name. */
+		/**
+		 * Handlers for messages clients send, by event name. Call one to
+		 * dispatch it yourself: `Server.events.typing(socket, true)`.
+		 *
+		 * @type {Record<string, any>}
+		 */
 		this.events = empty()
-		/** Handlers for events the server fires itself (`connect`, …). */
+		/**
+		 * Handlers for the events the server fires itself (`connect`, …).
+		 *
+		 * @type {{ [K in keyof PredefinedServerHandlers]?: any }}
+		 */
 		this.hooks = empty()
 
 		/** @type {WebSocketServer | null} */
@@ -109,7 +198,7 @@ export default new (class Server extends Emitter {
 	 * Start listening for WebSocket connections. Serves `wss://` when
 	 * `cert` and `privKey` are given, plain `ws://` otherwise.
 	 *
-	 * @param {import('./Server.js').ServerListenOptions} [options]
+	 * @param {ServerListenOptions} [options]
 	 */
 	async listen(options = {}) {
 		// Double-listen would leak the old server and intervals.
@@ -267,6 +356,11 @@ export default new (class Server extends Emitter {
 		}
 	}
 
+	/**
+	 * @param {string} certPath
+	 * @param {string} privKeyPath
+	 * @param {number} debounceMs
+	 */
 	#startCertWatcher(certPath, privKeyPath, debounceMs) {
 		this.#stopCertWatcher()
 
@@ -324,6 +418,10 @@ export default new (class Server extends Emitter {
 	 * only those are registered — useful for keeping helpers off the
 	 * event surface. See the "Restricting which methods become
 	 * listeners" section in the readme.
+	 *
+	 * @template {ServerListener} I
+	 * @param {(new () => I) & { listeners?: string[] }} listener
+	 * @returns {I}
 	 */
 	on(listener) {
 		const instance = new listener()
@@ -397,7 +495,10 @@ export default new (class Server extends Emitter {
 
 	// queue
 
-	/** @internal Called from Socket.emit. */
+	/**
+	 * @internal Called from Socket.emit.
+	 * @param {Socket} socket
+	 */
 	nextQueue(socket) {
 		if (!this.queue.length) {
 			nextTick(this.#processQueue)
@@ -424,6 +525,8 @@ export default new (class Server extends Emitter {
 	 * bumped in `Socket.write`.
 	 *
 	 * @internal Called from Socket.processQueue.
+	 * @param {any[]} messages
+	 * @returns {Buffer[]}
 	 */
 	cacheMessages(messages) {
 		// A fan-out is usually one message: key on it and skip the string.
@@ -470,13 +573,17 @@ export default new (class Server extends Emitter {
 		}
 	}
 
+	/** @param {Socket} socket */
 	#pingSocket(socket) {
 		this.#updateNow()
 		socket.contacted = this.now
 		socket.write(PING)
 	}
 
-	/** @internal Called from Socket.onmessage on heartbeat receipt. */
+	/**
+	 * @internal Called from Socket.onmessage on heartbeat receipt.
+	 * @param {Socket} socket
+	 */
 	pong(socket) {
 		this.#updateNow()
 		socket.seen = this.now
@@ -486,6 +593,11 @@ export default new (class Server extends Emitter {
 	}
 
 	/** Stop listening. Drops existing connections and frees the port. */
+	/** `await using server = …` stops the server when the scope ends. */
+	[Symbol.asyncDispose]() {
+		return this.stop()
+	}
+
 	async stop() {
 		const httpServer = this.httpServer
 		const io = this.io
@@ -540,4 +652,7 @@ export default new (class Server extends Emitter {
 		}
 		return `Server ${inspectValue(summary, options)}`
 	}
-})()
+}
+
+/** The shared server instance. */
+export default new Server()

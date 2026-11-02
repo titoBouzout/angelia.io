@@ -1,3 +1,4 @@
+import { MainClient } from './main-client.js'
 import { WorkerClient } from './worker-client.js'
 import Client from '/client/index.js'
 
@@ -15,12 +16,15 @@ const item = { id: 1, user: 'José', text: 'héllo wörld — ✓ ok' }
 const big = Array.from({ length: 12000 }, (_, i) => ({ ...item, id: i }))
 
 async function makeClient(variant) {
-	if (variant !== 'clone') {
-		const client = new Client({ url: URL_, worker: variant === 'worker' })
+	if (variant === 'worker') {
+		const client = new Client({ url: URL_ })
 		await new Promise(resolve => client.on('connect', resolve))
 		return { client, close: () => client.disconnect(true) }
 	}
-	const client = new WorkerClient(`${URL_}/angelia`)
+	const client =
+		variant === 'clone'
+			? new WorkerClient(`${URL_}/angelia`)
+			: new MainClient(`${URL_}/angelia`)
 	await client.ready
 	return { client, close: () => client.close() }
 }

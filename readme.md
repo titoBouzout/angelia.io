@@ -10,6 +10,10 @@ just works™.
 
 `npm install angelia.io`
 
+The server needs Node.js 22 or newer. The client runs in browsers: it
+keeps its socket in a Web Worker, so it needs `Worker` (and, under a
+Content Security Policy, `worker-src blob:`).
+
 ## Example
 
 ```js
@@ -98,7 +102,10 @@ await Server.listen({
 
 ### `Server` Object
 
-The `server` object can be accessed from everywhere
+The default export is a shared server instance that can be imported
+from everywhere. To run more than one (another port, tests), create
+them with the exported class: `import { Server } from
+'angelia.io/server'; const other = new Server()`.
 
 #### List of `Server` Object Properties
 
@@ -125,6 +132,7 @@ The `server` object can be accessed from everywhere
 | `broadcast(sender, key, [value])`     | Function | emits to all connected sockets except sender                                           |
 | `sockets`                             | Set      | every currently connected socket                                                       |
 | `reloadCerts()`                       | Function | re-read `cert`/`privKey` from disk and swap them in. Open connections are untouched. Safe to call manually (e.g. on `SIGHUP`); the watcher uses it internally |
+| `stop()`                              | Function | stops listening and drops every connection; `await using server = new Server()` calls it when the scope ends |
 
 ### `Socket` Object
 
@@ -147,6 +155,7 @@ The `socket` object is given to you by a listener
 | `messagesSent`                 | Number   | count of messages sent to this socket                                                                                                                                                                                             |
 | `messagesReceived`             | Number   | count of messages received from this socket                                                                                                                                                                                       |
 | `rooms`                        | Set      | the rooms this socket is in                                                                                                                                                                                                       |
+| `request(key, [value])`        | Function | emits and returns a promise for the client's reply, rejected with `Error('disconnected')` if the socket closes first |
 | `emit(key, [value, callback])` | Function | emits to client; with a callback, returns a promise for its result, rejected with `Error('disconnected')` if the socket closes first                                                                                                                                                                                                              |
 | `disconnect([noReconnect, reason])` | Function | closes the WebSocket, pass `true` to prevent re-connections; `reason` (up to 123 bytes) is sent to the client                                                                                                              |
 
@@ -254,17 +263,16 @@ to `/angelia`, the server's default; include the path
 
 #### Web Worker
 
-By default the WebSocket runs in a Web Worker: messages are still
-stringified and parsed on the main thread, but the browser's own send
-and receive work and the heartbeat reply happen off it. In Chromium
-that work is the expensive part of moving large payloads; Firefox
-still routes a worker's socket events through the main thread, so it
-gains less. `npm run bench:worker` measures it.
+The WebSocket runs in a Web Worker: messages are still stringified and
+parsed on the main thread, but the browser's own send and receive work
+and the heartbeat reply happen off it. In Chromium that work is the
+expensive part of moving large payloads; Firefox still routes a
+worker's socket events through the main thread, so it gains less.
+`npm run bench:worker` measures it.
 
 The worker is built from a `blob:` URL so the package needs no extra
-file. Under a Content Security Policy without `worker-src blob:`, pass
-`worker: false` to keep the socket on the main thread. Environments
-without `Worker` (Node.js) use the main thread automatically.
+file; a Content Security Policy has to allow `worker-src blob:`.
+Constructing a `Client` where there is no `Worker` throws.
 
 ### `Client` API
 
@@ -272,11 +280,13 @@ The client API is similar to regular event handling
 
 | signature                      | kind     | description                                                                                                                                                |
 | ------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `connected`                    | Boolean  | `true` when the socket is connected else `false`                                                                                                           |
+| `connected`                    | Boolean  | `true` when the socket is connected else `false`; read-only                                                                                                |
 | `connect()`                    | Function | connects to the server, it auto-connects on disconnection                                                                                                  |
 | `disconnect([noReconnect, reason])` | Function | disconnects from the server, pass `true` to prevent re-connections; `reason` (up to 123 bytes) is sent to the server                                  |
-| `on(key, callback)`            | Function | listens for an event, returns an `off` function to stop listening                                                                                          |
-| `emit(key, [value, callback])` | Function | emits data to the server                                                                                                                                   |
+| `on(key, callback, [{ signal }])` | Function | listens for an event, returns an `off` function to stop listening; aborting `signal` does the same                                                   |
+| `emit(key, [value, callback])` | Function | emits data to the server; with a callback, returns a promise for its result                                                                                |
+| `request(key, [value])`        | Function | emits and returns a promise for the server's reply                                                                                                         |
+| `[Symbol.dispose]()`           | Function | `using client = new Client(…)` calls `disconnect(true)` when the scope ends                                                                                |
 
 #### List of Predefined `Client` Events
 

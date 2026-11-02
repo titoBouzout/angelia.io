@@ -16,5 +16,5 @@
 
     "skipLibCheck": true
   },
-  "exclude": ["type-tests", "tests/demo", "bench"]
+  "exclude": ["type-tests", "tests/demo", "bench", "types"]
 }

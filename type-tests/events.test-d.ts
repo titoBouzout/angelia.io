@@ -6,11 +6,11 @@
  * Run: `npx tsc -p type-tests/`
  */
 
-import Server, { Room, Rooms } from '../server/index.js'
-import type { Socket } from '../server/index.js'
-import Client from '../client/index.js'
+import Server, { Room, Rooms, Server as ServerClass } from '../types/server/index.js'
+import type { Socket } from '../types/server/index.js'
+import Client from '../types/client/index.js'
 
-declare module '../server/index.js' {
+declare module '../types/server/index.js' {
 	interface ServerEvents {
 		typing: boolean
 		theMessage: string
@@ -169,3 +169,34 @@ client.on('gotIt', msg => msg.toFixed())
 client.on('connect', () => {})
 client.on('reconnect', () => {})
 client.on('disconnect', () => {})
+
+// ---------------- request ----------------
+
+const answer: Promise<string> = client.request('theMessage', 'q')
+void answer
+// @ts-expect-error 'theMessage' takes a string
+client.request('theMessage', 1)
+const fromClient: Promise<any> = socket.request('gotIt', 'q')
+void fromClient
+
+// ---------------- on with a signal, read-only state ----------------
+
+const controller = new AbortController()
+client.on('gotIt', msg => msg.toUpperCase(), { signal: controller.signal })
+client.on('connect', () => {}, { signal: controller.signal })
+const isConnected: boolean = client.connected
+void isConnected
+// @ts-expect-error `connected` is read-only
+client.connected = true
+
+// ---------------- Server class and disposal ----------------
+
+const second = new ServerClass()
+async function scoped() {
+	await using extra = new ServerClass()
+	await extra.listen({ port: 0 })
+	using temporary = new Client({ url: 'ws://localhost:3001' })
+	void temporary
+}
+void second
+void scoped

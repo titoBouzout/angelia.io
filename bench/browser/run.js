@@ -78,8 +78,8 @@ const configs = [
 	},
 ]
 const variants = [
-	['main', 'client, worker: false'],
-	['worker', 'client, worker (default)'],
+	['main', 'socket on the main thread'],
+	['worker', 'angelia.io client (worker)'],
 	['clone', 'worker, objects via postMessage (old design)'],
 ]
 

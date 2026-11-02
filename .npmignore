@@ -1,8 +1,0 @@
-.gitignore
-node_modules
-publish.sh
-todo
-tests
-tsconfig.json
-
-bench

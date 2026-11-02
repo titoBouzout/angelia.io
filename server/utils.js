@@ -38,6 +38,7 @@ export function params(url = '', exclude) {
 	const q = url.indexOf('?')
 	if (q === -1) return [{}, null]
 	const query = new URLSearchParams(url.slice(q + 1))
+	/** @type {string | null} */
 	let excluded = null
 	if (exclude !== undefined) {
 		excluded = query.get(exclude)

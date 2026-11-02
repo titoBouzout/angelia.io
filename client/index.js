@@ -1,4 +1,4 @@
-import { createTransport } from './transport.js'
+import { workerTransport } from './transport.js'
 import {
 	DEFAULT_PATH,
 	NO_RECONNECT,
@@ -35,11 +35,40 @@ const GOING_AWAY = 1001
 const RETRY_MIN_MS = 2000
 const RETRY_JITTER_MS = 2000
 
+/** `request()`'s callback: resolve with the reply as it is. */
+const settle = reply => reply
+
+const noop = () => {}
+
 const newConnid = () =>
 	crypto.getRandomValues(new BigUint64Array(1))[0].toString(36)
 
+/** @import { ClientEvents, ClientReplies, EventKey, EventValue, ServerEvents, ServerReplies } from '../server/index.js' */
+
+/**
+ * @typedef {object} ClientOptions
+ * @property {string} url Server URL, `ws://` or `wss://`. Without a path
+ *   the client connects to the default one; give it to match the
+ *   server's `path` option.
+ * @property {Record<string, any> | (() => Record<string, any>)} [params]
+ *   Query params sent on connect; a function is called on every connect.
+ * @property {boolean} [noConnect] Don't connect until `connect()`.
+ */
+
+/**
+ * Events the client fires itself, with no payload.
+ *
+ * @typedef {'connect' | 'reconnect' | 'disconnect'} ClientPredefinedEvent
+ */
+
+/** @typedef {{ signal?: AbortSignal }} ListenOptions */
+
+/**
+ * A connection to an angelia.io server, run from a Web Worker. Connects
+ * on construction and reconnects on its own.
+ */
 export default class Client {
-	connected = false
+	#connected = false
 
 	/**
 	 * Replies the server still owes, by callback id. `fire(args)` runs
@@ -69,7 +98,7 @@ export default class Client {
 	#reconnect = true
 	#packFailed = false
 
-	/** @param {import('./index.js').ClientOptions} options */
+	/** @param {ClientOptions} options */
 	constructor(options) {
 		const { protocol } = new URL(options.url)
 		if (protocol !== 'ws:' && protocol !== 'wss:') {
@@ -78,8 +107,14 @@ export default class Client {
 			)
 		}
 
+		if (typeof Worker === 'undefined') {
+			throw new TypeError(
+				'angelia.io/client runs its socket in a Web Worker; this environment has none',
+			)
+		}
+
 		this.options = options
-		this.#transport = createTransport(options.worker !== false)
+		this.#transport = workerTransport()
 
 		// Protocol messages (replies, commands) go through the same
 		// dispatch loop as events, under the reserved key.
@@ -90,6 +125,7 @@ export default class Client {
 		if (!options.noConnect) queueMicrotask(() => this.connect())
 	}
 
+	/** Open the socket; no-op while open or after `disconnect(true)`. */
 	connect() {
 		if (this.#io || !this.#reconnect) return
 
@@ -126,7 +162,7 @@ export default class Client {
 			onopen: () => {
 				if (this.#io !== io) return
 				openedAt = Date.now()
-				this.connected = true
+				this.#connected = true
 				if (this.#isReconnect) {
 					this.#dispatch([['reconnect', undefined]])
 				} else {
@@ -163,8 +199,8 @@ export default class Client {
 	 */
 	#handleClosed = (code, uptime) => {
 		this.#io = null
-		if (this.connected) {
-			this.connected = false
+		if (this.#connected) {
+			this.#connected = false
 			this.#dispatch([['disconnect', undefined]])
 		}
 		if (!this.#reconnect) {
@@ -186,12 +222,69 @@ export default class Client {
 		}
 	}
 
+	/** Whether the socket is open. */
+	get connected() {
+		return this.#connected
+	}
+
+	/** `using client = new Client(…)` disconnects for good at scope end. */
+	[Symbol.dispose]() {
+		this.disconnect(true)
+	}
+
+	/**
+	 * Close the socket.
+	 *
+	 * @param {boolean} [noReconnect] `true` stops the auto-reconnect.
+	 * @param {string} [reason] Close reason sent to the server, up to 123
+	 *   bytes; longer throws a `RangeError` before anything closes.
+	 */
 	disconnect = (noReconnect, reason = 'client disconnect') => {
 		assertCloseReason(reason)
 		if (noReconnect) this.#reconnect = false
 		this.#io?.close(1000, reason)
 	}
 
+	/**
+	 * Emit to the server. With a callback, returns a promise for the
+	 * callback's result, rejected with `Error('reconnecting')` if the
+	 * connection is replaced before the reply arrives.
+	 *
+	 * @template {EventKey<ServerEvents>} K
+	 * @overload
+	 * @param {K} key
+	 * @returns {undefined}
+	 */
+	/**
+	 * @template {EventKey<ServerEvents>} K
+	 * @overload
+	 * @param {K} key
+	 * @param {EventValue<ServerEvents, K>} value
+	 * @returns {undefined}
+	 */
+	/**
+	 * @template {EventKey<ServerEvents>} K
+	 * @template R
+	 * @overload
+	 * @param {K} key
+	 * @param {(reply: EventValue<ServerReplies, K>) => R} callback
+	 * @returns {Promise<R>}
+	 */
+	/**
+	 * @template {EventKey<ServerEvents>} K
+	 * @template R
+	 * @overload
+	 * @param {K} key
+	 * @param {EventValue<ServerEvents, K>} value
+	 * @param {(reply: EventValue<ServerReplies, K>) => R} callback
+	 * @returns {Promise<R>}
+	 */
+	/**
+	 * @param {any} key
+	 * @param {any} [valueOrCallback]
+	 * @param {Function} [callback]
+	 * @returns {Promise<any> | undefined}
+	 */
 	emit(key, valueOrCallback, callback) {
 		if (key === PROTOCOL_KEY) {
 			error('`key` cannot be empty')
@@ -219,14 +312,74 @@ export default class Client {
 		return promise
 	}
 
-	on(key, value) {
+	/**
+	 * Emit and resolve with the server's reply.
+	 *
+	 * @template {EventKey<ServerEvents>} K
+	 * @overload
+	 * @param {K} key
+	 * @returns {Promise<EventValue<ServerReplies, K>>}
+	 */
+	/**
+	 * @template {EventKey<ServerEvents>} K
+	 * @overload
+	 * @param {K} key
+	 * @param {EventValue<ServerEvents, K>} value
+	 * @returns {Promise<EventValue<ServerReplies, K>>}
+	 */
+	/**
+	 * @param {any} key
+	 * @param {any} [value]
+	 * @returns {Promise<any>}
+	 */
+	request(key, value) {
+		return this.emit(key, value, settle)
+	}
+
+	/**
+	 * Listen for a predefined event. Returns a function that stops
+	 * listening; aborting `options.signal` does the same.
+	 *
+	 * @overload
+	 * @param {ClientPredefinedEvent} key
+	 * @param {() => void} value
+	 * @param {ListenOptions} [options]
+	 * @returns {(() => void) | undefined}
+	 */
+	/**
+	 * Listen for a server event. Returns a function that stops
+	 * listening; aborting `options.signal` does the same.
+	 *
+	 * @template {EventKey<ClientEvents>} K
+	 * @overload
+	 * @param {K} key
+	 * @param {(
+	 * 	v: EventValue<ClientEvents, K>,
+	 * 	reply?: (v: EventValue<ClientReplies, K>) => void,
+	 * ) => void} value
+	 * @param {ListenOptions} [options]
+	 * @returns {(() => void) | undefined}
+	 */
+	/**
+	 * @param {string} key
+	 * @param {Function} value
+	 * @param {ListenOptions} [options]
+	 * @returns {(() => void) | undefined}
+	 */
+	on(key, value, options) {
 		if (key === PROTOCOL_KEY) {
 			error('`key` cannot be empty')
 			return
 		}
-		this.#listeners[key] = this.#listeners[key] || []
-		this.#listeners[key].push(value)
-		return () => this.#off(key, value)
+		const signal = options?.signal
+		if (signal?.aborted) return noop
+		;(this.#listeners[key] ||= []).push(value)
+		const off = () => {
+			this.#off(key, value)
+			signal?.removeEventListener('abort', off)
+		}
+		signal?.addEventListener('abort', off, { once: true })
+		return off
 	}
 
 	// PRIVATE API
@@ -340,7 +493,7 @@ export default class Client {
 
 	#send = () => {
 		const io = this.#io
-		if (io && this.connected && this.#messages.length) {
+		if (io && this.#connected && this.#messages.length) {
 			const text = stringify(this.#messages)
 			// Reuse the queue array: it's serialized, nothing else holds it.
 			this.#messages.length = 0

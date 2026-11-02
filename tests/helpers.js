@@ -1,12 +1,9 @@
 import { createServer } from 'node:net'
 
-import serverSingleton from '../server/Server.js'
+import { Server } from '../server/Server.js'
 import { DEFAULT_PATH } from '../shared/protocol.js'
 
-/** The Server class, so each test can listen on its own instance. */
-export const Server = /** @type {new () => typeof serverSingleton} */ (
-	/** @type {unknown} */ (serverSingleton.constructor)
-)
+export { Server }
 
 /** Poll `predicate` (sync or async) every 25ms until it holds. */
 export async function waitFor(predicate, tries = 80) {

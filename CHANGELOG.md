@@ -12,10 +12,15 @@ changed: upgrade the client and the server together.
   `outgoing` no longer live in `Server.events`, so clients can't
   trigger them. `Server.on(Class)` sorts methods automatically; only
   code assigning `Server.events.connect = …` directly needs to change.
+- **Node.js 22 or newer.**
 - **`listen()` is async** and rejects on failure; call `stop()` before
   listening again.
 - **Default `hostname` is `127.0.0.1`.** It used to listen on every
   interface. Pass `hostname: '0.0.0.0'` when no proxy sits in front.
+- **The client needs a browser with Web Workers**: it throws where
+  there is no `Worker`, and a Content Security Policy must allow
+  `worker-src blob:`.
+- **`client.connected` is read-only.**
 - **Client `url` must be `ws://` or `wss://`**, passed as
   `{ url }`; the `new Client('ws://…')` string form is gone. A path in
   the URL is now used instead of always connecting to `/angelia`.
@@ -44,9 +49,14 @@ changed: upgrade the client and the server together.
   rejected with `Error('disconnected')` if the socket closes first.
 - `disconnect(socket, code, reason)` gets the close reason, and both
   `disconnect()` methods take a `reason`.
-- `worker: false` client option, to keep the socket on the main thread
-  under a Content Security Policy without `worker-src blob:`.
-- TypeScript declarations with typed event maps.
+- `request(key, value)` on the client and on sockets: emit and get a
+  promise for the reply.
+- `on(key, fn, { signal })` stops listening when the signal aborts.
+- The `Server` class is exported, for running more than one server.
+- `await using server = new Server()` and `using client = new Client(…)`
+  stop / disconnect at scope end.
+- TypeScript declarations with typed event maps, generated from the
+  sources' JSDoc.
 
 ### Changed
 

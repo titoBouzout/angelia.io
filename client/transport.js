@@ -1,6 +1,8 @@
 /**
- * Socket transports for the Client. Both move only strings and answer
- * the server's heartbeat themselves; everything else stays in Client.
+ * The Client's socket lives in a Web Worker, so the browser's own
+ * send/receive work (expensive in Chromium) and the heartbeat reply stay
+ * off the main thread (see `bench/browser`). Only strings cross
+ * `postMessage`; everything else stays in Client.
  *
  * @typedef {{
  * 	onopen: () => void
@@ -21,46 +23,6 @@
  */
 
 /**
- * WebSocket owned by a Web Worker when the environment has one, so
- * the browser's own send/receive work (expensive in Chromium) and the
- * heartbeat stay off the main thread. See `bench/browser`.
- *
- * @param {boolean} useWorker
- * @returns {Transport}
- */
-export function createTransport(useWorker) {
-	return useWorker && typeof Worker !== 'undefined'
-		? workerTransport()
-		: directTransport()
-}
-
-/** @returns {Transport} */
-function directTransport() {
-	return {
-		open(url, handlers) {
-			const ws = new WebSocket(url)
-			ws.onopen = handlers.onopen
-			ws.onclose = e => handlers.onclose(e.code)
-			ws.onmessage = e =>
-				e.data === '' ? ws.send('') : handlers.onmessage(e.data)
-			return {
-				send: text => {
-					if (ws.readyState === WebSocket.OPEN) ws.send(text)
-				},
-				close: (code, reason) => {
-					try {
-						ws.close(code, reason)
-					} catch (err) {
-						handlers.onerror(err)
-					}
-				},
-			}
-		},
-		terminate() {},
-	}
-}
-
-/**
  * Data frames cross `postMessage` as bare strings, with no wrapper array
  * to allocate and clone; they always belong to the latest connection,
  * because the Client only opens one after the previous one closed.
@@ -68,7 +30,7 @@ function directTransport() {
  *
  * @returns {Transport}
  */
-function workerTransport() {
+export function workerTransport() {
 	/** @type {Worker | null} */
 	let worker = null
 	let nextId = 0
@@ -79,7 +41,7 @@ function workerTransport() {
 
 	const spawn = () => {
 		// Built from source so the package ships one file and works with
-		// any bundler. A CSP without `worker-src blob:` needs `worker: false`.
+		// any bundler; a Content Security Policy must allow `worker-src blob:`.
 		const url = URL.createObjectURL(
 			new Blob(['(' + workerMain + ')(self)'], {
 				type: 'text/javascript',

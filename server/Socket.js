@@ -15,41 +15,55 @@ import {
 
 import { WebSocket } from 'ws'
 
+/** @import { ClientEvents, ClientReplies, EventKey, EventValue } from './index.js' */
+/** @import { Room } from './Room.js' */
+/** @import { Server } from './Server.js' */
+
 const DISCONNECT = frame(stringify([[PROTOCOL_KEY, NO_RECONNECT]]))
 
 // Marks a reply promise as handled; shared so no closure is made per call.
 const ignore = () => {}
 
+/** `request()`'s callback: resolve with the reply as it is. */
+const settle = reply => reply
+
+/** One client connection, handed to every event handler and hook. */
 export class Socket {
 	/** Last callback id handed out; ids start at 1, as 0 means "none". */
 	#lastCallbackId = 0
 
 	/**
+	 * @internal Messages waiting for the next batch.
+	 * @type {any[]}
+	 */
+	messages = []
+	/**
+	 * @internal Replies this socket's client still owes, by callback id.
+	 * @type {Map<
+	 * 	number,
+	 * 	{ fire: (args: any[]) => void; cancel: (err: Error) => void }
+	 * >}
+	 */
+	callbacks = new Map()
+
+	/**
+	 * @internal Created by the server for each connection.
 	 * @param {WebSocket} io
 	 * @param {import('node:http').IncomingMessage} request Upgrade request
-	 * @param {any} server
+	 * @param {Server} server
 	 * @param {Record<string, string>} params The connect URL's query params
 	 */
 	constructor(io, request, server, params) {
 		this.server = server
+		/** The underlying `ws` WebSocket. */
 		this.io = io
 
 		const headers = request.headers
+		/** Client IP; from `X-Forwarded-For` when `trustProxy` is on. */
 		this.ip = clientIp(request, server.trustProxy)
 		this.userAgent = headers['user-agent'] || ''
+		/** The connect URL's query params, including `connid`. */
 		this.params = params
-
-		/** @type {any[]} */
-		this.messages = []
-		/**
-		 * Replies this socket's client still owes, by callback id.
-		 *
-		 * @type {Map<
-		 * 	number,
-		 * 	{ fire: (args: any[]) => void; cancel: (err: Error) => void }
-		 * >}
-		 */
-		this.callbacks = new Map()
 
 		this.bytesSent = 0
 		this.bytesReceived = 0
@@ -64,7 +78,7 @@ export class Socket {
 		this.timedout = false
 		this.closed = false
 
-		/** @type {Set<import('./Room.js').Room>} */
+		/** @type {Set<Room>} The rooms this socket is in. */
 		this.rooms = new Set()
 	}
 
@@ -74,27 +88,38 @@ export class Socket {
 	 * before the client replies.
 	 *
 	 * @overload
-	 * @param {any} k
-	 * @param {any} [v]
+	 * @param {[string, any]} message A tuple built once by a fan-out
 	 * @returns {void}
 	 */
 	/**
+	 * @template {EventKey<ClientEvents>} K
 	 * @overload
-	 * @param {any} k
-	 * @param {Function} callback
-	 * @returns {Promise<any>}
+	 * @param {K} k
+	 * @param {EventValue<ClientEvents, K>} v
+	 * @returns {void}
 	 */
 	/**
+	 * @template {EventKey<ClientEvents>} K
+	 * @template R
 	 * @overload
-	 * @param {any} k
-	 * @param {any} v
-	 * @param {Function} callback
-	 * @returns {Promise<any>}
+	 * @param {K} k
+	 * @param {(reply: EventValue<ClientReplies, K>) => R} callback
+	 * @returns {Promise<R>}
+	 */
+	/**
+	 * @template {EventKey<ClientEvents>} K
+	 * @template R
+	 * @overload
+	 * @param {K} k
+	 * @param {EventValue<ClientEvents, K>} v
+	 * @param {(reply: EventValue<ClientReplies, K>) => R} callback
+	 * @returns {Promise<R>}
 	 */
 	/**
 	 * @param {any} k
 	 * @param {any} [v]
 	 * @param {Function} [cb]
+	 * @returns {Promise<any> | void}
 	 */
 	emit(k, v, cb) {
 		if (!this.messages.length) {
@@ -114,12 +139,37 @@ export class Socket {
 	}
 
 	/**
+	 * Emit and resolve with the client's reply; rejected with
+	 * `Error('disconnected')` if the socket closes first.
+	 *
+	 * @template {EventKey<ClientEvents>} K
+	 * @overload
+	 * @param {K} k
+	 * @returns {Promise<EventValue<ClientReplies, K>>}
+	 */
+	/**
+	 * @template {EventKey<ClientEvents>} K
+	 * @overload
+	 * @param {K} k
+	 * @param {EventValue<ClientEvents, K>} v
+	 * @returns {Promise<EventValue<ClientReplies, K>>}
+	 */
+	/**
+	 * @param {any} k
+	 * @param {any} [v]
+	 * @returns {Promise<any>}
+	 */
+	request(k, v) {
+		return this.emit(k, v, settle)
+	}
+
+	/**
 	 * Close the connection.
 	 *
 	 * @param {boolean} [noReconnect] Pass `true` to also tell the client
 	 *   not to reconnect.
 	 * @param {string} [reason] Close reason sent to the client, up to
-	 *   123 bytes.
+	 *   123 bytes; longer throws a `RangeError` before anything closes.
 	 */
 	disconnect(noReconnect, reason = 'server disconnect') {
 		assertCloseReason(reason)
@@ -134,13 +184,14 @@ export class Socket {
 
 	// private
 
+	/** @internal */
 	listen() {
 		this.io.on('message', this.onmessage)
 		this.io.on('close', this.onclose)
 		this.io.on('error', this.onerror)
 	}
 
-	/** @param {Buffer} raw */
+	/** @internal @param {Buffer} raw */
 	onmessage = raw => {
 		if (raw.length === 0) {
 			this.server.pong(this)
@@ -161,6 +212,7 @@ export class Socket {
 	}
 
 	/**
+	 * @internal
 	 * @param {number} code Close code
 	 * @param {Buffer | string} reason Close reason
 	 */
@@ -186,6 +238,7 @@ export class Socket {
 		this.server.hooks.disconnect?.(this, code, reason.toString())
 	}
 
+	/** @internal @param {Error} err */
 	onerror = err => {
 		this.server.socketErrors++
 		console.error('[angelia.io] socket error', err)
@@ -193,7 +246,11 @@ export class Socket {
 
 	// callbacks
 
-	/** @returns {[number, Promise<any>]} */
+	/**
+	 * @internal
+	 * @param {Function} c
+	 * @returns {[number, Promise<any>]}
+	 */
 	callback(c) {
 		const { promise, resolve, reject } = Promise.withResolvers()
 		// Callers using only the callback never read the promise; its
@@ -209,7 +266,7 @@ export class Socket {
 	}
 
 	/**
-	 * Settle the callback a reply is for.
+	 * @internal Settle the callback a reply is for.
 	 *
 	 * @param {unknown} d Reply payload, `[id, args]`
 	 * @returns {boolean} Whether `d` answered a pending callback
@@ -225,7 +282,11 @@ export class Socket {
 
 	// messages
 
-	/** @returns {unknown} The parsed value, or undefined if not JSON. */
+	/**
+	 * @internal
+	 * @param {string} o
+	 * @returns {unknown} The parsed value, or undefined if not JSON.
+	 */
 	parse(o) {
 		try {
 			return parse(o)
@@ -235,9 +296,11 @@ export class Socket {
 	}
 
 	/**
-	 * Route an array of parsed messages through the registered event
+	 * @internal Route an array of parsed messages through the registered event
 	 * handlers. `events` only holds client-callable handlers, so a lookup
 	 * miss is the whole validation a key needs.
+	 *
+	 * @param {unknown[]} messages
 	 */
 	dispatch(messages) {
 		this.server.messagesReceived += messages.length
@@ -274,12 +337,13 @@ export class Socket {
 		}
 	}
 
-	/** @param {unknown} m */
+	/** @internal @param {unknown} m */
 	garbage(m) {
 		this.server.messagesGarbage++
 		this.server.hooks.garbage?.(this, m)
 	}
 
+	/** @internal */
 	processQueue() {
 		// Reset before running any user hook: `outgoing` may emit mid-drain,
 		// and `emit` only re-schedules on an empty queue.
@@ -294,7 +358,7 @@ export class Socket {
 	}
 
 	/**
-	 * Write a pre-built frame (see `utils.frame`); dropped once the socket
+	 * @internal Write a pre-built frame (see `utils.frame`); dropped once the socket
 	 * is closing. Goes through ws's frame writer instead of `send()`, which
 	 * would re-frame per socket. Safe because the server never enables
 	 * permessage-deflate nor sends Blobs, the only states that make ws queue.
@@ -314,7 +378,13 @@ export class Socket {
 		return '[content of socket object omitted for toJSON]'
 	}
 
-	/** `console.log(socket)` shows who it is and how it's doing, not internals. */
+	/**
+	 * `console.log(socket)` shows who it is and how it's doing, not internals.
+	 *
+	 * @param {number} _depth
+	 * @param {import('node:util').InspectOptionsStylized} options
+	 * @param {typeof import('node:util').inspect} inspectValue
+	 */
 	[inspect](_depth, options, inspectValue) {
 		const summary = {
 			ip: this.ip,

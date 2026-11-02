@@ -13,11 +13,7 @@ import { fileURLToPath } from 'node:url'
 
 import { chromium, firefox } from 'playwright'
 
-import serverSingleton from '../server/Server.js'
-
-const Server = /** @type {new () => typeof serverSingleton} */ (
-	/** @type {unknown} */ (serverSingleton.constructor)
-)
+import { Server, freePort, waitFor } from './helpers.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -48,19 +44,13 @@ const PAGE = `<!doctype html>
 	}
 </script>`
 
-let nextPort = 16000
-
-async function waitFor(predicate, tries = 120) {
-	for (let i = 0; i < tries; i++) {
-		if (await predicate()) return true
-		await new Promise(r => setTimeout(r, 25))
-	}
-	return predicate()
-}
-
 /** Serves the test page and the client sources, nothing else. */
 async function bootPageServer() {
-	const files = ['/client/index.js', '/client/transport.js']
+	const files = [
+		'/client/index.js',
+		'/client/transport.js',
+		'/shared/protocol.js',
+	]
 	const http = createServer(async (req, res) => {
 		const path = (req.url || '/').split('?')[0]
 		if (path === '/') {
@@ -72,9 +62,11 @@ async function bootPageServer() {
 			res.writeHead(404).end()
 		}
 	})
-	const port = nextPort++
-	await new Promise(resolve =>
-		http.listen(port, '127.0.0.1', () => resolve(undefined)),
+	const port = await new Promise(resolve =>
+		http.listen(0, '127.0.0.1', () => {
+			const address = http.address()
+			resolve(address && typeof address === 'object' ? address.port : 0)
+		}),
 	)
 	return { url: `http://127.0.0.1:${port}/`, close: () => http.close() }
 }
@@ -98,15 +90,14 @@ for (const browserType of [chromium, firefox]) {
 		/** Fresh angelia server + page per test. */
 		const setup = async (options = {}) => {
 			s = new Server()
-			const port = nextPort++
-			await s.listen({ port })
-			wsUrl = `ws://127.0.0.1:${port}`
+			await s.listen({ port: 0 })
+			wsUrl = `ws://127.0.0.1:${s.port}`
 			const page = await browser.newPage()
 			page.on('pageerror', err => console.error(`[${name}]`, err))
 			await page.goto(pageServer.url)
 			await page.waitForFunction(() => window.Client)
 			await page.evaluate(([url, o]) => window.make(url, o), [wsUrl, options])
-			await waitFor(() => s.sockets.length === 1)
+			await waitFor(() => s.sockets.size === 1)
 			return page
 		}
 		const teardown = async page => {
@@ -140,6 +131,37 @@ for (const browserType of [chromium, firefox]) {
 			}
 		})
 
+		it('a throwing listener surfaces its error without skipping the batch', async () => {
+			const page = await setup()
+			const pageErrors = []
+			page.on('pageerror', err => pageErrors.push(err.message))
+			try {
+				await page.evaluate(() => {
+					window.client.on('boom', () => {
+						throw new Error('listener failed')
+					})
+					window.client.on('boom', v => window.events.push('boom:' + v))
+				})
+				// Same tick, so both arrive in one batch.
+				s.emit('boom', 1)
+				s.emit('news', 'after')
+				assert.ok(
+					await waitFor(() =>
+						page.evaluate(() => window.events.includes('news:after')),
+					),
+				)
+				assert.deepEqual(await page.evaluate(() => window.events), [
+					'connect',
+					'boom:1',
+					'news:after',
+				])
+				assert.ok(await waitFor(() => pageErrors.length === 1))
+				assert.match(pageErrors[0], /listener failed/)
+			} finally {
+				await teardown(page)
+			}
+		})
+
 		it('worker: false keeps the socket on the main thread', async () => {
 			const page = await setup({ worker: false })
 			try {
@@ -158,7 +180,7 @@ for (const browserType of [chromium, firefox]) {
 				const page = await setup({ worker })
 				try {
 					const pinged = new Promise(resolve => {
-						s.events.ping = () => resolve(Date.now())
+						s.hooks.ping = () => resolve(Date.now())
 					})
 					const blockMs = 1500
 					// Not awaited: the page is now stuck for `blockMs`.
@@ -186,7 +208,7 @@ for (const browserType of [chromium, firefox]) {
 				await waitFor(() => page.evaluate(() => !window.client.connected))
 				await page.evaluate(() => window.client.connect())
 				await waitFor(() => page.evaluate(() => window.client.connected))
-				await waitFor(() => s.sockets.length === 1)
+				await waitFor(() => s.sockets.size === 1)
 				assert.deepEqual(
 					await page.evaluate(() => window.events),
 					['connect', 'disconnect', 'reconnect'],
@@ -199,7 +221,7 @@ for (const browserType of [chromium, firefox]) {
 		})
 
 		it('requeues URL-packed messages when the worker socket fails to connect', async () => {
-			const port = nextPort++
+			const port = await freePort()
 			const page = await browser.newPage()
 			page.on('pageerror', err => console.error(`[${name}]`, err))
 			await page.goto(pageServer.url)
@@ -215,7 +237,7 @@ for (const browserType of [chromium, firefox]) {
 			s = new Server()
 			const urls = []
 			const seen = []
-			s.events.connect = (_sock, request) => urls.push(request.url)
+			s.hooks.connect = (_sock, request) => urls.push(request.url)
 			s.events.m = (_sock, data) => seen.push(data)
 			await s.listen({ port })
 			try {
@@ -232,11 +254,12 @@ for (const browserType of [chromium, firefox]) {
 		it('server disconnect(true) closes the client and disables reconnect', async () => {
 			const page = await setup()
 			try {
-				s.sockets[0].disconnect(true)
+				const [sock] = s.sockets
+				sock.disconnect(true)
 				await waitFor(() => page.evaluate(() => !window.client.connected))
 				await page.evaluate(() => window.client.connect())
 				await new Promise(r => setTimeout(r, 200))
-				assert.equal(s.sockets.length, 0)
+				assert.equal(s.sockets.size, 0)
 				assert.equal(s.served, 1)
 			} finally {
 				await teardown(page)

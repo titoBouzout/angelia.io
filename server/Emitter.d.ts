@@ -7,7 +7,7 @@ import type {
 
 /**
  * Common emit / broadcast logic over `this.sockets`. Subclasses own the
- * `sockets` collection (Server/Room as a plain Array, Rooms as a getter).
+ * `sockets` collection (Server/Room as a Set, Rooms as a getter).
  */
 export class Emitter {
 	emit<K extends EventKey<ClientEvents>>(

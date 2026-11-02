@@ -15,7 +15,25 @@ export class Rooms extends Emitter {
 		for (const room of this.rooms.values()) {
 			for (const s of room.sockets) unique.add(s)
 		}
-		return [...unique]
+		return unique
+	}
+
+	/**
+	 * Fan out room by room instead of through `sockets`, so nothing is
+	 * allocated per call. A socket in several rooms is reached more than
+	 * once; the loop runs synchronously, so if `d` is already the last
+	 * message it queued, it got this one.
+	 */
+	broadcast(me, k, v) {
+		/** @type {[string, any]} */
+		const d = [k, v]
+		for (const room of this.rooms.values()) {
+			for (const socket of room.sockets) {
+				if (me != socket && socket.messages.at(-1) !== d) {
+					socket.emit(d)
+				}
+			}
+		}
 	}
 
 /** Array of every room in this list. */
@@ -46,7 +64,7 @@ export class Rooms extends Emitter {
 		const room = this.rooms.get(id)
 		if (room) {
 			room.leave(socket)
-			if (!room.persistent && room.sockets.length === 0) {
+			if (!room.persistent && room.sockets.size === 0) {
 				this.rooms.delete(id)
 				room.onDelete(socket)
 			}

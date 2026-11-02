@@ -8,7 +8,10 @@ import type {
 
 export interface ServerListenOptions {
 	hostname?: string
+	/** TCP port; `0` lets the OS pick one, readable from `port` after. */
 	port?: number
+	/** WebSocket path clients connect to. */
+	path?: string
 	timeout?: number
 	/** Max size of a single incoming message, in megabytes. */
 	maxMessageSize?: number
@@ -63,7 +66,7 @@ export interface ConnectRequest {
 interface PredefinedServerHandlers {
 	listen?: () => void
 	connect?: (socket: Socket, request: ConnectRequest) => void
-	disconnect?: (socket: Socket) => void
+	disconnect?: (socket: Socket, code: number, reason: string) => void
 	ping?: (socket: Socket) => void
 	timeout?: (socket: Socket, delay: number) => void
 	garbage?: (socket: Socket, data: any) => void
@@ -75,10 +78,11 @@ interface PredefinedServerHandlers {
 export type ServerListener = UserHandlers & PredefinedServerHandlers
 
 export declare class Server extends Emitter {
-	sockets: Socket[]
+	sockets: Set<Socket>
 
 	hostname: string
 	port: number
+	path: string
 
 	timeout: number
 	timeoutCheck: number
@@ -104,9 +108,12 @@ export declare class Server extends Emitter {
 
 	cacheSymbol: symbol
 	cached: number
-	cache: Record<string, Buffer[]>
+	cache: Map<unknown, Buffer[]>
 
+	/** Handlers for messages clients send, by event name. */
 	events: Record<string, any>
+	/** Handlers for events the server fires itself (`connect`, …). */
+	hooks: { [K in keyof PredefinedServerHandlers]?: any }
 
 	/** Underlying WebSocketServer (assigned in listen()). */
 	io: import('ws').WebSocketServer | null

@@ -1,5 +1,3 @@
-/** Remove the first occurrence of `item` from `arr` in place. */
-export function remove<T>(arr: T[], item: T): void
 
 export function ListenerTemplate(): {
 	(...args: any[]): void

@@ -1,20 +1,30 @@
 import { createTransport } from './transport.js'
+import {
+	DEFAULT_PATH,
+	NO_RECONNECT,
+	PACKED_PARAM,
+	PROTOCOL_KEY,
+	assertCloseReason,
+} from '../shared/protocol.js'
 
 const error = console.error
 const stringify = JSON.stringify
 const parse = JSON.parse
+const isArray = Array.isArray
 
 /** @returns {v is Function} */
 const isFunction = (/** @type {any} */ v) => typeof v === 'function'
 
-// Pack queued messages into the `m=` query param while the handshake's
+// Pack queued messages into the connect URL while the handshake's
 // request line stays within nginx's default `large_client_header_buffers`
 // (8k): a longer line gets a 414.
 const REQUEST_LINE_LIMIT = 8192
 
 /** Length of `text` once form-encoded into a query param value. */
 const encodedLength = text =>
-	new URLSearchParams({ m: text }).toString().length - 2
+	new URLSearchParams({ [PACKED_PARAM]: text }).toString().length -
+	PACKED_PARAM.length -
+	1
 
 // Close code browsers send when the page navigates away. Firefox fires
 // it on reload too; reconnecting then would open a second connection.
@@ -32,21 +42,21 @@ export default class Client {
 	connected = false
 
 	/**
-	 * Pending RPC callbacks. Slot 0 is reserved for "no callback". Each
-	 * non-null slot is `{ fire, cancel }` — `fire(args)` runs the
-	 * user's callback and resolves their promise; `cancel(err)` rejects
-	 * the promise (used on reconnect when outstanding replies become
-	 * unanswerable).
+	 * Replies the server still owes, by callback id. `fire(args)` runs
+	 * the user's callback and resolves their promise; `cancel(err)`
+	 * rejects it (on reconnect, when the reply can no longer arrive).
 	 *
-	 * @type {({
-	 * 	fire: (args: any[]) => void
-	 * 	cancel: (err: Error) => void
-	 * } | null)[]}
+	 * @type {Map<
+	 * 	number,
+	 * 	{ fire: (args: any[]) => void; cancel: (err: Error) => void }
+	 * >}
 	 */
-	#callbacks = [null]
-	/** @type {Record<string, Function[]>} */
+	#callbacks = new Map()
+	/** Last callback id handed out; ids start at 1, as 0 means "none". */
+	#lastCallbackId = 0
 	// No prototype, so only registered keys are found ('constructor',
 	// '__proto__', … are ordinary event names).
+	/** @type {Record<string, Function[]>} */
 	#listeners = Object.create(null)
 	/** @type {any[]} */
 	#messages = []
@@ -71,13 +81,9 @@ export default class Client {
 		this.options = options
 		this.#transport = createTransport(options.worker !== false)
 
-		// Empty-key '' frames are reply messages — route them to the
-		// callback slot bookkeeping. Registered as a regular listener
-		// so `#dispatch` stays a single uniform loop.
-		this.#listeners[''] = [this.#oncallback]
-
-		// Force-disconnect support: app can `socket.emit('disconnect')`.
-		this.on('disconnect', this.disconnect)
+		// Protocol messages (replies, commands) go through the same
+		// dispatch loop as events, under the reserved key.
+		this.#listeners[PROTOCOL_KEY] = [this.#onprotocol]
 
 		// Deferred so emits made right after construction are packed
 		// into the connect URL.
@@ -88,7 +94,7 @@ export default class Client {
 		if (this.#io || !this.#reconnect) return
 
 		const url = new URL(this.options.url)
-		url.pathname = 'angelia'
+		if (url.pathname === '/') url.pathname = DEFAULT_PATH
 
 		const { searchParams } = url
 		const p = this.options.params
@@ -104,10 +110,10 @@ export default class Client {
 		if (this.#isReconnect) {
 			this.#messages = []
 			const error = new Error('reconnecting')
-			for (let i = 1; i < this.#callbacks.length; i++) {
-				this.#callbacks[i]?.cancel(error)
+			for (const pending of this.#callbacks.values()) {
+				pending.cancel(error)
 			}
-			this.#callbacks = [null]
+			this.#callbacks.clear()
 		} else {
 			packed = this.#pack(url)
 		}
@@ -151,7 +157,6 @@ export default class Client {
 		this.#io = io
 	}
 
-	/** @param {number} code */
 	/**
 	 * @param {number} code Close code
 	 * @param {number} uptime How long the connection was open, in ms
@@ -182,12 +187,13 @@ export default class Client {
 	}
 
 	disconnect = (noReconnect, reason = 'client disconnect') => {
+		assertCloseReason(reason)
 		if (noReconnect) this.#reconnect = false
 		this.#io?.close(1000, reason)
 	}
 
 	emit(key, valueOrCallback, callback) {
-		if (key == '') {
+		if (key === PROTOCOL_KEY) {
 			error('`key` cannot be empty')
 			return
 		}
@@ -214,7 +220,7 @@ export default class Client {
 	}
 
 	on(key, value) {
-		if (key == '') {
+		if (key === PROTOCOL_KEY) {
 			error('`key` cannot be empty')
 			return
 		}
@@ -227,10 +233,10 @@ export default class Client {
 
 	/**
 	 * Move the longest prefix of the queue that fits the request-line
-	 * budget into the `m` param, so it dispatches on connect; the rest is sent once
-	 * the socket opens. Stops at the first message that doesn't fit, to
-	 * keep order. Off after a failed attempt that carried packed messages.
-	 * Returns the packed messages.
+	 * budget into the connect URL, so it dispatches on connect; the rest
+	 * is sent once the socket opens. Stops at the first message that
+	 * doesn't fit, to keep order. Off after a failed attempt that carried
+	 * packed messages. Returns the packed messages.
 	 *
 	 * @param {URL} url
 	 */
@@ -244,7 +250,7 @@ export default class Client {
 			url.pathname.length +
 			url.search.length +
 			' HTTP/1.1\r\n'.length +
-			'&m='.length +
+			`&${PACKED_PARAM}=`.length +
 			encodedLength('[]')
 		const separator = encodedLength(',')
 		/** @type {string[]} */
@@ -259,7 +265,7 @@ export default class Client {
 		}
 		if (!parts.length) return []
 
-		url.searchParams.append('m', '[' + parts.join(',') + ']')
+		url.searchParams.append(PACKED_PARAM, '[' + parts.join(',') + ']')
 		this.#messages = messages.slice(parts.length)
 		return messages.slice(0, parts.length)
 	}
@@ -280,36 +286,51 @@ export default class Client {
 	/** @returns {[number, Promise<any>]} */
 	#callback(c) {
 		const { promise, resolve, reject } = Promise.withResolvers()
-		const i = this.#callbacks.length
-		this.#callbacks[i] = {
+		const id = ++this.#lastCallbackId
+		this.#callbacks.set(id, {
 			fire: args => resolve(c(...args)),
 			cancel: reject,
-		}
-		return [i, promise]
+		})
+		return [id, promise]
 	}
-	#oncallback = d => {
-		const slot = this.#callbacks[d[0]]
-		if (slot) {
-			slot.fire(d[1])
-			this.#callbacks[d[0]] = null
+
+	/** A reply `[id, args]` or a command from the server. */
+	#onprotocol = d => {
+		if (d === NO_RECONNECT) {
+			this.disconnect(true)
+			return
+		}
+		const pending = isArray(d) && this.#callbacks.get(d[0])
+		if (pending) {
+			this.#callbacks.delete(d[0])
+			pending.fire(d[1])
 		}
 	}
+
 	#dispatch(d) {
 		for (const e of d) {
-			if (this.#listeners[e[0]]) {
-				let replied = false
-				const reply = e[2]
-					? (...args) => {
-							if (replied) {
-								return error(`reply() already called for "${e[0]}"`)
-							}
-							replied = true
-
-							this.#queue(['', [e[2], args]])
+			const listeners = this.#listeners[e[0]]
+			if (!listeners) continue
+			let replied = false
+			const reply = e[2]
+				? (...args) => {
+						if (replied) {
+							return error(`reply() already called for "${e[0]}"`)
 						}
-					: undefined
-				for (const fn of this.#listeners[e[0]]) {
+						replied = true
+
+						this.#queue([PROTOCOL_KEY, [e[2], args]])
+					}
+				: undefined
+			for (const fn of listeners) {
+				try {
 					fn(e[1], reply)
+				} catch (err) {
+					// Rethrown on its own so it still surfaces as uncaught,
+					// without skipping the rest of the batch.
+					queueMicrotask(() => {
+						throw err
+					})
 				}
 			}
 		}

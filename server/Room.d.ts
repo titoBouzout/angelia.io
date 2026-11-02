@@ -2,7 +2,7 @@ import { Emitter } from './Emitter.js'
 import type { Socket } from './Socket.js'
 
 export class Room extends Emitter {
-	sockets: Socket[]
+	sockets: Set<Socket>
 	id: any
 	persistent: boolean
 

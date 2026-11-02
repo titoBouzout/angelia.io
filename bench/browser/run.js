@@ -48,6 +48,7 @@ await Server.listen({ port: WS_PORT, maxMessageSize: 200 })
 const files = {
 	'/client/index.js': join(root, 'client/index.js'),
 	'/client/transport.js': join(root, 'client/transport.js'),
+	'/shared/protocol.js': join(root, 'shared/protocol.js'),
 }
 const http = createServer(async (req, res) => {
 	const path = (req.url || '/').split('?')[0]

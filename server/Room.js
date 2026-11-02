@@ -1,8 +1,8 @@
 import { Emitter } from './Emitter.js'
-import { remove } from './utils.js'
 
 export class Room extends Emitter {
-	sockets = []
+	/** @type {Set<import('./Socket.js').Socket>} */
+	sockets = new Set()
 	id
 	persistent = false
 
@@ -13,18 +13,14 @@ export class Room extends Emitter {
 
 	join(socket) {
 		// Joining after disconnect would never be undone: `onclose` already ran.
-		if (socket.closed) return
-		if (this.sockets.indexOf(socket) === -1) {
-			this.sockets.push(socket)
-			socket.rooms.push(this)
-			this.onJoin(socket)
-		}
+		if (socket.closed || this.sockets.has(socket)) return
+		this.sockets.add(socket)
+		socket.rooms.add(this)
+		this.onJoin(socket)
 	}
 	leave(socket) {
-		if (this.sockets.indexOf(socket) !== -1) {
-			remove(this.sockets, socket)
-			remove(socket.rooms, this)
-			this.onLeave(socket)
-		}
+		if (!this.sockets.delete(socket)) return
+		socket.rooms.delete(this)
+		this.onLeave(socket)
 	}
 }

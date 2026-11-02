@@ -45,8 +45,10 @@ class GoodChat {
 		void socket.ip
 		void request.headers
 	}
-	disconnect(socket: Socket) {
+	disconnect(socket: Socket, code: number, reason: string) {
 		void socket
+		void code
+		void reason
 	}
 }
 Server.on(GoodChat)
@@ -93,6 +95,13 @@ socket.emit('bigState', { rows: [42] })
 // @ts-expect-error 'unknown' is not a ClientEvents key
 socket.emit('unknown', 'x')
 
+// with a callback, server-side emit returns a promise for its result
+const answered: Promise<number> = socket.emit('gotIt', 'q', () => 1)
+void answered
+// without one it returns nothing to await
+const nothing: void = socket.emit('gotIt', 'q')
+void nothing
+
 // ---------------- Server / Room broadcast ----------------
 
 Server.emit('gotIt', 'hello')
@@ -118,7 +127,7 @@ const got = games.get('r1') // GameRoom | undefined
 if (got) got.score = 1
 const list: GameRoom[] = games.list
 void list
-const all: Socket[] = games.sockets
+const all: Set<Socket> = games.sockets
 void all
 games.join(socket, 'r1')
 games.leave(socket, 'r1')

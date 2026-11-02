@@ -8,7 +8,10 @@ import type {
 } from '../server/index.js'
 
 export interface ClientOptions {
-	/** Server origin, as `ws://` or `wss://`. */
+	/**
+	 * Server URL, `ws://` or `wss://`. A URL without a path connects to
+	 * the default path; give one to match the server's `path` option.
+	 */
 	url: string
 	params?: Record<string, any> | (() => Record<string, any>)
 	noConnect?: boolean
@@ -39,7 +42,8 @@ export default class Client {
 	 *
 	 * @param noReconnect Pass `true` to disable the auto-reconnect
 	 *   loop.
-	 * @param reason Close reason sent to the server, up to 123 bytes.
+	 * @param reason Close reason sent to the server, up to 123 bytes;
+	 *   longer throws a `RangeError` before anything is closed.
 	 */
 	disconnect: (noReconnect?: boolean, reason?: string) => void
 

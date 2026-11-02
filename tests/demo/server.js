@@ -43,11 +43,11 @@ const enter = (socket, roomId) => {
 	// `socket.emit` — server-initiated send to one socket.
 	socket.emit('roster', {
 		room: roomId,
-		names: room.sockets.map(s => s.name),
+		names: [...room.sockets].map(s => s.name),
 	})
 	// `room.broadcast` — fan-out to room members minus the sender.
 	room.broadcast(socket, 'joined', socket.name)
-	console.log(`+ ${socket.name} → #${roomId} (${room.sockets.length})`)
+	console.log(`+ ${socket.name} → #${roomId} (${room.sockets.size})`)
 }
 
 const exit = socket => {
@@ -148,7 +148,7 @@ class Admin {
 	stats(socket, _data, reply) {
 		reply?.({
 			server: {
-				sockets: Server.sockets.length,
+				sockets: Server.sockets.size,
 				served: Server.served,
 				uptimeMs: Server.now - Server.since,
 				bytesSent: Server.bytesSent,
@@ -164,11 +164,11 @@ class Admin {
 				bytesReceived: socket.bytesReceived,
 				messagesSent: socket.messagesSent,
 				messagesReceived: socket.messagesReceived,
-				rooms: socket.rooms.map(r => r.id),
+				rooms: [...socket.rooms].map(r => r.id),
 			},
 			rooms: rooms.list.map(r => ({
 				id: r.id,
-				sockets: r.sockets.length,
+				sockets: r.sockets.size,
 				persistent: r.persistent,
 			})),
 		})
@@ -188,7 +188,11 @@ await Server.listen({ port: 3001 })
 
 const SRC_DIR = join(here, 'src')
 const POTA_ROOT = join(root, 'node_modules/pota')
-const CLIENT_ROOT = join(root, 'client')
+// The client and the protocol module it imports, served from the repo root.
+const SOURCE_ROOTS = {
+	'/client/': join(root, 'client'),
+	'/shared/': join(root, 'shared'),
+}
 const HTML_PATH = join(here, 'index.html')
 
 /**
@@ -227,10 +231,12 @@ createServer((req, res) => {
 	}
 
 	// The angelia.io client lives at the repo root, not under tests/demo.
-	if (url.startsWith('/client/')) {
-		const path = resolveUnder(CLIENT_ROOT, url.slice('/client/'.length))
-		if (path) return sendFile(res, path, 'application/javascript')
-		return send404(res)
+	for (const [prefix, dir] of Object.entries(SOURCE_ROOTS)) {
+		if (url.startsWith(prefix)) {
+			const path = resolveUnder(dir, url.slice(prefix.length))
+			if (path) return sendFile(res, path, 'application/javascript')
+			return send404(res)
+		}
 	}
 
 	// Pota's source tree, served straight out of node_modules so the

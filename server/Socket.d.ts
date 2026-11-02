@@ -23,7 +23,11 @@ export class Socket {
 	params: Record<string, string>
 
 	messages: any[]
-	callbacks: (Function | null)[]
+	/** Replies this socket's client still owes, by callback id. */
+	callbacks: Map<
+		number,
+		{ fire: (args: any[]) => void; cancel: (err: Error) => void }
+	>
 
 	bytesSent: number
 	bytesReceived: number
@@ -38,34 +42,51 @@ export class Socket {
 	timedout: boolean
 	closed: boolean
 
-	rooms: Room[]
+	rooms: Set<Room>
 
 	/** Array-form used by Emitter to share a pre-built message across sockets. */
 	emit(message: [string, any] | [string, any, number]): void
 	emit<K extends EventKey<ClientEvents>>(
 		k: K,
 		v: EventValue<ClientEvents, K>,
-		cb?: (reply: EventValue<ClientReplies, K>) => void,
 	): void
+	/**
+	 * Emit with a reply callback. Returns a promise for the callback's
+	 * result, rejected with `Error('disconnected')` if the socket closes
+	 * before the client replies.
+	 */
+	emit<K extends EventKey<ClientEvents>, R>(
+		k: K,
+		callback: (reply: EventValue<ClientReplies, K>) => R,
+	): Promise<R>
+	emit<K extends EventKey<ClientEvents>, R>(
+		k: K,
+		v: EventValue<ClientEvents, K>,
+		callback: (reply: EventValue<ClientReplies, K>) => R,
+	): Promise<R>
 
 	/**
 	 * Close the connection.
 	 *
-	 * @param noReconnect Pass `true` to send a `disconnect` frame so
-	 *   the client suppresses its auto-reconnect loop.
-	 * @param reason Close reason sent to the client, up to 123 bytes.
+	 * @param noReconnect Pass `true` to also tell the client not to
+	 *   reconnect.
+	 * @param reason Close reason sent to the client, up to 123 bytes;
+	 *   longer throws a `RangeError` before anything is closed.
 	 */
 	disconnect(noReconnect?: boolean, reason?: string): void
 
 	listen(): void
-	onmessage: (raw: import('ws').RawData) => void
-	onclose: () => void
+	onmessage: (raw: Buffer) => void
+	onclose: (code: number, reason: Buffer | string) => void
 	onerror: (err: Error) => void
 
-	callback(c: Function): number
-	oncallback(d: [number, any[]], m: any): void
+	callback(c: Function): [number, Promise<any>]
+	/** Settle the callback a reply `[id, args]` is for; false if none. */
+	oncallback(d: unknown): boolean
 
-	parse(o: string): any
+	/** The parsed value, or undefined if not JSON. */
+	parse(o: string): unknown
+	garbage(m: unknown): void
 
 	/**
 	 * Route an array of parsed messages through the registered event

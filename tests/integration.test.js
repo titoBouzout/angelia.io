@@ -17,42 +17,9 @@ import { join } from 'node:path'
 
 import { WebSocket } from 'ws'
 
-import serverSingleton from '../server/Server.js'
+import { Server, bootServer, freePort, waitFor } from './helpers.js'
 import { Room } from '../server/Room.js'
 import { Rooms } from '../server/Rooms.js'
-
-const Server = /** @type {new () => typeof serverSingleton} */ (
-	/** @type {unknown} */ (serverSingleton.constructor)
-)
-
-let nextPort = 14000
-const pickPort = () => nextPort++
-
-/** Poll a predicate until it's truthy or `tries * 25ms` elapses. */
-async function waitFor(predicate, tries = 40) {
-	for (let i = 0; i < tries; i++) {
-		if (predicate()) return true
-		await new Promise(r => setTimeout(r, 25))
-	}
-	return predicate()
-}
-
-/**
- * Spin up a real Server on a fresh port. Returns the server and its
- * listening URL.
- */
-async function bootServer() {
-	const s = new Server()
-	const port = pickPort()
-	await s.listen({ port })
-	return {
-		server: s,
-		port,
-		baseUrl: `ws://127.0.0.1:${port}`,
-		url: `ws://127.0.0.1:${port}/angelia`,
-		stop: () => s.stop(),
-	}
-}
 
 /**
  * Open a raw WebSocket to `url`. Returns helpers to send batches and
@@ -214,7 +181,7 @@ describe('integration: server-initiated emit', () => {
 	})
 
 	it('Server.emit reaches the client', async () => {
-		s.server.events.connect = sock => {
+		s.server.hooks.connect = sock => {
 			sock.emit('welcome', { hi: 'there' })
 		}
 
@@ -234,14 +201,14 @@ describe('integration: disconnect lifecycle', () => {
 		await s.stop()
 	})
 
-	it('events.disconnect fires when the client closes', async () => {
+	it('hooks.disconnect fires when the client closes', async () => {
 		let disconnected = false
-		s.server.events.disconnect = () => {
+		s.server.hooks.disconnect = () => {
 			disconnected = true
 		}
 
 		client = await bootClient(s.url)
-		await waitFor(() => s.server.sockets.length === 1)
+		await waitFor(() => s.server.sockets.size === 1)
 		client.close()
 		await waitFor(() => disconnected, 80)
 		assert.equal(disconnected, true)
@@ -266,7 +233,7 @@ describe('integration: URL params', () => {
 	it('socket.params reflects the connect URL query string', async () => {
 		/** @type {any} */
 		let captured
-		s.server.events.connect = sock => {
+		s.server.hooks.connect = sock => {
 			captured = sock.params
 		}
 
@@ -294,7 +261,7 @@ describe('integration: path filtering', () => {
 
 	it('accepts /angelia (with and without query); rejects every other path', async () => {
 		const accepted = []
-		s.server.events.connect = sock => accepted.push({ ...sock.params })
+		s.server.hooks.connect = sock => accepted.push({ ...sock.params })
 
 		// Accepted: bare path and path with query string.
 		const c1 = await bootClient(`${s.baseUrl}/angelia`)
@@ -357,7 +324,7 @@ describe('integration: URL-pack on connect', () => {
 	it('strips m from socket.params before connect fires', async () => {
 		/** @type {any} */
 		let paramsAt
-		s.server.events.connect = sock => {
+		s.server.hooks.connect = sock => {
 			paramsAt = { ...sock.params }
 		}
 		s.server.events.early = () => {}
@@ -392,39 +359,40 @@ describe('integration: URL-packed messages edge cases', () => {
 		`${s.baseUrl}/angelia?m=${encodeURIComponent(JSON.stringify(messages))}`
 
 	it('counts the packed bytes in bytesReceived', async () => {
-		s.server.events.connect = undefined
+		s.server.hooks.connect = undefined
 		s.server.events.early = () => {}
 		const before = s.server.bytesReceived
 		const json = JSON.stringify([['early', 'héllo']])
 		const client = await bootClient(packedUrl([['early', 'héllo']]))
 		try {
-			await waitFor(() => s.server.sockets.length === 1)
+			await waitFor(() => s.server.sockets.size === 1)
 			assert.equal(s.server.bytesReceived - before, Buffer.byteLength(json))
-			assert.equal(s.server.sockets[0].bytesReceived, Buffer.byteLength(json))
+			const [sock] = s.server.sockets
+			assert.equal(sock.bytesReceived, Buffer.byteLength(json))
 		} finally {
 			client.close()
-			await waitFor(() => s.server.sockets.length === 0)
+			await waitFor(() => s.server.sockets.size === 0)
 		}
 	})
 
 	it('does not dispatch packed messages when connect disconnects the socket', async () => {
 		const seen = []
 		s.server.events.early = (_sock, data) => seen.push(data)
-		s.server.events.connect = sock => sock.disconnect(true)
+		s.server.hooks.connect = sock => sock.disconnect(true)
 		const client = await bootClient(packedUrl([['early', 1]]))
 		try {
-			await waitFor(() => s.server.sockets.length === 0)
+			await waitFor(() => s.server.sockets.size === 0)
 			await new Promise(r => setTimeout(r, 50))
 			assert.deepEqual(seen, [])
 		} finally {
 			client.close()
-			s.server.events.connect = undefined
+			s.server.hooks.connect = undefined
 		}
 	})
 
 	it('routes a non-array or unparsable `m` to garbage', async () => {
 		const garbage = []
-		s.server.events.garbage = (_sock, m) => garbage.push(m)
+		s.server.hooks.garbage = (_sock, m) => garbage.push(m)
 		const origLog = console.log
 		console.log = () => {}
 		try {
@@ -436,7 +404,7 @@ describe('integration: URL-packed messages edge cases', () => {
 			b.close()
 		} finally {
 			console.log = origLog
-			s.server.events.garbage = undefined
+			s.server.hooks.garbage = undefined
 		}
 	})
 })
@@ -499,7 +467,7 @@ describe('integration: multi-client emit + broadcast', () => {
 	it('Server.emit reaches every connected client', async () => {
 		a = await bootClient(s.url)
 		b = await bootClient(s.url)
-		await waitFor(() => s.server.sockets.length === 2)
+		await waitFor(() => s.server.sockets.size === 2)
 
 		s.server.emit('ping', 1)
 
@@ -512,7 +480,7 @@ describe('integration: multi-client emit + broadcast', () => {
 	})
 
 	it('Server.broadcast(me, ...) skips the sender', async () => {
-		await waitFor(() => s.server.sockets.length === 2)
+		await waitFor(() => s.server.sockets.size === 2)
 		const [first, second] = s.server.sockets
 		s.server.broadcast(first, 'tick', 2)
 
@@ -529,7 +497,7 @@ describe('integration: multi-client emit + broadcast', () => {
 	})
 
 	it('multiple emits in the same tick batch into one frame', async () => {
-		await waitFor(() => s.server.sockets.length === 2)
+		await waitFor(() => s.server.sockets.size === 2)
 
 		// Three emits, same tick. processQueue runs on next-tick and
 		// flushes them all into a single frame.
@@ -554,7 +522,7 @@ describe('integration: multi-client emit + broadcast', () => {
 	})
 
 	it('same-payload emit to N sockets reuses the cached encoded frame', async () => {
-		await waitFor(() => s.server.sockets.length === 2)
+		await waitFor(() => s.server.sockets.size === 2)
 		const before = s.server.messagesSentCacheHit
 		s.server.emit('cached', 'value')
 		await Promise.all([a.nextFrame(), b.nextFrame()])
@@ -577,7 +545,7 @@ describe('integration: multi-message client → server', () => {
 	it('three batched messages arrive in order via one server dispatch', async () => {
 		const seen = []
 		let batches = 0
-		s.server.events.incoming = (_sock, msgs) => batches++
+		s.server.hooks.incoming = (_sock, msgs) => batches++
 		s.server.events.x = (_sock, v) => seen.push(v)
 
 		client = await bootClient(s.url)
@@ -618,7 +586,7 @@ describe('integration: skipUTF8Validation', () => {
 
 	it('closes the connection with 1007 when validation is on', async () => {
 		const s = new Server()
-		const port = pickPort()
+		const port = await freePort()
 		await s.listen({ port, skipUTF8Validation: false })
 		try {
 			const client = await bootClient(`ws://127.0.0.1:${port}/angelia`)
@@ -646,13 +614,13 @@ describe('integration: malformed and reserved messages', () => {
 	it('routes malformed messages to garbage instead of crashing', async () => {
 		const garbage = []
 		const errors = []
-		s.server.events.garbage = (_sock, m) => garbage.push(m)
+		s.server.hooks.garbage = (_sock, m) => garbage.push(m)
 		s.server.events.ok = (_sock, v) => garbage.push(['ok', v])
 		const origError = console.error
 		console.error = (...a) => errors.push(a)
 		try {
 			client = await bootClient(s.url)
-			await waitFor(() => s.server.sockets.length === 1)
+			await waitFor(() => s.server.sockets.size === 1)
 			const [sock] = s.server.sockets
 			// A live callback, so a reply with non-array args reaches it.
 			sock.emit('ask', 1, () => {})
@@ -684,10 +652,10 @@ describe('integration: malformed and reserved messages', () => {
 				['', ['1', []]],
 				['ok', 'still dispatched'],
 			])
-			assert.equal(s.server.sockets.length, 1, 'socket still connected')
+			assert.equal(s.server.sockets.size, 1, 'socket still connected')
 		} finally {
 			console.error = origError
-			s.server.events.garbage = undefined
+			s.server.hooks.garbage = undefined
 		}
 	})
 
@@ -695,9 +663,9 @@ describe('integration: malformed and reserved messages', () => {
 		const fired = []
 		const garbage = []
 		for (const name of ['listen', 'connect', 'disconnect', 'ping', 'timeout', 'incoming', 'outgoing']) {
-			s.server.events[name] = () => fired.push(name)
+			s.server.hooks[name] = () => fired.push(name)
 		}
-		s.server.events.garbage = (_sock, m) => garbage.push(m[0])
+		s.server.hooks.garbage = (_sock, m) => garbage.push(m[0])
 		try {
 			const c = await bootClient(s.url)
 			await waitFor(() => fired.includes('connect'))
@@ -726,10 +694,10 @@ describe('integration: malformed and reserved messages', () => {
 			// `incoming` is the server's own hook for the batch, not the client's.
 			assert.deepEqual(fired, ['incoming'])
 			c.close()
-			await waitFor(() => s.server.sockets.length <= 1)
+			await waitFor(() => s.server.sockets.size <= 1)
 		} finally {
 			for (const name of ['listen', 'connect', 'disconnect', 'ping', 'timeout', 'incoming', 'outgoing', 'garbage']) {
-				s.server.events[name] = undefined
+				s.server.hooks[name] = undefined
 			}
 		}
 	})
@@ -746,9 +714,9 @@ describe('integration: garbage messages', () => {
 		await s.stop()
 	})
 
-	it('non-array payloads are routed to events.garbage', async () => {
+	it('non-array payloads are routed to hooks.garbage', async () => {
 		const garbage = []
-		s.server.events.garbage = (_sock, m) => garbage.push(m)
+		s.server.hooks.garbage = (_sock, m) => garbage.push(m)
 
 		client = await bootClient(s.url)
 		// Object instead of array — server treats it as garbage.
@@ -789,7 +757,7 @@ describe('integration: Rooms.join / Room.emit', () => {
 		}
 		const rooms = new Rooms(R)
 
-		s.server.events.connect = (sock, request) => {
+		s.server.hooks.connect = (sock, request) => {
 			const room = new URL(
 				request.url,
 				'https://x',
@@ -802,15 +770,15 @@ describe('integration: Rooms.join / Room.emit', () => {
 		const c = await bootClient(`${s.baseUrl}/angelia?room=other`)
 
 		try {
-			await waitFor(() => s.server.sockets.length === 3)
+			await waitFor(() => s.server.sockets.size === 3)
 			await waitFor(() => joined.length === 3)
 
 			const lobby = rooms.get('lobby')
 			const other = rooms.get('other')
 			assert.ok(lobby && other)
 			assert.equal(rooms.list.length, 2)
-			assert.equal(lobby.sockets.length, 2)
-			assert.equal(other.sockets.length, 1)
+			assert.equal(lobby.sockets.size, 2)
+			assert.equal(other.sockets.size, 1)
 			assert.equal(created.length, 2)
 
 			lobby.emit('news', 'hello-lobby')
@@ -852,11 +820,11 @@ describe('integration: Room.broadcast', () => {
 
 	it('Room.broadcast(me, ...) reaches members but skips me', async () => {
 		const rooms = new Rooms(Room)
-		s.server.events.connect = sock => rooms.join(sock, 'r1')
+		s.server.hooks.connect = sock => rooms.join(sock, 'r1')
 
 		a = await bootClient(s.url)
 		b = await bootClient(s.url)
-		await waitFor(() => rooms.get('r1')?.sockets.length === 2)
+		await waitFor(() => rooms.get('r1')?.sockets.size === 2)
 
 		const r1 = rooms.get('r1')
 		assert.ok(r1)
@@ -896,11 +864,11 @@ describe('integration: room cleanup on disconnect', () => {
 			}
 		}
 		const rooms = new Rooms(R)
-		s.server.events.connect = sock => rooms.join(sock, 'tmp')
+		s.server.hooks.connect = sock => rooms.join(sock, 'tmp')
 
 		a = await bootClient(s.url)
 		b = await bootClient(s.url)
-		await waitFor(() => rooms.get('tmp')?.sockets.length === 2)
+		await waitFor(() => rooms.get('tmp')?.sockets.size === 2)
 
 		a.close()
 		await waitFor(() => left.length === 1)
@@ -930,21 +898,21 @@ describe('integration: joining after disconnect', () => {
 		/** @type {(v?: unknown) => void} */
 		let authDone = () => {}
 		const auth = new Promise(r => (authDone = r))
-		s.server.events.connect = async sock => {
+		s.server.hooks.connect = async sock => {
 			await auth
 			rooms.join(sock, 'r')
 			lobby.join(sock)
 		}
 		const c = await bootClient(s.url)
-		await waitFor(() => s.server.sockets.length === 1)
+		await waitFor(() => s.server.sockets.size === 1)
 		c.close()
-		await waitFor(() => s.server.sockets.length === 0)
+		await waitFor(() => s.server.sockets.size === 0)
 
 		authDone()
 		await new Promise(r => setTimeout(r, 20))
 		assert.equal(rooms.get('r'), undefined, 'no room created')
-		assert.equal(lobby.sockets.length, 0)
-		s.server.events.connect = undefined
+		assert.equal(lobby.sockets.size, 0)
+		s.server.hooks.connect = undefined
 	})
 })
 
@@ -961,17 +929,17 @@ describe('integration: Rooms fan-out with a socket in several rooms', () => {
 
 	it('delivers once and lists the socket once', async () => {
 		const rooms = new Rooms(Room)
-		s.server.events.connect = sock => {
+		s.server.hooks.connect = sock => {
 			rooms.join(sock, 'one')
 			rooms.join(sock, 'two')
 		}
 		a = await bootClient(s.url)
 		await waitFor(() => rooms.list.length === 2)
-		assert.equal(rooms.sockets.length, 1)
+		assert.equal(rooms.sockets.size, 1)
 
 		rooms.emit('news', 1)
 		assert.deepEqual(JSON.parse(await a.nextFrame()), [['news', 1]])
-		s.server.events.connect = undefined
+		s.server.hooks.connect = undefined
 	})
 })
 
@@ -990,16 +958,16 @@ describe('integration: persistent rooms', () => {
 			persistent = true
 		}
 		const rooms = new Rooms(P)
-		s.server.events.connect = sock => rooms.join(sock, 'lobby')
+		s.server.hooks.connect = sock => rooms.join(sock, 'lobby')
 
 		a = await bootClient(s.url)
-		await waitFor(() => rooms.get('lobby')?.sockets.length === 1)
+		await waitFor(() => rooms.get('lobby')?.sockets.size === 1)
 
 		a.close()
-		await waitFor(() => rooms.get('lobby')?.sockets.length === 0)
+		await waitFor(() => rooms.get('lobby')?.sockets.size === 0)
 		const lobby = rooms.get('lobby')
 		assert.ok(lobby, 'persistent room must survive empty')
-		assert.equal(lobby.sockets.length, 0)
+		assert.equal(lobby.sockets.size, 0)
 	})
 })
 
@@ -1020,7 +988,7 @@ describe('integration: server-side emit with callback', () => {
 
 	it('socket.emit(k, v, cb) round-trips a reply from the client', async () => {
 		client = await bootClient(s.url)
-		await waitFor(() => s.server.sockets.length === 1)
+		await waitFor(() => s.server.sockets.size === 1)
 		const [sock] = s.server.sockets
 
 		const replyP = new Promise(resolve => {
@@ -1046,19 +1014,19 @@ describe('integration: server-side emit with callback', () => {
 // Predefined server hooks
 // ------------------------------------------------------------------
 
-describe('integration: events.listen', () => {
+describe('integration: hooks.listen', () => {
 	it('fires once when listen() succeeds', async () => {
 		const s = new Server()
 		let fired = 0
-		s.events.listen = () => fired++
-		const port = pickPort()
+		s.hooks.listen = () => fired++
+		const port = await freePort()
 		await s.listen({ port })
 		assert.equal(fired, 1)
 		await s.stop()
 	})
 })
 
-describe('integration: events.ping', () => {
+describe('integration: hooks.ping', () => {
 	let s, client
 
 	before(async () => {
@@ -1071,10 +1039,10 @@ describe('integration: events.ping', () => {
 
 	it('fires when the client replies with an empty-frame pong', async () => {
 		const pinged = []
-		s.server.events.ping = sock => pinged.push(sock)
+		s.server.hooks.ping = sock => pinged.push(sock)
 
 		client = await bootClient(s.url)
-		await waitFor(() => s.server.sockets.length === 1)
+		await waitFor(() => s.server.sockets.size === 1)
 		const [sock] = s.server.sockets
 
 		// Drive the heartbeat sweep manually: backdate `seen` past
@@ -1089,7 +1057,7 @@ describe('integration: events.ping', () => {
 	})
 })
 
-describe('integration: events.timeout', () => {
+describe('integration: hooks.timeout', () => {
 	let s, client
 
 	before(async () => {
@@ -1102,11 +1070,11 @@ describe('integration: events.timeout', () => {
 
 	it('fires for a socket whose `seen` exceeds `timeout`', async () => {
 		client = await bootClient(s.url)
-		await waitFor(() => s.server.sockets.length === 1)
+		await waitFor(() => s.server.sockets.size === 1)
 		const [sock] = s.server.sockets
 
 		const fired = []
-		s.server.events.timeout = (sk, delay) => fired.push([sk, delay])
+		s.server.hooks.timeout = (sk, delay) => fired.push([sk, delay])
 
 		// Simulate a stale client: backdate `seen` past the timeout
 		// window, then trigger the ping check synchronously.
@@ -1120,7 +1088,7 @@ describe('integration: events.timeout', () => {
 	})
 })
 
-describe('integration: events.incoming + events.outgoing', () => {
+describe('integration: hooks.incoming + hooks.outgoing', () => {
 	let s, client
 
 	before(async () => {
@@ -1134,12 +1102,12 @@ describe('integration: events.incoming + events.outgoing', () => {
 	it('incoming sees client batches; outgoing sees server batches', async () => {
 		const incoming = []
 		const outgoing = []
-		s.server.events.incoming = (_sock, msgs) => incoming.push(msgs)
-		s.server.events.outgoing = (_sock, msgs) => outgoing.push(msgs)
+		s.server.hooks.incoming = (_sock, msgs) => incoming.push(msgs)
+		s.server.hooks.outgoing = (_sock, msgs) => outgoing.push(msgs)
 		s.server.events.x = () => {}
 
 		client = await bootClient(s.url)
-		await waitFor(() => s.server.sockets.length === 1)
+		await waitFor(() => s.server.sockets.size === 1)
 
 		await client.send([
 			['x', 1],
@@ -1204,7 +1172,7 @@ describe('integration: Rooms.emit / Rooms.broadcast', () => {
 	before(async () => {
 		s = await bootServer()
 		rooms = new Rooms(Room)
-		s.server.events.connect = (sock, request) => {
+		s.server.hooks.connect = (sock, request) => {
 			const id = new URL(request.url, 'https://x').searchParams.get(
 				'r',
 			)
@@ -1260,7 +1228,7 @@ describe('integration: server-initiated disconnect', () => {
 	})
 
 	it('socket.disconnect(true) sends a `disconnect` frame then closes', async () => {
-		s.server.events.connect = sock => {
+		s.server.hooks.connect = sock => {
 			// Defer slightly so the client has a chance to install its
 			// reader before the server hangs up.
 			setTimeout(() => sock.disconnect(true), 30)
@@ -1269,11 +1237,11 @@ describe('integration: server-initiated disconnect', () => {
 		client = await bootClient(s.url)
 
 		const line = await client.nextFrame()
-		assert.deepEqual(JSON.parse(line), [['disconnect', true]])
+		assert.deepEqual(JSON.parse(line), [['', 'disconnect']])
 
 		// Session should close shortly after.
-		await waitFor(() => s.server.sockets.length === 0)
-		assert.equal(s.server.sockets.length, 0)
+		await waitFor(() => s.server.sockets.size === 0)
+		assert.equal(s.server.sockets.size, 0)
 	})
 })
 
@@ -1294,12 +1262,12 @@ describe('integration: emit on a closed socket', () => {
 
 	it('does not crash the server when the connection is already gone', async () => {
 		const c1 = await bootClient(s.url)
-		await waitFor(() => s.server.sockets.length === 1)
+		await waitFor(() => s.server.sockets.size === 1)
 		const [stale] = s.server.sockets
 
 		// Client disconnects; app keeps a stale socket reference.
 		c1.close()
-		await waitFor(() => s.server.sockets.length === 0)
+		await waitFor(() => s.server.sockets.size === 0)
 
 		const sentBefore = s.server.messagesSent
 		stale.emit('bye', 1)
@@ -1318,7 +1286,7 @@ describe('integration: emit on a closed socket', () => {
 	})
 })
 
-describe('integration: events.outgoing enqueues mid-drain', () => {
+describe('integration: hooks.outgoing enqueues mid-drain', () => {
 	let s, client
 
 	before(async () => {
@@ -1331,11 +1299,11 @@ describe('integration: events.outgoing enqueues mid-drain', () => {
 
 	it('socket keeps draining when outgoing() emits during a drain', async () => {
 		client = await bootClient(s.url)
-		await waitFor(() => s.server.sockets.length === 1)
+		await waitFor(() => s.server.sockets.size === 1)
 		const [sock] = s.server.sockets
 
 		let hooked = false
-		s.server.events.outgoing = socket => {
+		s.server.hooks.outgoing = socket => {
 			if (!hooked) {
 				hooked = true
 				socket.emit('from-hook', 1)
@@ -1430,12 +1398,12 @@ describe('integration: TLS + cert reload', () => {
 
 	it('serves wss when cert and privKey are given', async () => {
 		const s = new Server()
-		const port = pickPort()
+		const port = await freePort()
 		await s.listen({ port, cert: certPath, privKey: keyPath })
 		try {
 			const client = await bootTlsClient(port)
-			await waitFor(() => s.sockets.length === 1)
-			assert.equal(s.sockets.length, 1)
+			await waitFor(() => s.sockets.size === 1)
+			assert.equal(s.sockets.size, 1)
 			client.close()
 		} finally {
 			await s.stop()
@@ -1445,26 +1413,26 @@ describe('integration: TLS + cert reload', () => {
 	it('rejects listen() with only one of cert / privKey', async () => {
 		const s = new Server()
 		await assert.rejects(
-			s.listen({ port: pickPort(), cert: certPath }),
+			s.listen({ port: 0, cert: certPath }),
 			/both `cert` and `privKey`/,
 		)
 	})
 
 	it('reloadCerts() swaps the cert in place without dropping connections', async () => {
 		const s = new Server()
-		const port = pickPort()
+		const port = await freePort()
 		await s.listen({ port, cert: certPath, privKey: keyPath })
 		try {
 			const before = await bootTlsClient(port)
-			await waitFor(() => s.sockets.length === 1)
+			await waitFor(() => s.sockets.size === 1)
 
 			generateCert()
 			await s.reloadCerts()
 
 			// Trusting only the new cert proves new handshakes use it.
 			const afterReload = await bootTlsClient(port)
-			await waitFor(() => s.sockets.length === 2)
-			assert.equal(s.sockets.length, 2)
+			await waitFor(() => s.sockets.size === 2)
+			assert.equal(s.sockets.size, 2)
 			assert.equal(before.ws.readyState, WebSocket.OPEN)
 
 			before.close()
@@ -1476,7 +1444,7 @@ describe('integration: TLS + cert reload', () => {
 
 	it('reloadCerts() keeps the current cert when files cannot be read or parsed', async () => {
 		const s = new Server()
-		const port = pickPort()
+		const port = await freePort()
 		await s.listen({ port, cert: certPath, privKey: keyPath })
 		const goodCert = readFileSync(certPath)
 		try {
@@ -1497,7 +1465,7 @@ describe('integration: TLS + cert reload', () => {
 			// The original cert is still the one being served.
 			writeFileSync(certPath, goodCert)
 			const client = await bootTlsClient(port)
-			await waitFor(() => s.sockets.length === 1)
+			await waitFor(() => s.sockets.size === 1)
 			client.close()
 		} finally {
 			await s.stop()
@@ -1506,7 +1474,7 @@ describe('integration: TLS + cert reload', () => {
 
 	it('watch: true triggers reloadCerts() when the cert file changes', async () => {
 		const s = new Server()
-		const port = pickPort()
+		const port = await freePort()
 		await s.listen({
 			port,
 			cert: certPath,
@@ -1526,5 +1494,133 @@ describe('integration: TLS + cert reload', () => {
 		assert.ok(reloadCalls >= 1, 'expected at least one reload trigger')
 
 		await s.stop()
+	})
+})
+
+describe('integration: server emit with a callback', () => {
+	let s, client
+
+	before(async () => {
+		s = await bootServer()
+	})
+	after(async () => {
+		client?.close()
+		await s.stop()
+	})
+
+	/** Answer every callback-bearing frame with `answer(value)`. */
+	const autoReply = (c, answer) =>
+		c.ws.on('message', raw => {
+			const text = raw.toString()
+			if (text === '') return
+			for (const [, value, id] of JSON.parse(text)) {
+				if (id) c.send([['', [id, [answer(value)]]]])
+			}
+		})
+
+	it('returns a promise for the callback result and frees the slot', async () => {
+		client = await bootClient(s.url)
+		await waitFor(() => s.server.sockets.size === 1)
+		autoReply(client, v => v * 2)
+		const [sock] = s.server.sockets
+
+		const doubled = await sock.emit('double', 21, r => r + 1)
+		assert.equal(doubled, 43)
+		assert.equal(sock.callbacks.size, 0)
+	})
+
+	it('rejects pending replies when the socket closes, without crashing callback-only callers', async () => {
+		const c = await bootClient(s.url)
+		await waitFor(() => s.server.sockets.size === 2)
+		const sock = [...s.server.sockets].at(-1)
+
+		const awaited = sock.emit('never', 1, () => 'unused')
+		// Callback style only: its rejection must not go unhandled.
+		sock.emit('never', 2, () => {})
+		sock.disconnect()
+		await assert.rejects(awaited, /disconnected/)
+		assert.equal(sock.callbacks.size, 0)
+		c.close()
+	})
+})
+
+describe('integration: disconnect code and reason', () => {
+	let s
+
+	before(async () => {
+		s = await bootServer()
+	})
+	after(async () => {
+		await s.stop()
+	})
+
+	it('passes the close code and reason to the disconnect hook', async () => {
+		const closes = []
+		s.server.hooks.disconnect = (_sock, code, reason) =>
+			closes.push([code, reason])
+
+		const a = await bootClient(s.url)
+		await waitFor(() => s.server.sockets.size === 1)
+		a.ws.close(4000, 'client bye')
+		await waitFor(() => closes.length === 1)
+
+		const b = await bootClient(s.url)
+		await waitFor(() => s.server.sockets.size === 1)
+		const [sock] = s.server.sockets
+		sock.disconnect(false, 'kicked')
+		await waitFor(() => closes.length === 2)
+
+		const c = await bootClient(s.url)
+		await waitFor(() => s.server.sockets.size === 1)
+		const [stale] = s.server.sockets
+		stale.seen = s.server.now - (s.server.timeout + 1)
+		s.server.ping()
+		await waitFor(() => closes.length === 3)
+
+		assert.deepEqual(closes, [
+			[4000, 'client bye'],
+			[1000, 'kicked'],
+			[1006, ''],
+		])
+		b.close()
+		c.close()
+		s.server.hooks.disconnect = undefined
+	})
+
+	it('a reason over 123 bytes throws before anything is closed', async () => {
+		const c = await bootClient(s.url)
+		await waitFor(() => s.server.sockets.size === 1)
+		const [sock] = s.server.sockets
+		assert.throws(() => sock.disconnect(true, 'é'.repeat(62)), RangeError)
+		assert.equal(sock.closed, false)
+		assert.equal(c.ws.readyState, WebSocket.OPEN)
+		c.close()
+		await waitFor(() => s.server.sockets.size === 0)
+	})
+})
+
+describe('integration: path and port options', () => {
+	it('listens on a custom path and rejects the default one', async () => {
+		const s = await bootServer({ path: '/chat/ws' })
+		try {
+			const c = await bootClient(`${s.baseUrl}/chat/ws`)
+			await waitFor(() => s.server.sockets.size === 1)
+			assert.equal(s.server.sockets.size, 1)
+			c.close()
+			assert.ok((await rejectedStatus(s.url)) >= 400)
+		} finally {
+			await s.stop()
+		}
+	})
+
+	it('port 0 binds an OS-assigned port and reports it', async () => {
+		const s = await bootServer()
+		try {
+			assert.ok(s.server.port > 0)
+			const c = await bootClient(s.url)
+			c.close()
+		} finally {
+			await s.stop()
+		}
 	})
 })

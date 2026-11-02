@@ -34,8 +34,8 @@ class myConnection {
 	connect(socket, request) {
 		console.log('socket connected', socket.ip, request.headers)
 	}
-	disconnect(socket) {
-		console.log('socket disconnected', socket)
+	disconnect(socket, code, reason) {
+		console.log('socket disconnected', socket, code, reason)
 	}
 }
 Server.on(myConnection)
@@ -69,7 +69,8 @@ socket.on('gotIt', message => {
 | name              | kind    | default     | description                                                                                                   |
 | ----------------- | ------- | ----------- | ------------------------------------------------------------------------------------------------------------- |
 | `hostname`        | String  | `127.0.0.1` | the hostname (interface) to bind to                                                                           |
-| `port`            | Number  | 3001        | the TCP port to listen on                                                                                     |
+| `port`            | Number  | 3001        | the TCP port to listen on; `0` lets the OS pick one, read it from `Server.port` after `listen()`              |
+| `path`            | String  | `/angelia`  | the WebSocket path; clients connect to it by putting it in their `url`                                        |
 | `timeout`         | Number  | 60000       | time in milliseconds after a socket is considered gone, minimum value is 10000                                |
 | `maxMessageSize`  | Number  | 5           | max size of a single incoming message, in megabytes                                                           |
 | `skipUTF8Validation` | Boolean | true     | skip UTF-8 validation of incoming frames; pass `false` to close connections that send invalid UTF-8           |
@@ -117,11 +118,12 @@ The `server` object can be accessed from everywhere
 | `messagesSentCacheHit`                | Number   | count of messages ever sent that were cached                                           |
 | `serverErrors`                        | Number   | count of server errors                                                                 |
 | `socketErrors`                        | Number   | count of socket errors                                                                 |
-| `events`                              | Object   | ref to events, ex: server.events.typing() to dispatch typing to anyone listening to it |
+| `events`                              | Object   | handlers for client messages, ex: server.events.typing() to dispatch typing to anyone listening to it |
+| `hooks`                               | Object   | handlers for the predefined server events below (`connect`, `disconnect`, …)            |
 | `on(Class)`                           | Function | attaches all methods of a `Class` as listeners                                         |
 | `emit(key, [value])`                  | Function | emits to all connected sockets                                                         |
 | `broadcast(sender, key, [value])`     | Function | emits to all connected sockets except sender                                           |
-| `sockets`                             | Array    | an Array with all the current connected sockets                                        |
+| `sockets`                             | Set      | every currently connected socket                                                       |
 | `reloadCerts()`                       | Function | re-read `cert`/`privKey` from disk and swap them in. Open connections are untouched. Safe to call manually (e.g. on `SIGHUP`); the watcher uses it internally |
 
 ### `Socket` Object
@@ -144,8 +146,8 @@ The `socket` object is given to you by a listener
 | `bytesReceived`                | Number   | sum of bytes received from this socket                                                                                                                                                                                            |
 | `messagesSent`                 | Number   | count of messages sent to this socket                                                                                                                                                                                             |
 | `messagesReceived`             | Number   | count of messages received from this socket                                                                                                                                                                                       |
-| `rooms`                        | Array    | an array with the rooms where this socket is in                                                                                                                                                                                   |
-| `emit(key, [value, callback])` | Function | emits to client                                                                                                                                                                                                                   |
+| `rooms`                        | Set      | the rooms this socket is in                                                                                                                                                                                                       |
+| `emit(key, [value, callback])` | Function | emits to client; with a callback, returns a promise for its result, rejected with `Error('disconnected')` if the socket closes first                                                                                                                                                                                                              |
 | `disconnect([noReconnect, reason])` | Function | closes the WebSocket, pass `true` to prevent re-connections; `reason` (up to 123 bytes) is sent to the client                                                                                                              |
 
 ### Server Listeners
@@ -212,14 +214,17 @@ Server.on(Chat)
 #### List of Predefined `Server` Events
 
 There's a bunch of handy predefined events dispatched. They are fired
-by the server only: a client message using one of these names goes to
-`garbage`, as does any message that isn't a `[key, value?]` array.
+by the server only and live in `Server.hooks`, apart from the handlers
+in `Server.events` that clients call: a client message using one of
+these names goes to `garbage`, as does any message that isn't a
+`[key, value?]` array. `Server.on(Class)` sorts a class's methods into
+the right one by name.
 
 | signature                    | description                                                                                                                                       |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `listen()`                   | when the server is about to listen                                                                                                                |
 | `connect(socket, request)`   | when a socket connects; `request` is `{ headers, url }` from the upgrade — read cookies / auth / custom headers here, it's not kept on the socket |
-| `disconnect(socket)`         | when a socket gets disconnected                                                                                                                   |
+| `disconnect(socket, code, reason)` | when a socket gets disconnected, with the WebSocket close code and reason (1006 and `''` when the connection just dropped)                                                                                                                |
 | `ping(socket)`               | when we got an update of the ping for a socket                                                                                                    |
 | `timeout(socket, delay)`     | when we are about to disconnect a timedout socket, gives the delay in milliseconds                                                                |
 | `garbage(socket, data)`      | if the client sends a message that the server has no listener this will be dispatched                                                             |
@@ -242,6 +247,10 @@ const socket = new Client({
 })
 socket.connect()
 ```
+
+`url` must be `ws://` or `wss://`. Without a path the client connects
+to `/angelia`, the server's default; include the path
+(`wss://example.com/chat`) when the server sets another `path`.
 
 #### Web Worker
 
@@ -369,7 +378,7 @@ Server.listen()
 | `get(id)`                             | method | gets room with such an `id`                    |
 | `join(socket, [id])`                  | method | adds socket to room `id`                       |
 | `leave(socket, [id])`                 | method | removes socket from room `id`                  |
-| `sockets`                             | Array  | sockets across every room in this list, each once |
+| `sockets`                             | Set    | sockets across every room in this list, each once |
 | `list`                                | Array  | every room in this room list                   |
 | `emit(key, [value])`                  | method | emits to all sockets in this room list         |
 | `broadcast(socket, key, [value])`     | method | emits to other sockets in this room list       |
@@ -420,17 +429,19 @@ Server.listen()
 | `onJoin(socket)`                      | method  | dispatched when a socket joins the room          |
 | `onLeave(socket)`                     | method  | dispatched when a socket leaves the room         |
 | `persistent`                          | boolean | to not delete rooms when there are no sockets in |
-| `sockets`                             | Array   | sockets in the room                              |
+| `sockets`                             | Set     | sockets in the room                              |
 | `emit(key, [value])`                  | method  | emits to all sockets in the room                 |
 | `broadcast(socket, key, [value])`     | method  | emits to other sockets in the room               |
 | `id`                                  | any     | the room id                                      |
 | `join(socket)`                        | method  | adds a socket to the room                        |
 | `leave(socket)`                       | method  | remves a socket from the room                    |
 
-### `sockets` Object in `Room` and `Rooms`
+### `sockets` in `Server`, `Room` and `Rooms`
 
-A plain `Array` of sockets — use any native array method (`map`,
-`filter`, `forEach`, etc.).
+A `Set` of sockets, so joins, leaves and disconnects stay O(1) at any
+size. Use `size` for the count, `for…of` to walk it, and
+`sockets.values().map(…)` / `.filter(…)` or `[...sockets]` for array
+methods.
 
 ## Typed events
 

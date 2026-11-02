@@ -5,7 +5,7 @@ import { Room } from '../server/Room.js'
 import { Rooms } from '../server/Rooms.js'
 
 /** Minimal socket-shaped object — Rooms only reads `rooms` and identity. */
-const fakeSocket = id => /** @type {any} */ ({ id, rooms: [] })
+const fakeSocket = id => /** @type {any} */ ({ id, rooms: new Set(), messages: [] })
 
 describe('Rooms.join', () => {
 	it('lazily creates a room with the given id and fires onCreate', () => {
@@ -36,7 +36,7 @@ describe('Rooms.join', () => {
 		assert.equal(creates, 1)
 		const x = list.get('x')
 		assert.ok(x)
-		assert.equal(x.sockets.length, 2)
+		assert.equal(x.sockets.size, 2)
 	})
 
 	it('supports undefined id (the default room)', () => {
@@ -44,7 +44,7 @@ describe('Rooms.join', () => {
 		list.join(fakeSocket('s'))
 		const def = list.get(undefined)
 		assert.ok(def)
-		assert.equal(def.sockets.length, 1)
+		assert.equal(def.sockets.size, 1)
 	})
 })
 
@@ -78,7 +78,7 @@ describe('Rooms.leave', () => {
 		list.leave(s, 'lobby')
 		const lobby = list.get('lobby')
 		assert.ok(lobby)
-		assert.equal(lobby.sockets.length, 0)
+		assert.equal(lobby.sockets.size, 0)
 		assert.deepEqual(deleted, [])
 	})
 
@@ -96,12 +96,12 @@ describe('Rooms.leave', () => {
 		list.leave(a, 'r')
 		const r = list.get('r')
 		assert.ok(r)
-		assert.equal(r.sockets.length, 1)
+		assert.equal(r.sockets.size, 1)
 	})
 })
 
 describe('Rooms.sockets', () => {
-	it('sockets returns an Array with every socket across rooms', () => {
+	it('sockets returns a Set with every socket across rooms', () => {
 		const list = new Rooms(Room)
 		const a = fakeSocket('a')
 		const b = fakeSocket('b')
@@ -109,10 +109,7 @@ describe('Rooms.sockets', () => {
 		list.join(a, 'r1')
 		list.join(b, 'r1')
 		list.join(c, 'r2')
-		const arr = list.sockets
-		assert.ok(Array.isArray(arr))
-		assert.equal(arr.length, 3)
-		for (const s of [a, b, c]) assert.ok(arr.includes(s))
+		assert.deepEqual(list.sockets, new Set([a, b, c]))
 	})
 
 	it('sockets is recomputed on each access (not cached)', () => {
@@ -122,8 +119,8 @@ describe('Rooms.sockets', () => {
 		list.join(fakeSocket('b'), 'r1')
 		const second = list.sockets
 		assert.notEqual(first, second)
-		assert.equal(first.length, 1)
-		assert.equal(second.length, 2)
+		assert.equal(first.size, 1)
+		assert.equal(second.size, 2)
 	})
 })
 
@@ -146,7 +143,7 @@ describe('Rooms.list / toJSON', () => {
 		list.join(fakeSocket('a'), 'r1')
 		list.join(fakeSocket('b'), 'r1')
 		list.join(fakeSocket('c'), 'r2')
-		const big = list.list.filter(r => r.sockets.length > 1)
+		const big = list.list.filter(r => r.sockets.size > 1)
 		assert.equal(big.length, 1)
 		assert.equal(big[0].id, 'r1')
 	})
@@ -180,11 +177,11 @@ describe('Rooms with closed or shared sockets', () => {
 			}
 		}
 		const list = new Rooms(R)
-		const closed = /** @type {any} */ ({ id: 'c', rooms: [], closed: true })
+		const closed = /** @type {any} */ ({ id: 'c', rooms: new Set(), closed: true })
 		list.join(closed, 'x')
 		assert.equal(list.get('x'), undefined)
 		assert.equal(creates, 0)
-		assert.deepEqual(closed.rooms, [])
+		assert.deepEqual(closed.rooms, new Set([]))
 	})
 
 	it('sockets lists a socket in several rooms once', () => {
@@ -194,6 +191,6 @@ describe('Rooms with closed or shared sockets', () => {
 		list.join(s, 'a')
 		list.join(s, 'b')
 		list.join(t, 'b')
-		assert.deepEqual(list.sockets, [s, t])
+		assert.deepEqual(list.sockets, new Set([s, t]))
 	})
 })

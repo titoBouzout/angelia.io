@@ -7,44 +7,8 @@ import {
 	ListenerTemplate,
 	params,
 	parse,
-	remove,
 	stringify,
 } from '../server/utils.js'
-
-describe('utils.remove', () => {
-	it('removes the first occurrence in place', () => {
-		const arr = ['a', 'b', 'c']
-		remove(arr, 'b')
-		assert.deepEqual(arr, ['a', 'c'])
-	})
-
-	it('is a no-op when the item is not present', () => {
-		const arr = [1, 2, 3]
-		remove(arr, 99)
-		assert.deepEqual(arr, [1, 2, 3])
-	})
-
-	it('removes only the first occurrence on duplicates', () => {
-		const arr = [1, 2, 2, 3]
-		remove(arr, 2)
-		assert.deepEqual(arr, [1, 2, 3])
-	})
-
-	it('handles object identity, not equality', () => {
-		const a = { x: 1 }
-		const b = { x: 1 }
-		const arr = [a, b]
-		remove(arr, b)
-		assert.deepEqual(arr, [a])
-		assert.equal(arr[0], a)
-	})
-
-	it('works on an empty array', () => {
-		const arr = []
-		remove(arr, 'x')
-		assert.deepEqual(arr, [])
-	})
-})
 
 describe('utils.ListenerTemplate', () => {
 	it('returns a function whose .fns is the registry', () => {

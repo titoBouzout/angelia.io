@@ -36,12 +36,6 @@ export function params(url = '') {
 
 export const inspect = Symbol.for('nodejs.util.inspect.custom')
 
-/** Remove the first occurrence of `item` from `arr` in place. */
-export function remove(arr, item) {
-	const i = arr.indexOf(item)
-	if (i !== -1) arr.splice(i, 1)
-}
-
 /** Returns a function that, when called, invokes every fn pushed into its `.fns` array. */
 export function ListenerTemplate() {
 	const fns = []

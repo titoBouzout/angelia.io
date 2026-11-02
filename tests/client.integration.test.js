@@ -8,27 +8,8 @@ import assert from 'node:assert/strict'
 
 import { connect, createServer as createNetServer } from 'node:net'
 
-import serverSingleton from '../server/Server.js'
+import { Server, bootServer, freePort, waitFor } from './helpers.js'
 import Client from '../client/index.js'
-
-const Server = /** @type {new () => typeof serverSingleton} */ (
-	/** @type {unknown} */ (serverSingleton.constructor)
-)
-
-let nextPort = 15000
-const pickPort = () => nextPort++
-
-async function bootServer() {
-	const s = new Server()
-	const port = pickPort()
-	await s.listen({ port })
-	return {
-		server: s,
-		port,
-		baseUrl: `ws://127.0.0.1:${port}`,
-		stop: () => s.stop(),
-	}
-}
 
 /**
  * Construct a Client pointed at our server. Caller is responsible for
@@ -36,14 +17,6 @@ async function bootServer() {
  */
 function makeClient(baseUrl, options = {}) {
 	return new Client({ url: baseUrl, ...options })
-}
-
-async function waitFor(predicate, tries = 80) {
-	for (let i = 0; i < tries; i++) {
-		if (predicate()) return true
-		await new Promise(r => setTimeout(r, 25))
-	}
-	return predicate()
 }
 
 // ------------------------------------------------------------------
@@ -62,7 +35,7 @@ describe('client: connect + emit', () => {
 	it('Client.emit lands on the server handler; connect event fires', async () => {
 		let connectCount = 0
 		let received
-		s.server.events.connect = () => connectCount++
+		s.server.hooks.connect = () => connectCount++
 		s.server.events.hi = (_sock, data) => {
 			received = data
 		}
@@ -159,7 +132,7 @@ describe('client: on / off + server-initiated emit', () => {
 	})
 
 	it('Client.on receives Server.emit; off() unsubscribes', async () => {
-		s.server.events.connect = sock => sock.emit('news', 'hello')
+		s.server.hooks.connect = sock => sock.emit('news', 'hello')
 
 		client = makeClient(s.baseUrl)
 
@@ -193,7 +166,7 @@ describe('client: batching', () => {
 		const seen = []
 		let dispatches = 0
 		s.server.events.batch = (_sock, data) => seen.push(data)
-		s.server.events.incoming = () => dispatches++
+		s.server.hooks.incoming = () => dispatches++
 
 		client = makeClient(s.baseUrl)
 		await waitFor(() => client.connected)
@@ -237,7 +210,7 @@ describe('client: params', () => {
 	it('client options.params reach socket.params (sans connid)', async () => {
 		/** @type {any} */
 		let captured
-		s.server.events.connect = sock => {
+		s.server.hooks.connect = sock => {
 			captured = { ...sock.params }
 		}
 
@@ -291,7 +264,7 @@ describe('client: params as a function', () => {
 	it('options.params can be a function — it is invoked per connect', async () => {
 		/** @type {any} */
 		let captured
-		s.server.events.connect = sock => {
+		s.server.hooks.connect = sock => {
 			captured = { ...sock.params }
 		}
 
@@ -366,12 +339,12 @@ describe('client: noConnect', () => {
 			// Wait briefly — no connection should be opened.
 			await new Promise(r => setTimeout(r, 200))
 			assert.equal(client.connected, false)
-			assert.equal(s.server.sockets.length, 0)
+			assert.equal(s.server.sockets.size, 0)
 
 			// Calling connect() manually still works.
 			client.connect()
 			await waitFor(() => client.connected)
-			assert.equal(s.server.sockets.length, 1)
+			assert.equal(s.server.sockets.size, 1)
 			client.disconnect(true)
 		} finally {
 			await s.stop()
@@ -416,20 +389,20 @@ describe('client: disconnect', () => {
 
 	it('client.disconnect(true) closes the connection and disables reconnect', async () => {
 		let disconnects = 0
-		s.server.events.disconnect = () => disconnects++
+		s.server.hooks.disconnect = () => disconnects++
 
 		client = makeClient(s.baseUrl)
 		await waitFor(() => client.connected)
-		assert.equal(s.server.sockets.length, 1)
+		assert.equal(s.server.sockets.size, 1)
 
 		client.disconnect(true)
-		await waitFor(() => s.server.sockets.length === 0)
-		assert.equal(s.server.sockets.length, 0)
+		await waitFor(() => s.server.sockets.size === 0)
+		assert.equal(s.server.sockets.size, 0)
 		assert.equal(disconnects, 1)
 
 		// Give a grace window — should NOT auto-reconnect.
 		await new Promise(r => setTimeout(r, 200))
-		assert.equal(s.server.sockets.length, 0)
+		assert.equal(s.server.sockets.size, 0)
 	})
 })
 
@@ -485,8 +458,9 @@ describe('client: reconnect timing', () => {
 			await waitFor(() => client.connected)
 			// Past the retry minimum, so this counts as a working connection.
 			await new Promise(r => setTimeout(r, 2100))
+			const [sock] = s.server.sockets
 			const dropped = Date.now()
-			s.server.sockets[0].disconnect()
+			sock.disconnect()
 			await waitFor(() => s.server.served === 2 && client.connected)
 			const took = Date.now() - dropped
 			assert.ok(took < 500, `reconnected after ${took}ms`)
@@ -497,7 +471,7 @@ describe('client: reconnect timing', () => {
 	})
 
 	it('waits 2–4s before retrying a failed attempt', async () => {
-		const port = pickPort()
+		const port = await freePort()
 		const client = makeClient(`ws://127.0.0.1:${port}`)
 		try {
 			// Nothing listens yet: the first attempt fails and schedules a retry.
@@ -522,7 +496,7 @@ describe('client: reconnect timing', () => {
 
 	it('waits before reconnecting when the server drops it right after opening', async () => {
 		const s = await bootServer()
-		s.server.events.connect = sock => sock.disconnect()
+		s.server.hooks.connect = sock => sock.disconnect()
 		const client = makeClient(s.baseUrl)
 		try {
 			await waitFor(() => s.server.served === 1)
@@ -583,16 +557,16 @@ describe('client: URL packing', () => {
 		JSON.parse(new URL(url, 'http://x').searchParams.get('m') || '[]')
 
 	/** Server recording each connect URL and every dispatched batch. */
-	const bootRecording = async (port = pickPort()) => {
+	const bootRecording = async (port = 0) => {
 		const s = new Server()
 		const urls = []
 		const batches = []
-		s.events.connect = (_sock, request) => urls.push(request.url)
-		s.events.incoming = (_sock, messages) =>
+		s.hooks.connect = (_sock, request) => urls.push(request.url)
+		s.hooks.incoming = (_sock, messages) =>
 			batches.push(messages.map(m => [m[0], m[1]]))
 		s.events.m = () => {}
 		await s.listen({ port })
-		return { s, port, urls, batches }
+		return { s, port: s.port, urls, batches }
 	}
 
 	it('packs every pre-connect message into the URL when they fit', async () => {
@@ -655,7 +629,7 @@ describe('client: URL packing', () => {
 	})
 
 	it('requeues packed messages after a failed connect, keeping order and callbacks', async () => {
-		const port = pickPort()
+		const port = await freePort()
 		const client = makeClient(`ws://127.0.0.1:${port}`, {
 			noConnect: true,
 		})
@@ -709,7 +683,7 @@ describe('client: URL packing', () => {
 			}
 			conn.on('data', onData)
 		})
-		const proxyPort = pickPort()
+		const proxyPort = await freePort()
 		await new Promise(resolve =>
 			proxy.listen(proxyPort, '127.0.0.1', () => resolve(undefined)),
 		)
@@ -729,6 +703,80 @@ describe('client: URL packing', () => {
 		} finally {
 			client.disconnect(true)
 			proxy.close()
+			await s.stop()
+		}
+	})
+})
+
+describe('client: protocol and keys', () => {
+	it('server disconnect(true) fires disconnect once and stops reconnecting', async () => {
+		const s = await bootServer()
+		const client = makeClient(s.baseUrl)
+		try {
+			const events = []
+			client.on('disconnect', v => events.push(['disconnect', v]))
+			await waitFor(() => client.connected)
+			const [sock] = s.server.sockets
+			sock.disconnect(true)
+			await waitFor(() => !client.connected)
+			await new Promise(r => setTimeout(r, 100))
+			assert.deepEqual(events, [['disconnect', undefined]])
+			client.connect()
+			await new Promise(r => setTimeout(r, 100))
+			assert.equal(s.server.served, 1)
+		} finally {
+			client.disconnect(true)
+			await s.stop()
+		}
+	})
+
+	it('accepts key 0 and rejects only the empty key', async () => {
+		const s = await bootServer()
+		const client = makeClient(s.baseUrl)
+		try {
+			const seen = []
+			s.server.events['0'] = (_sock, v) => seen.push(v)
+			s.server.events.after = (_sock, v) => seen.push(v)
+			client.emit(/** @type {any} */ (0), 'zero')
+			// Logged and dropped on the client: nothing reaches the server.
+			assert.equal(client.emit('', 'empty'), undefined)
+			client.emit('after', 'last')
+			await waitFor(() => seen.length === 2)
+			assert.deepEqual(seen, ['zero', 'last'])
+			assert.equal(s.server.messagesGarbage, 0)
+		} finally {
+			client.disconnect(true)
+			await s.stop()
+		}
+	})
+
+	it('connects to the URL path when one is given, the default otherwise', async () => {
+		const custom = await bootServer({ path: '/live' })
+		const plain = await bootServer()
+		const a = makeClient(`${custom.baseUrl}/live`)
+		const b = makeClient(plain.baseUrl)
+		try {
+			await waitFor(() => a.connected && b.connected)
+			assert.equal(custom.server.sockets.size, 1)
+			assert.equal(plain.server.sockets.size, 1)
+		} finally {
+			a.disconnect(true)
+			b.disconnect(true)
+			await custom.stop()
+			await plain.stop()
+		}
+	})
+
+	it('disconnect with a reason over 123 bytes throws and keeps the connection', async () => {
+		const s = await bootServer()
+		const client = makeClient(s.baseUrl)
+		try {
+			await waitFor(() => client.connected)
+			assert.throws(() => client.disconnect(true, 'x'.repeat(124)), RangeError)
+			await new Promise(r => setTimeout(r, 50))
+			assert.equal(client.connected, true)
+		} finally {
+			client.disconnect(true)
 			await s.stop()
 		}
 	})

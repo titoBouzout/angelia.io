@@ -1,4 +1,9 @@
-import { LIFECYCLE_EVENTS, parent } from './constants.js'
+import { parent } from './constants.js'
+import {
+	NO_RECONNECT,
+	PROTOCOL_KEY,
+	assertCloseReason,
+} from '../shared/protocol.js'
 
 import {
 	frame,
@@ -6,15 +11,17 @@ import {
 	isArray,
 	params,
 	parse,
-	remove,
 	stringify,
 } from './utils.js'
 
 import { WebSocket } from 'ws'
 
-const DISCONNECT = frame(stringify([['disconnect', true]]))
+const DISCONNECT = frame(stringify([[PROTOCOL_KEY, NO_RECONNECT]]))
 
 export class Socket {
+	/** Last callback id handed out; ids start at 1, as 0 means "none". */
+	#lastCallbackId = 0
+
 	/**
 	 * @param {WebSocket} io
 	 * @param {import('node:http').IncomingMessage} request Upgrade request
@@ -31,8 +38,15 @@ export class Socket {
 
 		/** @type {any[]} */
 		this.messages = []
-		/** @type {(Function | null)[]} */
-		this.callbacks = [null]
+		/**
+		 * Replies this socket's client still owes, by callback id.
+		 *
+		 * @type {Map<
+		 * 	number,
+		 * 	{ fire: (args: any[]) => void; cancel: (err: Error) => void }
+		 * >}
+		 */
+		this.callbacks = new Map()
 
 		this.bytesSent = 0
 		this.bytesReceived = 0
@@ -47,39 +61,72 @@ export class Socket {
 		this.timedout = false
 		this.closed = false
 
-		this.rooms = []
+		/** @type {Set<import('./Room.js').Room>} */
+		this.rooms = new Set()
 	}
 
-	/** Queue a message for the next batch. */
+	/**
+	 * Queue a message for the next batch. With a callback, returns a
+	 * promise for the callback's result, rejected if the socket closes
+	 * before the client replies.
+	 *
+	 * @overload
+	 * @param {any} k
+	 * @param {any} [v]
+	 * @returns {void}
+	 */
+	/**
+	 * @overload
+	 * @param {any} k
+	 * @param {Function} callback
+	 * @returns {Promise<any>}
+	 */
+	/**
+	 * @overload
+	 * @param {any} k
+	 * @param {any} v
+	 * @param {Function} callback
+	 * @returns {Promise<any>}
+	 */
+	/**
+	 * @param {any} k
+	 * @param {any} [v]
+	 * @param {Function} [cb]
+	 */
 	emit(k, v, cb) {
 		if (!this.messages.length) {
 			this.server.nextQueue(this)
 		}
 		if (cb) {
-			this.messages.push([k, v, this.callback(cb)])
-		} else if (typeof v === 'function') {
-			this.messages.push([k, 0, this.callback(v)])
-		} else {
-			this.messages.push(typeof k === 'object' ? k : [k, v])
+			const [id, promise] = this.callback(cb)
+			this.messages.push([k, v, id])
+			return promise
 		}
+		if (typeof v === 'function') {
+			const [id, promise] = this.callback(v)
+			this.messages.push([k, 0, id])
+			return promise
+		}
+		this.messages.push(typeof k === 'object' ? k : [k, v])
 	}
 
 	/**
 	 * Close the connection.
 	 *
-	 * @param {boolean} [noReconnect] Pass `true` to also send a
-	 *   `disconnect` frame so the client suppresses its auto-reconnect.
+	 * @param {boolean} [noReconnect] Pass `true` to also tell the client
+	 *   not to reconnect.
 	 * @param {string} [reason] Close reason sent to the client, up to
 	 *   123 bytes.
 	 */
 	disconnect(noReconnect, reason = 'server disconnect') {
+		assertCloseReason(reason)
 		if (noReconnect) {
 			this.write(DISCONNECT)
 		}
 		this.io.close(1000, reason)
 		// The closing handshake completes later; we already know the
 		// socket is gone, so clean up now. `onclose` is idempotent.
-		this.onclose()
+		this.onclose(1000, reason)
 	}
 
 	// private
@@ -90,45 +137,47 @@ export class Socket {
 		this.io.on('error', this.onerror)
 	}
 
-	/** @param {import('ws').RawData} raw */
+	/** @param {Buffer} raw */
 	onmessage = raw => {
-		const message = raw.toString()
-		if (message === '') {
+		if (raw.length === 0) {
 			this.server.pong(this)
 			return
 		}
 		this.seen = this.server.now
 
-		const bytes = Buffer.byteLength(message)
-		this.server.bytesReceived += bytes
-		this.bytesReceived += bytes
+		this.server.bytesReceived += raw.length
+		this.bytesReceived += raw.length
 
+		const message = raw.toString()
 		const messages = this.parse(message)
-		if (messages && isArray(messages)) {
+		if (isArray(messages)) {
 			this.dispatch(messages)
 		} else {
-			this.server.messagesGarbage++
-			this.server.events.garbage?.(this, messages || message)
+			this.garbage(messages ?? message)
 		}
 	}
 
-	onclose = () => {
+	/**
+	 * @param {number} code Close code
+	 * @param {Buffer | string} reason Close reason
+	 */
+	onclose = (code, reason) => {
 		if (this.closed) return
 		this.closed = true
-		remove(this.server.sockets, this)
+		this.server.sockets.delete(this)
 
-		// The replies these wait for will never arrive; holding them
-		// would also pin user closures.
-		this.callbacks = [null]
+		const error = new Error('disconnected')
+		for (const pending of this.callbacks.values()) pending.cancel(error)
+		this.callbacks.clear()
 
-		// Room.leave mutates this.rooms via splice — iterate a snapshot
-		for (const room of this.rooms.slice()) {
+		// Leaving deletes the room from this.rooms; Set iteration allows that.
+		for (const room of this.rooms) {
 			room[parent]
 				? room[parent].leave(this, room.id)
 				: room.leave(this)
 		}
 
-		this.server.events.disconnect?.(this)
+		this.server.hooks.disconnect?.(this, code, reason.toString())
 	}
 
 	onerror = err => {
@@ -137,48 +186,63 @@ export class Socket {
 	}
 
 	// callbacks
+
+	/** @returns {[number, Promise<any>]} */
 	callback(c) {
-		const i = this.callbacks.length
-		this.callbacks[i] = c
-		return i
+		const { promise, resolve, reject } = Promise.withResolvers()
+		// Callers using only the callback never read the promise; its
+		// rejection on close must not crash the process as unhandled.
+		// Callers that await it still get the rejection.
+		promise.catch(() => {})
+		const id = ++this.#lastCallbackId
+		this.callbacks.set(id, {
+			fire: args => resolve(c(...args)),
+			cancel: reject,
+		})
+		return [id, promise]
 	}
 
-	/** @param {[number, any[]]} d Reply payload, already shape-checked */
-	oncallback(d, m) {
-		const cb = this.callbacks[d[0]]
-		if (!cb) {
-			console.error("oncallback doesn't exist", this, m)
-		} else {
-			cb(...d[1])
-			this.callbacks[d[0]] = null
-		}
+	/**
+	 * Settle the callback a reply is for.
+	 *
+	 * @param {unknown} d Reply payload, `[id, args]`
+	 * @returns {boolean} Whether `d` answered a pending callback
+	 */
+	oncallback(d) {
+		const pending =
+			isArray(d) && isArray(d[1]) && this.callbacks.get(d[0])
+		if (!pending) return false
+		this.callbacks.delete(d[0])
+		pending.fire(d[1])
+		return true
 	}
 
 	// messages
+
+	/** @returns {unknown} The parsed value, or undefined if not JSON. */
 	parse(o) {
 		try {
 			return parse(o)
-		} catch (e) {
-			console.log('parser error', this, o)
-			return false
+		} catch {
+			return undefined
 		}
 	}
 
 	/**
 	 * Route an array of parsed messages through the registered event
-	 * handlers.
+	 * handlers. `events` only holds client-callable handlers, so a lookup
+	 * miss is the whole validation a key needs.
 	 */
 	dispatch(messages) {
 		this.server.messagesReceived += messages.length
 		this.messagesReceived += messages.length
 
-		this.server.events.incoming?.(this, messages)
+		this.server.hooks.incoming?.(this, messages)
 		for (const m of messages) {
-			if (!isMessage(m)) {
-				this.server.messagesGarbage++
-				this.server.events.garbage?.(this, m)
-			} else if (m[0] === '') {
-				this.oncallback(m[1], m)
+			if (!isArray(m)) {
+				this.garbage(m)
+			} else if (m[0] === PROTOCOL_KEY) {
+				if (!this.oncallback(m[1])) this.garbage(m)
 			} else if (this.server.events[m[0]]) {
 				let replied = false
 				this.server.events[m[0]](
@@ -193,25 +257,30 @@ export class Socket {
 									return
 								}
 								replied = true
-								this.emit('', [m[2], v])
+								this.emit(PROTOCOL_KEY, [m[2], v])
 							}
 						: undefined,
 				)
 			} else {
-				this.server.messagesGarbage++
-				this.server.events.garbage?.(this, m)
+				this.garbage(m)
 			}
 		}
 	}
 
+	/** @param {unknown} m */
+	garbage(m) {
+		this.server.messagesGarbage++
+		this.server.hooks.garbage?.(this, m)
+	}
+
 	processQueue() {
-		// Reset before running any user hook: `events.outgoing` may emit
-		// mid-drain, and `emit` only re-schedules on an empty queue.
+		// Reset before running any user hook: `outgoing` may emit mid-drain,
+		// and `emit` only re-schedules on an empty queue.
 		const messages = this.messages
 		this.messages = []
 		if (this.io.readyState !== WebSocket.OPEN) return
 
-		this.server.events.outgoing?.(this, messages)
+		this.server.hooks.outgoing?.(this, messages)
 		this.server.messagesSent += messages.length
 		this.messagesSent += messages.length
 		this.write(this.server.cacheMessages(messages))
@@ -250,22 +319,6 @@ export class Socket {
 			readyState: this.io.readyState,
 		}
 	}
-}
-
-/**
- * Whether a parsed client message has a shape `dispatch` can route: a
- * reply `['', [id, args]]`, or `[key, value?, callbackId?]` naming a
- * user event. Lifecycle names are rejected so clients can't fire them.
- *
- * @param {unknown} m
- */
-function isMessage(m) {
-	if (!isArray(m) || typeof m[0] !== 'string') return false
-	if (m[0] === '') {
-		const d = m[1]
-		return isArray(d) && typeof d[0] === 'number' && isArray(d[1])
-	}
-	return !LIFECYCLE_EVENTS.has(m[0])
 }
 
 /**

@@ -11,9 +11,11 @@ import {
 	DEFAULT_MAX_MESSAGE_SIZE_MB,
 	DEFAULT_PORT,
 	DEFAULT_TIMEOUT_MS,
+	LIFECYCLE_EVENTS,
 	MAX_PORT,
 	MIN_TIMEOUT_MS,
 } from './constants.js'
+import { DEFAULT_PATH, PACKED_PARAM } from '../shared/protocol.js'
 
 import { Socket } from './Socket.js'
 import { Emitter } from './Emitter.js'
@@ -50,10 +52,12 @@ export default new (class Server extends Emitter {
 	constructor() {
 		super()
 
-		this.sockets = []
+		/** @type {Set<import('./Socket.js').Socket>} */
+		this.sockets = new Set()
 
 		this.hostname = '127.0.0.1'
 		this.port = DEFAULT_PORT
+		this.path = DEFAULT_PATH
 
 		this.timeout = DEFAULT_TIMEOUT_MS
 		this.timeoutCheck = DEFAULT_TIMEOUT_MS / 2
@@ -83,9 +87,13 @@ export default new (class Server extends Emitter {
 
 		this.cacheSymbol = Symbol('cache')
 		this.cached = 1
-		this.cache = empty()
+		/** Framed batches of the current tick, see `cacheMessages`. */
+		this.cache = new Map()
 
+		/** Handlers for messages clients send, by event name. */
 		this.events = empty()
+		/** Handlers for events the server fires itself (`connect`, …). */
+		this.hooks = empty()
 
 		/** @type {WebSocketServer | null} */
 		this.io = null
@@ -125,8 +133,14 @@ export default new (class Server extends Emitter {
 
 		this.hostname = options.hostname || this.hostname
 
-		const port = +(options.port ?? 0)
-		this.port = port > 0 && port <= MAX_PORT ? port : this.port
+		// 0 lets the OS pick; the bound port is read back below.
+		const port = +(options.port ?? this.port)
+		this.port =
+			Number.isInteger(port) && port >= 0 && port <= MAX_PORT
+				? port
+				: this.port
+
+		this.path = options.path || this.path
 
 		const timeout = +(options.timeout ?? 0)
 		this.timeout =
@@ -149,7 +163,7 @@ export default new (class Server extends Emitter {
 
 		const io = new WebSocketServer({
 			server: httpServer,
-			path: '/angelia',
+			path: this.path,
 			perMessageDeflate: false,
 			clientTracking: false,
 			maxPayload: this.maxMessageSize * 1024 * 1024,
@@ -174,6 +188,9 @@ export default new (class Server extends Emitter {
 			throw err
 		}
 		httpServer.on('error', this.#onerror)
+
+		const address = httpServer.address()
+		if (address && typeof address === 'object') this.port = address.port
 
 		this.io = io
 		this.httpServer = httpServer
@@ -205,7 +222,7 @@ export default new (class Server extends Emitter {
 			)
 		}
 
-		this.events.listen?.()
+		this.hooks.listen?.()
 	}
 
 	/**
@@ -319,9 +336,13 @@ export default new (class Server extends Emitter {
 			if (m !== 'constructor' && m !== '') {
 				if (typeof instance[m] === 'function') {
 					const method = instance[m].bind(instance)
+					// Lifecycle names live apart, out of reach of client messages.
+					const registry = LIFECYCLE_EVENTS.has(m)
+						? this.hooks
+						: this.events
 
-					this.events[m] = this.events[m] || ListenerTemplate()
-					this.events[m].fns.push(method)
+					registry[m] = registry[m] || ListenerTemplate()
+					registry[m].fns.push(method)
 				}
 			}
 		}
@@ -342,14 +363,13 @@ export default new (class Server extends Emitter {
 
 		this.served++
 
-		this.sockets.push(socket)
+		this.sockets.add(socket)
 
-		// Strip the internal `m` (URL-packed messages) off params before
-		// the connect event fires.
-		const { m, ...rest } = socket.params
-		if (m !== undefined) socket.params = rest
+		// Strip the URL-packed messages off params before `connect` fires.
+		const { [PACKED_PARAM]: m, ...rest } = socket.params
+		socket.params = rest
 
-		this.events.connect?.(socket, {
+		this.hooks.connect?.(socket, {
 			headers: request.headers,
 			url: request.url || '',
 		})
@@ -360,12 +380,8 @@ export default new (class Server extends Emitter {
 			this.bytesReceived += bytes
 			socket.bytesReceived += bytes
 			const packed = socket.parse(m)
-			if (packed && isArray(packed)) {
-				socket.dispatch(packed)
-			} else {
-				this.messagesGarbage++
-				this.events.garbage?.(socket, m)
-			}
+			if (isArray(packed)) socket.dispatch(packed)
+			else socket.garbage(m)
 		}
 
 		// ping on connect is usually high
@@ -393,7 +409,7 @@ export default new (class Server extends Emitter {
 		for (const socket of queue) {
 			socket.processQueue()
 		}
-		this.cache = empty()
+		this.cache.clear()
 	}
 
 	/**
@@ -404,19 +420,24 @@ export default new (class Server extends Emitter {
 	 * @internal Called from Socket.processQueue.
 	 */
 	cacheMessages(messages) {
-		let id = ''
-		for (const m of messages) {
-			if (!m[this.cacheSymbol]) {
-				m[this.cacheSymbol] = this.cached++
+		// A fan-out is usually one message: key on it and skip the string.
+		let key = messages.length === 1 ? messages[0] : ''
+		if (key === '') {
+			for (const m of messages) {
+				if (!m[this.cacheSymbol]) {
+					m[this.cacheSymbol] = this.cached++
+				}
+				key += m[this.cacheSymbol] + ','
 			}
-			id += m[this.cacheSymbol] + ','
 		}
-		if (!this.cache[id]) {
-			this.cache[id] = frame(stringify(messages))
-		} else {
+		let framed = this.cache.get(key)
+		if (framed) {
 			this.messagesSentCacheHit++
+		} else {
+			framed = frame(stringify(messages))
+			this.cache.set(key, framed)
 		}
-		return this.cache[id]
+		return framed
 	}
 
 	// ping. Only `ping` is public so tests can drive the heartbeat
@@ -428,13 +449,12 @@ export default new (class Server extends Emitter {
 
 	ping = () => {
 		this.#updateNow()
-		// Snapshot: `terminate()` can remove sockets mid-loop.
-		for (const socket of this.sockets.slice()) {
+		for (const socket of this.sockets) {
 			const delay = this.now - socket.seen
 
 			if (delay > this.timeout) {
 				socket.timedout = true
-				this.events.timeout?.(socket, delay)
+				this.hooks.timeout?.(socket, delay)
 				socket.io.terminate()
 			} else if (delay > this.timeoutCheck) {
 				this.#pingSocket(socket)
@@ -454,7 +474,7 @@ export default new (class Server extends Emitter {
 		socket.seen = this.now
 		socket.ping = this.now - socket.contacted
 
-		this.events.ping?.(socket)
+		this.hooks.ping?.(socket)
 	}
 
 	/** Stop listening. Drops existing connections and frees the port. */
@@ -471,7 +491,7 @@ export default new (class Server extends Emitter {
 
 		if (!httpServer || !io) return
 
-		for (const socket of this.sockets.slice()) {
+		for (const socket of this.sockets) {
 			socket.io.terminate()
 		}
 		io.close()

@@ -30,10 +30,10 @@ describe('Server defaults', () => {
 		assert.equal(s.serverErrors, 0)
 	})
 
-	it('starts with empty sockets array', () => {
+	it('starts with an empty sockets Set', () => {
 		const s = new Server()
-		assert.ok(Array.isArray(s.sockets))
-		assert.equal(s.sockets.length, 0)
+		assert.ok(s.sockets instanceof Set)
+		assert.equal(s.sockets.size, 0)
 	})
 
 	it('events is a null-prototype object', () => {
@@ -125,7 +125,7 @@ describe('Server.on(Class)', () => {
 		}
 		s.on(A)
 		s.on(B)
-		s.events.ping()
+		s.hooks.ping()
 		assert.deepEqual(calls, ['a', 'b'])
 	})
 })
@@ -182,12 +182,11 @@ describe('Server.nextQueue / processQueue', () => {
 			},
 		}
 		s.cacheMessages([['k', 'v']])
-		const cacheBefore = s.cache
 		s.nextQueue(a)
 		s.nextQueue(b)
 		await new Promise(r => setImmediate(r))
 		assert.deepEqual(calls, ['a', 'b'])
-		assert.notEqual(s.cache, cacheBefore)
+		assert.equal(s.cache.size, 0)
 	})
 })
 
@@ -201,10 +200,10 @@ describe('Server.pong', () => {
 		assert.equal(fakeSock.ping, fakeSock.seen - 900)
 	})
 
-	it('pong fires events.ping when wired', () => {
+	it('pong fires hooks.ping when wired', () => {
 		const s = new InternalServer()
 		const calls = []
-		s.events.ping = sock => calls.push(sock)
+		s.hooks.ping = sock => calls.push(sock)
 		const fakeSock = { contacted: 0, seen: 0, ping: 0 }
 		s.pong(fakeSock)
 		assert.deepEqual(calls, [fakeSock])

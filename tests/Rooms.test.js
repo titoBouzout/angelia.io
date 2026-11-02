@@ -179,3 +179,20 @@ describe('Rooms with closed or shared sockets', () => {
 		assert.deepEqual(list.sockets, new Set([s, t]))
 	})
 })
+
+describe('Rooms deleting a room', () => {
+	it('detaches it, so joins through a kept reference stay out of the list', () => {
+		const list = new Rooms(Room)
+		const a = fakeSocket('a')
+		list.join(a, 'tmp')
+		const kept = list.get('tmp')
+		assert.ok(kept)
+		list.leave(a, 'tmp')
+		assert.equal(list.get('tmp'), undefined)
+
+		const b = fakeSocket('b')
+		kept.join(b)
+		assert.deepEqual(kept.sockets, new Set([b]))
+		assert.deepEqual(list.sockets, new Set())
+	})
+})

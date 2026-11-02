@@ -46,6 +46,9 @@ export function workerTransport() {
 		)
 		const spawned = new Worker(url)
 		URL.revokeObjectURL(url)
+		// E.g. blocked by a Content Security Policy: say so instead of
+		// waiting silently for a connection that can't happen.
+		spawned.onerror = event => current?.onerror(event.message || event)
 		spawned.onmessage = ({ data }) => {
 			const handlers = current
 			if (!handlers) return

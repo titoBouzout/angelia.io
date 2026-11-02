@@ -56,6 +56,14 @@ async function bootPageServer() {
 		const path = (req.url || '/').split('?')[0]
 		if (path === '/') {
 			res.writeHead(200, { 'content-type': 'text/html' }).end(PAGE)
+		} else if (path === '/no-workers') {
+			// The page under a policy that blocks every worker.
+			res
+				.writeHead(200, {
+					'content-type': 'text/html',
+					'content-security-policy': "worker-src 'none'",
+				})
+				.end(PAGE)
 		} else if (files.includes(path)) {
 			const body = await readFile(join(root, path))
 			res.writeHead(200, { 'content-type': 'text/javascript' }).end(body)
@@ -169,6 +177,24 @@ for (const browserType of [chromium, firefox]) {
 				} finally {
 					await page.close()
 					await s.stop()
+				}
+			})
+
+			it('reports a worker blocked by a Content Security Policy', async () => {
+				const page = await browser.newPage()
+				/** @type {string[]} */
+				const errors = []
+				page.on('console', m => m.type() === 'error' && errors.push(m.text()))
+				try {
+					await page.goto(pageServer.url + 'no-workers')
+					await page.waitForFunction(() => window.Client)
+					await page.evaluate(() => window.make('ws://127.0.0.1:1'))
+					assert.ok(
+						await waitFor(() => errors.some(e => e.startsWith('client'))),
+						`expected the client to report it, got ${JSON.stringify(errors)}`,
+					)
+				} finally {
+					await page.close()
 				}
 			})
 

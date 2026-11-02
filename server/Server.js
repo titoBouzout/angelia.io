@@ -415,6 +415,8 @@ export class Server extends Emitter {
 					if (filename && files.has(filename)) trigger(filename)
 				},
 			)
+			// e.g. the directory went away; without a listener this would crash.
+			watcher.on('error', this.#onerror)
 			this.#certWatchers.push(watcher)
 		}
 

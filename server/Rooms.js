@@ -70,6 +70,8 @@ export class Rooms extends Emitter {
 			if (!room.persistent && room.sockets.size === 0) {
 				this.rooms.delete(id)
 				room.onDelete(socket)
+				// Joins through a kept reference no longer reach this list.
+				room[parent] = undefined
 			}
 		}
 	}

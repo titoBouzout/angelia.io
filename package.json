@@ -13,8 +13,7 @@
 		"server",
 		"shared",
 		"types",
-		"!server/*.d.ts",
-		"CHANGELOG.md"
+		"!server/*.d.ts"
 	],
 	"exports": {
 		"./server": {

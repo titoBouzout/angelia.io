@@ -9,7 +9,6 @@ import {
 	frame,
 	inspect,
 	isArray,
-	params,
 	parse,
 	stringify,
 } from './utils.js'
@@ -17,6 +16,9 @@ import {
 import { WebSocket } from 'ws'
 
 const DISCONNECT = frame(stringify([[PROTOCOL_KEY, NO_RECONNECT]]))
+
+// Marks a reply promise as handled; shared so no closure is made per call.
+const ignore = () => {}
 
 export class Socket {
 	/** Last callback id handed out; ids start at 1, as 0 means "none". */
@@ -26,15 +28,16 @@ export class Socket {
 	 * @param {WebSocket} io
 	 * @param {import('node:http').IncomingMessage} request Upgrade request
 	 * @param {any} server
+	 * @param {Record<string, string>} params The connect URL's query params
 	 */
-	constructor(io, request, server) {
+	constructor(io, request, server, params) {
 		this.server = server
 		this.io = io
 
 		const headers = request.headers
 		this.ip = clientIp(request, server.trustProxy)
 		this.userAgent = headers['user-agent'] || ''
-		this.params = params(request.url)
+		this.params = params
 
 		/** @type {any[]} */
 		this.messages = []
@@ -166,9 +169,12 @@ export class Socket {
 		this.closed = true
 		this.server.sockets.delete(this)
 
-		const error = new Error('disconnected')
-		for (const pending of this.callbacks.values()) pending.cancel(error)
-		this.callbacks.clear()
+		// An Error captures a stack trace: only build one when it's needed.
+		if (this.callbacks.size) {
+			const error = new Error('disconnected')
+			for (const pending of this.callbacks.values()) pending.cancel(error)
+			this.callbacks.clear()
+		}
 
 		// Leaving deletes the room from this.rooms; Set iteration allows that.
 		for (const room of this.rooms) {
@@ -193,7 +199,7 @@ export class Socket {
 		// Callers using only the callback never read the promise; its
 		// rejection on close must not crash the process as unhandled.
 		// Callers that await it still get the rejection.
-		promise.catch(() => {})
+		promise.catch(ignore)
 		const id = ++this.#lastCallbackId
 		this.callbacks.set(id, {
 			fire: args => resolve(c(...args)),
@@ -238,14 +244,15 @@ export class Socket {
 		this.messagesReceived += messages.length
 
 		this.server.hooks.incoming?.(this, messages)
+		let handler
 		for (const m of messages) {
 			if (!isArray(m)) {
 				this.garbage(m)
 			} else if (m[0] === PROTOCOL_KEY) {
 				if (!this.oncallback(m[1])) this.garbage(m)
-			} else if (this.server.events[m[0]]) {
+			} else if ((handler = this.server.events[m[0]])) {
 				let replied = false
-				this.server.events[m[0]](
+				handler(
 					this,
 					m[1],
 					m[2]

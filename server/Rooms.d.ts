@@ -8,8 +8,8 @@ export class Rooms<R extends Room = Room> extends Emitter {
 	RoomClass: new () => R
 	rooms: Map<any, R>
 
-	/** Every socket across every room, each once. */
-	get sockets(): Set<Socket>
+	/** Every socket across every room, each once; kept up to date. */
+	readonly sockets: Set<Socket>
 	get list(): R[]
 
 	get(id: any): R | undefined

@@ -112,15 +112,30 @@ describe('Rooms.sockets', () => {
 		assert.deepEqual(list.sockets, new Set([a, b, c]))
 	})
 
-	it('sockets is recomputed on each access (not cached)', () => {
+	it('sockets is one live Set, kept up to date by joins and leaves', () => {
 		const list = new Rooms(Room)
-		list.join(fakeSocket('a'), 'r1')
-		const first = list.sockets
-		list.join(fakeSocket('b'), 'r1')
-		const second = list.sockets
-		assert.notEqual(first, second)
-		assert.equal(first.size, 1)
-		assert.equal(second.size, 2)
+		const live = list.sockets
+		const a = fakeSocket('a')
+		const b = fakeSocket('b')
+		list.join(a, 'r1')
+		list.join(b, 'r1')
+		list.join(a, 'r2')
+		assert.equal(list.sockets, live)
+		assert.deepEqual(live, new Set([a, b]))
+
+		// `a` is still in r2, so leaving r1 keeps it in the list.
+		list.leave(a, 'r1')
+		assert.deepEqual(live, new Set([a, b]))
+		list.leave(a, 'r2')
+		assert.deepEqual(live, new Set([b]))
+
+		// Joining or leaving through the Room itself updates the list too.
+		const r1 = list.get('r1')
+		assert.ok(r1)
+		r1.join(a)
+		assert.deepEqual(live, new Set([b, a]))
+		r1.leave(b)
+		assert.deepEqual(live, new Set([a]))
 	})
 })
 

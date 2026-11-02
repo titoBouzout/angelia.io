@@ -272,11 +272,13 @@ export default class Client {
 
 	/** Push a message, scheduling a flush when the queue was empty. */
 	#queue(message) {
-		if (!this.#messages.length) {
-			queueMicrotask(() => queueMicrotask(this.#send))
-		}
+		if (!this.#messages.length) queueMicrotask(this.#flushSoon)
 		this.#messages.push(message)
 	}
+
+	// Two microtasks deep, so emits made by code reacting to this one
+	// (e.g. in a `.then`) join the same batch. Built once, not per flush.
+	#flushSoon = () => queueMicrotask(this.#send)
 
 	#off(k, v) {
 		const i = this.#listeners[k].indexOf(v)
@@ -339,9 +341,10 @@ export default class Client {
 	#send = () => {
 		const io = this.#io
 		if (io && this.connected && this.#messages.length) {
-			const batch = this.#messages
-			this.#messages = []
-			io.send(stringify(batch))
+			const text = stringify(this.#messages)
+			// Reuse the queue array: it's serialized, nothing else holds it.
+			this.#messages.length = 0
+			io.send(text)
 		}
 	}
 }

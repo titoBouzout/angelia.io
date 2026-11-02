@@ -5,6 +5,7 @@ import {
 	isArray,
 	ListenerTemplate,
 	now,
+	params,
 	stringify,
 } from './utils.js'
 
@@ -85,6 +86,8 @@ export default new (class Server extends Emitter {
 		this.socketErrors = 0
 
 		this.queue = []
+		/** The other half of `queue`'s double buffer; see `#processQueue`. */
+		this.drained = []
 
 		this.cacheSymbol = Symbol('cache')
 		this.cached = 1
@@ -358,7 +361,9 @@ export default new (class Server extends Emitter {
 	 * @param {import('node:http').IncomingMessage} request
 	 */
 	#onconnection = (io, request) => {
-		const socket = new Socket(io, request, this)
+		// URL-packed messages come off the params before `connect` sees them.
+		const [query, m] = params(request.url, PACKED_PARAM)
+		const socket = new Socket(io, request, this, query)
 
 		socket.listen()
 
@@ -366,17 +371,13 @@ export default new (class Server extends Emitter {
 
 		this.sockets.add(socket)
 
-		// Strip the URL-packed messages off params before `connect` fires.
-		const { [PACKED_PARAM]: m, ...rest } = socket.params
-		socket.params = rest
-
 		this.hooks.connect?.(socket, {
 			headers: request.headers,
 			url: request.url || '',
 		})
 
 		// A `connect` listener may have already disconnected the socket.
-		if (m !== undefined && !socket.closed) {
+		if (m !== null && !socket.closed) {
 			const bytes = Buffer.byteLength(m)
 			this.bytesReceived += bytes
 			socket.bytesReceived += bytes
@@ -405,11 +406,15 @@ export default new (class Server extends Emitter {
 	}
 
 	#processQueue = () => {
+		// Swap buffers instead of allocating: sockets emitting mid-drain
+		// queue into the other one.
 		const queue = this.queue
-		this.queue = []
+		this.queue = this.drained
 		for (const socket of queue) {
 			socket.processQueue()
 		}
+		queue.length = 0
+		this.drained = queue
 		this.cache.clear()
 	}
 
@@ -458,7 +463,9 @@ export default new (class Server extends Emitter {
 				this.hooks.timeout?.(socket, delay)
 				socket.io.terminate()
 			} else if (delay > this.timeoutCheck) {
-				this.#pingSocket(socket)
+				// `now` was just updated for the whole sweep.
+				socket.contacted = this.now
+				socket.write(PING)
 			}
 		}
 	}

@@ -1,6 +1,6 @@
 
 export function ListenerTemplate(): {
-	(...args: any[]): void
+	(a?: any, b?: any, c?: any): void
 	fns: any[]
 }
 
@@ -12,6 +12,9 @@ export const parse: typeof JSON.parse
 export const isArray: typeof Array.isArray
 export const empty: <T = any>() => Record<string, T>
 
-/** Parse the query string of a URL into a plain params object. */
-export function params(url?: string): Record<string, string>
+/** Query string as a plain object, minus `exclude`, whose value comes back too. */
+export function params(
+	url?: string,
+	exclude?: string,
+): [Record<string, string>, string | null]
 export const inspect: unique symbol

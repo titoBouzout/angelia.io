@@ -105,6 +105,7 @@ export declare class Server extends Emitter {
 	socketErrors: number
 
 	queue: Socket[]
+	drained: Socket[]
 
 	cacheSymbol: symbol
 	cached: number

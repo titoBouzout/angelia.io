@@ -12,6 +12,7 @@ export class Socket {
 		io: import('ws').WebSocket,
 		request: import('node:http').IncomingMessage,
 		server: any,
+		params: Record<string, string>,
 	)
 
 	server: any

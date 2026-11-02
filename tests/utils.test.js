@@ -18,15 +18,15 @@ describe('utils.ListenerTemplate', () => {
 		assert.equal(l.fns.length, 0)
 	})
 
-	it('invokes every registered fn with the same args', () => {
+	it('invokes every registered fn with the same three args', () => {
 		const l = ListenerTemplate()
 		const calls = []
-		l.fns.push((...a) => calls.push(['a', ...a]))
-		l.fns.push((...a) => calls.push(['b', ...a]))
-		l(1, 'two')
+		l.fns.push((a, b, c) => calls.push(['a', a, b, c]))
+		l.fns.push((a, b, c) => calls.push(['b', a, b, c]))
+		l(1, 'two', 3)
 		assert.deepEqual(calls, [
-			['a', 1, 'two'],
-			['b', 1, 'two'],
+			['a', 1, 'two', 3],
+			['b', 1, 'two', 3],
 		])
 	})
 
@@ -71,26 +71,33 @@ describe('utils.empty', () => {
 
 describe('utils.params', () => {
 	it('returns {} for an empty / undefined / no-query url', () => {
-		assert.deepEqual(params(), {})
-		assert.deepEqual(params(''), {})
-		assert.deepEqual(params('/angelia'), {})
+		assert.deepEqual(params(), [{}, null])
+		assert.deepEqual(params(''), [{}, null])
+		assert.deepEqual(params('/angelia'), [{}, null])
 	})
 
 	it('parses the query string into a plain object', () => {
-		assert.deepEqual(params('/angelia?foo=bar&baz=qux'), {
-			foo: 'bar',
-			baz: 'qux',
-		})
+		assert.deepEqual(params('/angelia?foo=bar&baz=qux'), [
+			{ foo: 'bar', baz: 'qux' },
+			null,
+		])
 	})
 
 	it('decodes URL-encoded values', () => {
-		assert.deepEqual(params('/x?greeting=hi%20there'), {
+		assert.deepEqual(params('/x?greeting=hi%20there')[0], {
 			greeting: 'hi there',
 		})
 	})
 
 	it('keeps the last value for duplicate keys', () => {
-		assert.deepEqual(params('/x?k=1&k=2&k=3'), { k: '3' })
+		assert.deepEqual(params('/x?k=1&k=2&k=3')[0], { k: '3' })
+	})
+
+	it('takes out the excluded param and returns its value', () => {
+		assert.deepEqual(params('/x?a=1&m=%5B%5D&b=2', 'm'), [
+			{ a: '1', b: '2' },
+			'[]',
+		])
+		assert.deepEqual(params('/x?a=1', 'm'), [{ a: '1' }, null])
 	})
 })
-

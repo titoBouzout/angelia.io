@@ -60,13 +60,22 @@ function directTransport() {
 	}
 }
 
-/** @returns {Transport} */
+/**
+ * Data frames cross `postMessage` as bare strings, with no wrapper array
+ * to allocate and clone; they always belong to the latest connection,
+ * because the Client only opens one after the previous one closed.
+ * Control messages are `[type, id, value]`.
+ *
+ * @returns {Transport}
+ */
 function workerTransport() {
 	/** @type {Worker | null} */
 	let worker = null
 	let nextId = 0
 	/** @type {Map<number, SocketHandlers>} */
 	const connections = new Map()
+	/** @type {SocketHandlers | undefined} */
+	let latest
 
 	const spawn = () => {
 		// Built from source so the package ships one file and works with
@@ -78,11 +87,15 @@ function workerTransport() {
 		)
 		const spawned = new Worker(url)
 		URL.revokeObjectURL(url)
-		spawned.onmessage = ({ data: [type, id, value] }) => {
+		spawned.onmessage = ({ data }) => {
+			if (typeof data === 'string') {
+				latest?.onmessage(data)
+				return
+			}
+			const [type, id, value] = data
 			const handlers = connections.get(id)
 			if (!handlers) return
 			if (type === 'open') handlers.onopen()
-			else if (type === 'message') handlers.onmessage(value)
 			else if (type === 'error') handlers.onerror(value)
 			else if (type === 'close') {
 				connections.delete(id)
@@ -97,9 +110,10 @@ function workerTransport() {
 			const live = (worker ??= spawn())
 			const id = ++nextId
 			connections.set(id, handlers)
+			latest = handlers
 			live.postMessage(['connect', id, url.toString()])
 			return {
-				send: text => live.postMessage(['send', id, text]),
+				send: text => live.postMessage(text),
 				close: (code, reason) =>
 					live.postMessage(['close', id, code, reason]),
 			}
@@ -108,6 +122,7 @@ function workerTransport() {
 			worker?.terminate()
 			worker = null
 			connections.clear()
+			latest = undefined
 		},
 	}
 }
@@ -117,30 +132,33 @@ function workerTransport() {
  * not reference anything outside its own body.
  *
  * @param {{
- * 	postMessage: (message: any[]) => void
+ * 	postMessage: (message: any[] | string) => void
  * 	onmessage: ((e: MessageEvent) => void) | null
  * }} scope
  */
 function workerMain(scope) {
 	/** @type {Map<number, WebSocket>} */
 	const sockets = new Map()
+	/** @type {WebSocket | undefined} The latest connection; strings go to it. */
+	let latest
 
-	scope.onmessage = ({ data: [type, id, value, reason] }) => {
+	scope.onmessage = ({ data }) => {
+		if (typeof data === 'string') {
+			if (latest?.readyState === WebSocket.OPEN) latest.send(data)
+			return
+		}
+		const [type, id, value, reason] = data
 		if (type === 'connect') {
 			const ws = new WebSocket(value)
 			sockets.set(id, ws)
+			latest = ws
 			ws.onopen = () => scope.postMessage(['open', id])
 			ws.onclose = e => {
 				sockets.delete(id)
 				scope.postMessage(['close', id, e.code])
 			}
 			ws.onmessage = e =>
-				e.data === ''
-					? ws.send('')
-					: scope.postMessage(['message', id, e.data])
-		} else if (type === 'send') {
-			const ws = sockets.get(id)
-			if (ws?.readyState === WebSocket.OPEN) ws.send(value)
+				e.data === '' ? ws.send('') : scope.postMessage(e.data)
 		} else if (type === 'close') {
 			try {
 				sockets.get(id)?.close(value, reason)

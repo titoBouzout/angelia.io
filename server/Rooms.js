@@ -7,36 +7,16 @@ export class Rooms extends Emitter {
 
 		this.RoomClass = RoomClass
 		this.rooms = new Map()
+		/**
+		 * Every socket across every room, each once. Kept up to date by
+		 * `Room.join` / `Room.leave`, so reading it costs nothing.
+		 *
+		 * @type {Set<import('./Socket.js').Socket>}
+		 */
+		this.sockets = new Set()
 	}
 
-	/** Every socket across every room, each once. */
-	get sockets() {
-		const unique = new Set()
-		for (const room of this.rooms.values()) {
-			for (const s of room.sockets) unique.add(s)
-		}
-		return unique
-	}
-
-	/**
-	 * Fan out room by room instead of through `sockets`, so nothing is
-	 * allocated per call. A socket in several rooms is reached more than
-	 * once; the loop runs synchronously, so if `d` is already the last
-	 * message it queued, it got this one.
-	 */
-	broadcast(me, k, v) {
-		/** @type {[string, any]} */
-		const d = [k, v]
-		for (const room of this.rooms.values()) {
-			for (const socket of room.sockets) {
-				if (me != socket && socket.messages.at(-1) !== d) {
-					socket.emit(d)
-				}
-			}
-		}
-	}
-
-/** Array of every room in this list. */
+	/** Array of every room in this list. */
 	get list() {
 		return [...this.rooms.values()]
 	}

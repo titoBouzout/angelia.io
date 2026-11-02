@@ -26,22 +26,38 @@ export const isArray = Array.isArray
 
 export const empty = () => Object.create(null)
 
-/** Parse the query string of a URL into a plain params object. */
-export function params(url = '') {
+/**
+ * Parse the query string of a URL into a plain params object, leaving
+ * out the `exclude` param, whose value is returned alongside.
+ *
+ * @param {string} [url]
+ * @param {string} [exclude]
+ * @returns {[Record<string, string>, string | null]}
+ */
+export function params(url = '', exclude) {
 	const q = url.indexOf('?')
-	return q === -1
-		? {}
-		: Object.fromEntries(new URLSearchParams(url.slice(q + 1)))
+	if (q === -1) return [{}, null]
+	const query = new URLSearchParams(url.slice(q + 1))
+	let excluded = null
+	if (exclude !== undefined) {
+		excluded = query.get(exclude)
+		query.delete(exclude)
+	}
+	return [Object.fromEntries(query), excluded]
 }
 
 export const inspect = Symbol.for('nodejs.util.inspect.custom')
 
-/** Returns a function that, when called, invokes every fn pushed into its `.fns` array. */
+/**
+ * Returns a function that, when called, invokes every fn pushed into its
+ * `.fns` array. Fixed arity (every event and hook takes at most three
+ * arguments), so a call allocates no rest array.
+ */
 export function ListenerTemplate() {
 	const fns = []
-	function Listener(...args) {
+	function Listener(a, b, c) {
 		for (const fn of fns) {
-			fn(...args)
+			fn(a, b, c)
 		}
 	}
 

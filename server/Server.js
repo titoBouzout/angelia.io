@@ -104,6 +104,28 @@ const DEFAULT_WATCH_DEBOUNCE_MS = 1000
  * @typedef {UserHandlers & PredefinedServerHandlers} ServerListener
  */
 
+/**
+ * Add `handler` under `name`. A lone handler is stored as is, so a
+ * dispatch calls it directly; a second one switches to a fan-out. Also
+ * merges with a handler assigned straight to `events` / `hooks`.
+ *
+ * @param {Record<string, any>} registry
+ * @param {string} name
+ * @param {Function} handler
+ */
+function register(registry, name, handler) {
+	const existing = registry[name]
+	if (!existing) {
+		registry[name] = handler
+	} else if (existing.fns) {
+		existing.fns.push(handler)
+	} else {
+		const fanOut = ListenerTemplate()
+		fanOut.fns.push(existing, handler)
+		registry[name] = fanOut
+	}
+}
+
 /** @param {{ cert: string; privKey: string }} paths */
 const readCerts = ({ cert, privKey }) =>
 	Promise.all([readFile(cert, 'utf8'), readFile(privKey, 'utf8')])
@@ -438,8 +460,7 @@ export class Server extends Emitter {
 						? this.hooks
 						: this.events
 
-					registry[m] = registry[m] || ListenerTemplate()
-					registry[m].fns.push(method)
+					register(registry, m, method)
 				}
 			}
 		}

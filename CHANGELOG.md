@@ -27,7 +27,8 @@ changed: upgrade the client and the server together.
 - **`client.disconnect()` without `true` reconnects** afterwards; it
   used to stay disconnected. Pass `true` to stay closed.
 - **Reconnects drop queued messages** and reject pending reply
-  promises with `Error('reconnecting')`, instead of replaying them.
+  promises with `Error('reconnecting')` (`Error('disconnected')` after
+  `disconnect(true)`), instead of replaying them.
 - **`X-Forwarded-For` is only read with `trustProxy: true`.**
 - **`skipUTF8Validation` defaults to `true`.**
 - **Removed:** `once` / `broadcastOnce`, `connections` (use

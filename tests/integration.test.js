@@ -1530,6 +1530,16 @@ describe('integration: server emit with a callback', () => {
 		assert.equal(sock.callbacks.size, 0)
 	})
 
+	it('rejects at once when the socket is already closed', async () => {
+		const c = await bootClient(s.url)
+		await waitFor(() => s.server.sockets.size === 2)
+		const sock = [...s.server.sockets].at(-1)
+		c.close()
+		await waitFor(() => sock.closed)
+		await assert.rejects(sock.request('late', 1), /disconnected/)
+		assert.equal(sock.callbacks.size, 0)
+	})
+
 	it('rejects pending replies when the socket closes, without crashing callback-only callers', async () => {
 		const c = await bootClient(s.url)
 		await waitFor(() => s.server.sockets.size === 2)

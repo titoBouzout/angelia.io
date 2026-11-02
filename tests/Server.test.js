@@ -202,3 +202,31 @@ describe('Server.toJSON', () => {
 		assert.equal(typeof s.toJSON(), 'string')
 	})
 })
+
+describe('Server.on(Class) with handlers assigned directly', () => {
+	it('keeps a handler assigned to events and adds the class method next to it', () => {
+		const s = new Server()
+		const calls = []
+		s.events.typing = (_sock, v) => calls.push(['direct', v])
+		class Chat {
+			typing(_sock, v) {
+				calls.push(['class', v])
+			}
+		}
+		s.on(Chat)
+		s.events.typing(null, 1)
+		assert.deepEqual(calls, [
+			['direct', 1],
+			['class', 1],
+		])
+	})
+
+	it('calls a lone handler directly, with no fan-out wrapper', () => {
+		const s = new Server()
+		class Chat {
+			typing() {}
+		}
+		s.on(Chat)
+		assert.equal(s.events.typing.fns, undefined)
+	})
+})

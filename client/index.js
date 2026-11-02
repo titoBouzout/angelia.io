@@ -145,11 +145,6 @@ export default class Client {
 		let packed = []
 		if (this.#isReconnect) {
 			this.#messages = []
-			const error = new Error('reconnecting')
-			for (const pending of this.#callbacks.values()) {
-				pending.cancel(error)
-			}
-			this.#callbacks.clear()
 		} else {
 			packed = this.#pack(url)
 		}
@@ -183,10 +178,7 @@ export default class Client {
 					this.#messages = [...packed, ...this.#messages]
 					this.#packFailed = true
 				}
-				this.#handleClosed(
-					code,
-					openedAt === null ? 0 : Date.now() - openedAt,
-				)
+				this.#handleClosed(code, openedAt)
 			},
 			onerror: err => error('client', err),
 		})
@@ -195,10 +187,24 @@ export default class Client {
 
 	/**
 	 * @param {number} code Close code
-	 * @param {number} uptime How long the connection was open, in ms
+	 * @param {number | null} openedAt When the connection opened, if it did
 	 */
-	#handleClosed = (code, uptime) => {
+	#handleClosed(code, openedAt) {
 		this.#io = null
+		const uptime = openedAt === null ? 0 : Date.now() - openedAt
+		// A reply only travels on the connection that asked, and a reconnect
+		// drops the queue, so none can come now. A connection that never
+		// opened sent nothing: its messages and their callbacks wait for
+		// the next attempt, unless there won't be one.
+		if (this.#callbacks.size && (openedAt !== null || !this.#reconnect)) {
+			const error = new Error(
+				this.#reconnect ? 'reconnecting' : 'disconnected',
+			)
+			for (const pending of this.#callbacks.values()) {
+				pending.cancel(error)
+			}
+			this.#callbacks.clear()
+		}
 		if (this.#connected) {
 			this.#connected = false
 			this.#dispatch([['disconnect', undefined]])
@@ -239,7 +245,7 @@ export default class Client {
 	 * @param {string} [reason] Close reason sent to the server, up to 123
 	 *   bytes; longer throws a `RangeError` before anything closes.
 	 */
-	disconnect = (noReconnect, reason = 'client disconnect') => {
+	disconnect(noReconnect, reason = 'client disconnect') {
 		assertCloseReason(reason)
 		if (noReconnect) this.#reconnect = false
 		this.#io?.close(1000, reason)
@@ -248,7 +254,8 @@ export default class Client {
 	/**
 	 * Emit to the server. With a callback, returns a promise for the
 	 * callback's result, rejected with `Error('reconnecting')` if the
-	 * connection is replaced before the reply arrives.
+	 * connection drops before the reply arrives, or `Error('disconnected')`
+	 * after `disconnect(true)`.
 	 *
 	 * @template {EventKey<ServerEvents>} K
 	 * @overload

@@ -258,6 +258,11 @@ export class Socket {
 		// Callers that await it still get the rejection.
 		promise.catch(ignore)
 		const id = ++this.#lastCallbackId
+		// Already closed: `onclose` won't run again to settle it.
+		if (this.closed) {
+			reject(new Error('disconnected'))
+			return [id, promise]
+		}
 		this.callbacks.set(id, {
 			fire: args => resolve(c(...args)),
 			cancel: reject,

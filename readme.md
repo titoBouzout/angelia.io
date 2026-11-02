@@ -286,7 +286,7 @@ The client API is similar to regular event handling
 | `connect()`                    | Function | connects to the server, it auto-connects on disconnection                                                                                                  |
 | `disconnect([noReconnect, reason])` | Function | disconnects from the server, pass `true` to prevent re-connections; `reason` (up to 123 bytes) is sent to the server                                  |
 | `on(key, callback, [{ signal }])` | Function | listens for an event, returns an `off` function to stop listening; aborting `signal` does the same                                                   |
-| `emit(key, [value, callback])` | Function | emits data to the server; with a callback, returns a promise for its result, rejected with `Error('reconnecting')` if the connection is replaced first   |
+| `emit(key, [value, callback])` | Function | emits data to the server; with a callback, returns a promise for its result, rejected with `Error('reconnecting')` if the connection drops first, or `Error('disconnected')` after `disconnect(true)` |
 | `request(key, [value])`        | Function | emits and returns a promise for the server's reply, rejected like `emit`'s                                                                                 |
 | `[Symbol.dispose]()`           | Function | `using client = new Client(…)` calls `disconnect(true)` when the scope ends                                                                                |
 
@@ -319,7 +319,9 @@ come back at once.
 
 On reconnect, any messages still queued for send are dropped, and
 pending reply promises (from `request`, or `emit` with a callback)
-reject with `Error('reconnecting')`.
+reject with `Error('reconnecting')` as soon as the connection drops;
+after `disconnect(true)` they reject with `Error('disconnected')`.
+Messages queued before the first connection opened wait for it.
 The library can't tell which queued messages are safe to replay (a
 typing indicator: yes; a "transfer $100": maybe not), so recovery is
 the application's responsibility — listen for the `reconnect` event

@@ -42,7 +42,7 @@ export class Emitter {
 		const d = [k, v]
 		for (const socket of this.sockets) {
 			if (me !== socket) {
-				socket.emit(d)
+				socket.queue(d)
 			}
 		}
 	}

@@ -145,6 +145,10 @@ export class Server extends Emitter {
 	#certWatchers = []
 	/** @type {NodeJS.Timeout | null} */
 	#certReloadTimer = null
+	/** @type {NodeJS.Timeout | undefined} */
+	#pingTimer
+	/** @type {NodeJS.Timeout | undefined} */
+	#nowTimer
 
 	/**
 	 * @internal Sockets with messages to send.
@@ -209,7 +213,7 @@ export class Server extends Emitter {
 		/**
 		 * Handlers for the events the server fires itself (`connect`, …).
 		 *
-		 * @type {{ [K in keyof PredefinedServerHandlers]?: any }}
+		 * @type {PredefinedServerHandlers}
 		 */
 		this.hooks = empty()
 
@@ -319,11 +323,11 @@ export class Server extends Emitter {
 		this.since = this.now
 
 		// `unref` so a stopped server doesn't hold the process alive.
-		this.pingTimer = setInterval(this.ping, this.timeout / 2)
-		this.pingTimer.unref()
+		this.#pingTimer = setInterval(this.ping, this.timeout / 2)
+		this.#pingTimer.unref()
 
-		this.nowTimer = setInterval(this.#updateNow, 500)
-		this.nowTimer.unref()
+		this.#nowTimer = setInterval(this.#updateNow, 500)
+		this.#nowTimer.unref()
 
 		console.log(
 			`[angelia.io] server listening on ${pems ? 'wss' : 'ws'}://${this.hostname}:${this.port}`,
@@ -579,7 +583,7 @@ export class Server extends Emitter {
 	// sweep manually; the rest is internal.
 
 	/**
-	 * Sockets silent for longer than this get pinged. The sweep runs every
+	 * @internal Sockets silent for longer than this get pinged. The sweep runs every
 	 * `timeout / 2`; the margin makes sure a socket seen just after one
 	 * sweep is still pinged before the next one times it out.
 	 */
@@ -591,6 +595,7 @@ export class Server extends Emitter {
 		this.now = now()
 	}
 
+	/** @internal The heartbeat sweep; public so tests can run it. */
 	ping = () => {
 		this.#updateNow()
 		const check = this.timeoutCheck
@@ -641,8 +646,8 @@ export class Server extends Emitter {
 		const io = this.io
 
 		this.#stopCertWatcher()
-		clearInterval(this.pingTimer)
-		clearInterval(this.nowTimer)
+		clearInterval(this.#pingTimer)
+		clearInterval(this.#nowTimer)
 		this.io = null
 		this.httpServer = null
 		this.#listenOptions = null
@@ -668,7 +673,13 @@ export class Server extends Emitter {
 		return '[content of server object omitted for toJSON]'
 	}
 
-	/** `console.log(Server)` shows its state and counters, not every socket. */
+	/**
+	 * `console.log(Server)` shows its state and counters, not every socket.
+	 *
+	 * @param {number} _depth
+	 * @param {import('node:util').InspectOptionsStylized} options
+	 * @param {typeof import('node:util').inspect} inspectValue
+	 */
 	[inspect](_depth, options, inspectValue) {
 		const scheme = this.#listenOptions?.cert ? 'wss' : 'ws'
 		const summary = {

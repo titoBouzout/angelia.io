@@ -111,7 +111,7 @@ describe('Server.on(Class)', () => {
 		}
 		s.on(A)
 		s.on(B)
-		s.hooks.ping()
+		s.hooks.ping?.(/** @type {any} */ ({}))
 		assert.deepEqual(calls, ['a', 'b'])
 	})
 })

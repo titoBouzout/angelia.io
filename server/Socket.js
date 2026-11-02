@@ -35,6 +35,9 @@ export class Socket {
 	/** Last callback id handed out; ids start at 1, as 0 means "none". */
 	#lastCallbackId = 0
 
+	/** @internal When the last ping was sent, to time the pong. */
+	contacted = 0
+
 	/**
 	 * @internal Messages waiting for the next batch.
 	 * @type {any[]}
@@ -90,11 +93,6 @@ export class Socket {
 	 * promise for the callback's result, rejected if the socket closes
 	 * before the client replies.
 	 *
-	 * @overload
-	 * @param {[string, any]} message A tuple built once by a fan-out
-	 * @returns {void}
-	 */
-	/**
 	 * @template {EventKey<ClientEvents>} K
 	 * @overload
 	 * @param {K} k
@@ -125,20 +123,29 @@ export class Socket {
 	 * @returns {Promise<any> | void}
 	 */
 	emit(k, v, cb) {
-		if (!this.messages.length) {
-			this.server.nextQueue(this)
-		}
 		if (cb) {
 			const [id, promise] = this.callback(cb)
-			this.messages.push([k, v, id])
+			this.queue([k, v, id])
 			return promise
 		}
 		if (typeof v === 'function') {
 			const [id, promise] = this.callback(v)
-			this.messages.push([k, 0, id])
+			this.queue([k, 0, id])
 			return promise
 		}
-		this.messages.push(typeof k === 'object' ? k : [k, v])
+		this.queue([k, v])
+	}
+
+	/**
+	 * @internal Queue a wire tuple; fan-outs pass one tuple to every
+	 * recipient so `Server.cacheMessages` encodes it once.
+	 * @param {any[]} message
+	 */
+	queue(message) {
+		if (!this.messages.length) {
+			this.server.nextQueue(this)
+		}
+		this.messages.push(message)
 	}
 
 	/**

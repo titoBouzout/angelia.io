@@ -359,7 +359,7 @@ export default class Client {
 	 * @param {ClientPredefinedEvent} key
 	 * @param {() => void} value
 	 * @param {ListenOptions} [options]
-	 * @returns {(() => void) | undefined}
+	 * @returns {() => void}
 	 */
 	/**
 	 * Listen for a server event. Returns a function that stops
@@ -373,18 +373,18 @@ export default class Client {
 	 * 	reply?: (v: EventValue<ClientReplies, K>) => void,
 	 * ) => void} value
 	 * @param {ListenOptions} [options]
-	 * @returns {(() => void) | undefined}
+	 * @returns {() => void}
 	 */
 	/**
 	 * @param {string} key
 	 * @param {Function} value
 	 * @param {ListenOptions} [options]
-	 * @returns {(() => void) | undefined}
+	 * @returns {() => void}
 	 */
 	on(key, value, options) {
 		if (key === PROTOCOL_KEY) {
 			error(`${EMPTY_KEY}; this listener was not added.`)
-			return
+			return noop
 		}
 		const signal = options?.signal
 		if (signal?.aborted) return noop

@@ -307,17 +307,26 @@ export class Socket {
 		return '[content of socket object omitted for toJSON]'
 	}
 
-	[inspect]() {
-		return {
-			...this,
-			server: 'omitted',
-			io: 'omitted',
-
-			messages: 'omitted',
-			callbacks: 'omitted',
-
-			readyState: this.io.readyState,
+	/** `console.log(socket)` shows who it is and how it's doing, not internals. */
+	[inspect](_depth, options, inspectValue) {
+		const summary = {
+			ip: this.ip,
+			userAgent: this.userAgent,
+			params: this.params,
+			closed: this.closed,
+			timedout: this.timedout,
+			ping: this.ping,
+			since: this.since,
+			seen: this.seen,
+			rooms: [...this.rooms].map(room => room.id),
+			queued: this.messages.length,
+			pendingReplies: this.callbacks.size,
+			bytesSent: this.bytesSent,
+			bytesReceived: this.bytesReceived,
+			messagesSent: this.messagesSent,
+			messagesReceived: this.messagesReceived,
 		}
+		return `Socket ${inspectValue(summary, options)}`
 	}
 }
 

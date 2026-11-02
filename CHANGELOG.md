@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 5.0.0
 
 Changes since 4.0.91, the last published version. The wire protocol
 changed: upgrade the client and the server together.
@@ -49,6 +49,8 @@ changed: upgrade the client and the server together.
 
 ### Changed
 
+- `console.log` of the server or a socket prints a summary of its state
+  and counters instead of its internals.
 - Reconnect timing: at once when a connection that was up drops; after
   a random 2–4s delay when an attempt fails or a connection drops right
   after opening.

@@ -5,6 +5,7 @@
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
+import { inspect } from 'node:util'
 import { execFileSync } from 'node:child_process'
 import {
 	mkdtempSync,
@@ -1620,6 +1621,36 @@ describe('integration: path and port options', () => {
 			const c = await bootClient(s.url)
 			c.close()
 		} finally {
+			await s.stop()
+		}
+	})
+})
+
+describe('integration: console.log of Server and Socket', () => {
+	it('shows a summary, not internals', async () => {
+		const s = await bootServer()
+		const rooms = new Rooms(Room)
+		s.server.hooks.connect = sock => rooms.join(sock, 'lobby')
+		const client = await bootClient(`${s.url}?user=tito`)
+		try {
+			await waitFor(() => s.server.sockets.size === 1)
+			const [sock] = s.server.sockets
+
+			const socketText = inspect(sock)
+			assert.match(socketText, /^Socket \{/)
+			assert.match(socketText, /ip: '127\.0\.0\.1'/)
+			assert.match(socketText, /user: 'tito'/)
+			assert.match(socketText, /rooms: \[ 'lobby' \]/)
+			assert.doesNotMatch(socketText, /_sender|WebSocketServer|cacheSymbol/)
+
+			const serverText = inspect(s.server)
+			assert.match(serverText, /^Server \{/)
+			assert.match(serverText, new RegExp(`url: 'ws://127\\.0\\.0\\.1:${s.port}/angelia'`))
+			assert.match(serverText, /sockets: 1/)
+			assert.match(serverText, /hooks: \[ 'connect' \]/)
+			assert.doesNotMatch(serverText, /Socket \{|_sender|IncomingMessage/)
+		} finally {
+			client.close()
 			await s.stop()
 		}
 	})

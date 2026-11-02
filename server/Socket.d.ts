@@ -99,5 +99,10 @@ export class Socket {
 	write(chunks: Buffer[]): void
 
 	toJSON(): string
-	[inspect](): any
+	/** Summary for `console.log`, without internals. */
+	[inspect](
+		depth: number,
+		options: import('node:util').InspectOptionsStylized,
+		inspect: typeof import('node:util').inspect,
+	): string
 }

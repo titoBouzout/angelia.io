@@ -1,6 +1,7 @@
 import {
 	empty,
 	frame,
+	inspect,
 	isArray,
 	ListenerTemplate,
 	now,
@@ -507,5 +508,29 @@ export default new (class Server extends Emitter {
 
 	toJSON() {
 		return '[content of server object omitted for toJSON]'
+	}
+
+	/** `console.log(Server)` shows its state and counters, not every socket. */
+	[inspect](_depth, options, inspectValue) {
+		const scheme = this.#listenOptions?.cert ? 'wss' : 'ws'
+		const summary = {
+			listening: this.io !== null,
+			url: `${scheme}://${this.hostname}:${this.port}${this.path}`,
+			sockets: this.sockets.size,
+			served: this.served,
+			since: this.since,
+			timeout: this.timeout,
+			bytesSent: this.bytesSent,
+			bytesReceived: this.bytesReceived,
+			messagesSent: this.messagesSent,
+			messagesReceived: this.messagesReceived,
+			messagesSentCacheHit: this.messagesSentCacheHit,
+			messagesGarbage: this.messagesGarbage,
+			serverErrors: this.serverErrors,
+			socketErrors: this.socketErrors,
+			events: Object.keys(this.events),
+			hooks: Object.keys(this.hooks),
+		}
+		return `Server ${inspectValue(summary, options)}`
 	}
 })()

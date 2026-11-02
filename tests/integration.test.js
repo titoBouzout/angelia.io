@@ -1058,6 +1058,37 @@ describe('integration: hooks.ping', () => {
 	})
 })
 
+describe('integration: heartbeat skips active sockets', () => {
+	it('pings only sockets that have been silent past timeoutCheck', async () => {
+		const s = await bootServer()
+		try {
+			const active = await bootClient(s.url)
+			const idle = await bootClient(s.url)
+			await waitFor(() => s.server.sockets.size === 2)
+			// Let the one-off connect ping (sent after 200ms) go by.
+			await waitFor(() => active.counters.pings === 1 && idle.counters.pings === 1)
+
+			const [first, second] = s.server.sockets
+			// Whichever socket belongs to `idle` goes quiet; `active` keeps talking.
+			s.server.events.chat = () => {}
+			active.send([['chat', 'still here']])
+			await waitFor(() => first.messagesReceived + second.messagesReceived === 1)
+			const quiet = first.messagesReceived ? second : first
+			quiet.seen = s.server.now - s.server.timeoutCheck - 100
+
+			s.server.ping()
+			await waitFor(() => idle.counters.pings === 2)
+			await new Promise(r => setTimeout(r, 50))
+			assert.equal(idle.counters.pings, 2, 'the silent socket is pinged')
+			assert.equal(active.counters.pings, 1, 'the active socket is not')
+			active.close()
+			idle.close()
+		} finally {
+			await s.stop()
+		}
+	})
+})
+
 describe('integration: hooks.timeout', () => {
 	let s, client
 

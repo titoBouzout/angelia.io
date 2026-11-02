@@ -125,7 +125,7 @@ games.emit('gotIt', 'hi')
 games.broadcast(socket, 'gotIt', 'hi')
 const got = games.get('r1') // GameRoom | undefined
 if (got) got.score = 1
-const list: GameRoom[] = games.list
+const list: Map<any, GameRoom> = games.rooms
 void list
 const all: Set<Socket> = games.sockets
 void all

@@ -139,47 +139,17 @@ describe('Rooms.sockets', () => {
 	})
 })
 
-describe('Rooms.list / toJSON', () => {
-	it('list returns an Array of every room', () => {
+describe('Rooms.toJSON', () => {
+	it('returns an array of the rooms', () => {
 		const list = new Rooms(Room)
 		list.join(fakeSocket('a'), 'r1')
 		list.join(fakeSocket('b'), 'r2')
-		const arr = list.list
-		assert.ok(Array.isArray(arr))
-		assert.equal(arr.length, 2)
-		assert.deepEqual(
-			arr.map(r => r.id).sort(),
-			['r1', 'r2'],
-		)
-	})
-
-	it('list supports native array methods (map, filter)', () => {
-		const list = new Rooms(Room)
-		list.join(fakeSocket('a'), 'r1')
-		list.join(fakeSocket('b'), 'r1')
-		list.join(fakeSocket('c'), 'r2')
-		const big = list.list.filter(r => r.sockets.size > 1)
-		assert.equal(big.length, 1)
-		assert.equal(big[0].id, 'r1')
-	})
-
-	it('list is recomputed on each access (not cached)', () => {
-		const list = new Rooms(Room)
-		list.join(fakeSocket('a'), 'r1')
-		const first = list.list
-		list.join(fakeSocket('b'), 'r2')
-		const second = list.list
-		assert.notEqual(first, second)
-		assert.equal(first.length, 1)
-		assert.equal(second.length, 2)
-	})
-
-	it('toJSON returns the rooms array', () => {
-		const list = new Rooms(Room)
-		list.join(fakeSocket('a'), 'r1')
 		const json = list.toJSON()
 		assert.ok(Array.isArray(json))
-		assert.equal(json[0].id, 'r1')
+		assert.deepEqual(
+			json.map(r => r.id),
+			['r1', 'r2'],
+		)
 	})
 })
 

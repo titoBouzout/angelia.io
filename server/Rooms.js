@@ -16,11 +16,6 @@ export class Rooms extends Emitter {
 		this.sockets = new Set()
 	}
 
-	/** Array of every room in this list. */
-	get list() {
-		return [...this.rooms.values()]
-	}
-
 	get(id) {
 		return this.rooms.get(id)
 	}
@@ -52,6 +47,6 @@ export class Rooms extends Emitter {
 	}
 
 	toJSON() {
-		return this.list
+		return [...this.rooms.values()]
 	}
 }

@@ -28,8 +28,9 @@ changed: upgrade the client and the server together.
   promises with `Error('reconnecting')`, instead of replaying them.
 - **`X-Forwarded-For` is only read with `trustProxy: true`.**
 - **`skipUTF8Validation` defaults to `true`.**
-- **Removed:** `once` / `broadcastOnce`, `connections`, `Rooms.map` /
-  `Rooms.filter`, `maxPostSize`, and the client's `decode()` with its
+- **Removed:** `once` / `broadcastOnce`, `connections` (use
+  `sockets.size`), `Rooms.map` / `Rooms.filter` / `Rooms.list` (use the
+  `Rooms.rooms` Map), `maxPostSize`, and the client's `decode()` with its
   Blob / ArrayBuffer encoding. Binary support is being redesigned.
 - **`Rooms.sockets` is a `Set`**, like `Server.sockets`,
   `Room.sockets` and `socket.rooms`, and lists each socket once.

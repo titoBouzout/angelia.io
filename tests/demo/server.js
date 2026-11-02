@@ -166,7 +166,7 @@ class Admin {
 				messagesReceived: socket.messagesReceived,
 				rooms: [...socket.rooms].map(r => r.id),
 			},
-			rooms: rooms.list.map(r => ({
+			rooms: [...rooms.rooms.values()].map(r => ({
 				id: r.id,
 				sockets: r.sockets.size,
 				persistent: r.persistent,

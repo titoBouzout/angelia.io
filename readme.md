@@ -379,7 +379,7 @@ Server.listen()
 | `join(socket, [id])`                  | method | adds socket to room `id`                       |
 | `leave(socket, [id])`                 | method | removes socket from room `id`                  |
 | `sockets`                             | Set    | sockets across every room in this list, each once |
-| `list`                                | Array  | every room in this room list                   |
+| `rooms`                               | Map    | every room in this list, by id                 |
 | `emit(key, [value])`                  | method | emits to all sockets in this room list         |
 | `broadcast(socket, key, [value])`     | method | emits to other sockets in this room list       |
 

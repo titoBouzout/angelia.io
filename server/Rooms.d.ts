@@ -10,7 +10,6 @@ export class Rooms<R extends Room = Room> extends Emitter {
 
 	/** Every socket across every room, each once; kept up to date. */
 	readonly sockets: Set<Socket>
-	get list(): R[]
 
 	get(id: any): R | undefined
 	join(socket: Socket, id?: any): void

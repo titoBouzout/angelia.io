@@ -777,7 +777,7 @@ describe('integration: Rooms.join / Room.emit', () => {
 			const lobby = rooms.get('lobby')
 			const other = rooms.get('other')
 			assert.ok(lobby && other)
-			assert.equal(rooms.list.length, 2)
+			assert.equal(rooms.rooms.size, 2)
 			assert.equal(lobby.sockets.size, 2)
 			assert.equal(other.sockets.size, 1)
 			assert.equal(created.length, 2)
@@ -935,7 +935,7 @@ describe('integration: Rooms fan-out with a socket in several rooms', () => {
 			rooms.join(sock, 'two')
 		}
 		a = await bootClient(s.url)
-		await waitFor(() => rooms.list.length === 2)
+		await waitFor(() => rooms.rooms.size === 2)
 		assert.equal(rooms.sockets.size, 1)
 
 		rooms.emit('news', 1)
@@ -1189,7 +1189,7 @@ describe('integration: Rooms.emit / Rooms.broadcast', () => {
 	it('Rooms.emit fans out to every member across every room', async () => {
 		a = await bootClient(`${s.baseUrl}/angelia?r=r1`)
 		b = await bootClient(`${s.baseUrl}/angelia?r=r2`)
-		await waitFor(() => rooms.list.length === 2)
+		await waitFor(() => rooms.rooms.size === 2)
 
 		rooms.emit('all', 1)
 		const [la, lb] = await Promise.all([

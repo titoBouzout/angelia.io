@@ -41,7 +41,7 @@ export class Emitter {
 		/** @type {[string, any]} */
 		const d = [k, v]
 		for (const socket of this.sockets) {
-			if (me != socket) {
+			if (me !== socket) {
 				socket.emit(d)
 			}
 		}

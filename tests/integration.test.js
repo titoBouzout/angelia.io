@@ -1089,6 +1089,22 @@ describe('integration: heartbeat skips active sockets', () => {
 	})
 })
 
+describe('integration: stop()', () => {
+	it('drops every socket before resolving', async () => {
+		const s = await bootServer()
+		const closes = []
+		s.server.hooks.disconnect = (_sock, code) => closes.push(code)
+		const a = await bootClient(s.url)
+		const b = await bootClient(s.url)
+		await waitFor(() => s.server.sockets.size === 2)
+		await s.stop()
+		assert.equal(s.server.sockets.size, 0)
+		assert.deepEqual(closes, [1006, 1006])
+		void a
+		void b
+	})
+})
+
 describe('integration: hooks.timeout', () => {
 	let s, client
 
@@ -1117,6 +1133,9 @@ describe('integration: hooks.timeout', () => {
 		assert.equal(fired[0][0], sock)
 		assert.ok(fired[0][1] > s.server.timeout)
 		assert.equal(sock.timedout, true)
+		// Cleaned up at once, not when the close event arrives.
+		assert.equal(sock.closed, true)
+		assert.equal(s.server.sockets.size, 0)
 	})
 })
 

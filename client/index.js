@@ -194,23 +194,15 @@ export default class Client {
 		const uptime = openedAt === null ? 0 : Date.now() - openedAt
 		// A reply only travels on the connection that asked, and a reconnect
 		// drops the queue, so none can come now. A connection that never
-		// opened sent nothing: its messages and their callbacks wait for
-		// the next attempt, unless there won't be one.
-		if (this.#callbacks.size && (openedAt !== null || !this.#reconnect)) {
-			const error = new Error(
-				this.#reconnect ? 'reconnecting' : 'disconnected',
-			)
-			for (const pending of this.#callbacks.values()) {
-				pending.cancel(error)
-			}
-			this.#callbacks.clear()
-		}
+		// opened sent nothing: its messages and callbacks wait for the next
+		// attempt.
+		if (openedAt !== null && this.#reconnect) this.#cancelPending('reconnecting')
 		if (this.#connected) {
 			this.#connected = false
 			this.#dispatch([['disconnect', undefined]])
 		}
 		if (!this.#reconnect) {
-			this.#transport.terminate()
+			this.#shutdown()
 		} else if (code === GOING_AWAY) {
 			return
 		} else if (uptime >= RETRY_MIN_MS) {
@@ -248,7 +240,9 @@ export default class Client {
 	disconnect(noReconnect, reason = 'client disconnect') {
 		assertCloseReason(reason)
 		if (noReconnect) this.#reconnect = false
-		this.#io?.close(1000, reason)
+		if (this.#io) this.#io.close(1000, reason)
+		// Between retries there's no connection whose close would clean up.
+		else if (noReconnect) this.#shutdown()
 	}
 
 	/**
@@ -437,8 +431,25 @@ export default class Client {
 		return messages.slice(0, parts.length)
 	}
 
+	/** After `disconnect(true)`: nothing will be sent or answered again. */
+	#shutdown() {
+		this.#transport.terminate()
+		this.#messages = []
+		this.#cancelPending('disconnected')
+	}
+
+	/** @param {string} message */
+	#cancelPending(message) {
+		if (!this.#callbacks.size) return
+		const error = new Error(message)
+		for (const pending of this.#callbacks.values()) pending.cancel(error)
+		this.#callbacks.clear()
+	}
+
 	/** Push a message, scheduling a flush when the queue was empty. */
 	#queue(message) {
+		// After `disconnect(true)` nothing will be sent (replies included).
+		if (!this.#reconnect) return
 		if (!this.#messages.length) queueMicrotask(this.#flushSoon)
 		this.#messages.push(message)
 	}

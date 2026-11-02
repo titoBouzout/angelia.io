@@ -653,6 +653,25 @@ for (const browserType of [chromium, firefox]) {
 				}
 			})
 
+			it('disconnect(true) between retries settles what was waiting', async () => {
+				const port = await freePort()
+				const page = await open(`ws://127.0.0.1:${port}`)
+				try {
+					const message = await page.evaluate(async () => {
+						const pending = window.client
+							.request('never', 1)
+							.catch(err => err.message)
+						// Nothing listens: the first attempt fails, a retry is scheduled.
+						await new Promise(r => setTimeout(r, 300))
+						window.client.disconnect(true)
+						return pending
+					})
+					assert.equal(message, 'disconnected')
+				} finally {
+					await page.close()
+				}
+			})
+
 			it('emits after disconnect(true) are dropped; replies reject', async () => {
 				const s = await bootServer()
 				const seen = []

@@ -34,6 +34,10 @@ import { WebSocketServer } from 'ws'
 // The heartbeat is a constant empty message — frame once, reuse forever.
 const PING = frame('')
 
+// Close code for a connection that ended without a close frame, which is
+// what `terminate()` does.
+const ABNORMAL_CLOSURE = 1006
+
 // Let's Encrypt writes the cert and key in quick succession; coalescing
 // avoids two reloads back-to-back.
 const DEFAULT_WATCH_DEBOUNCE_MS = 1000
@@ -281,7 +285,6 @@ export class Server extends Emitter {
 			perMessageDeflate: false,
 			clientTracking: false,
 			maxPayload: this.maxMessageSize * 1024 * 1024,
-			backlog: 1024,
 			// Invalid UTF-8 only decodes to U+FFFD, and browsers never send
 			// it, so validating every frame is wasted work by default.
 			skipUTF8Validation: options.skipUTF8Validation ?? true,
@@ -292,7 +295,9 @@ export class Server extends Emitter {
 		try {
 			await new Promise((resolve, reject) => {
 				httpServer.once('error', reject)
-				httpServer.listen(this.port, this.hostname, () => {
+				// A deeper accept queue than Node's default absorbs reconnect storms.
+				const listening = { port: this.port, host: this.hostname, backlog: 1024 }
+				httpServer.listen(listening, () => {
 					httpServer.off('error', reject)
 					resolve(undefined)
 				})
@@ -591,6 +596,8 @@ export class Server extends Emitter {
 				socket.timedout = true
 				this.hooks.timeout?.(socket, delay)
 				socket.io.terminate()
+				// Clean up now, as `disconnect()` does, not on the close event.
+				socket.onclose(ABNORMAL_CLOSURE, '')
 			} else if (delay > check) {
 				// `now` was just updated for the whole sweep.
 				socket.contacted = this.now
@@ -639,6 +646,7 @@ export class Server extends Emitter {
 
 		for (const socket of this.sockets) {
 			socket.io.terminate()
+			socket.onclose(ABNORMAL_CLOSURE, '')
 		}
 		io.close()
 		await new Promise((resolve, reject) => {

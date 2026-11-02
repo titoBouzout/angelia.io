@@ -157,7 +157,7 @@ The `socket` object is given to you by a listener
 | `messagesSent`                 | Number   | count of messages sent to this socket                                                                                                                                                                                             |
 | `messagesReceived`             | Number   | count of messages received from this socket                                                                                                                                                                                       |
 | `rooms`                        | Set      | the rooms this socket is in                                                                                                                                                                                                       |
-| `request(key, [value])`        | Function | emits and returns a promise for the client's reply, rejected with an Error whose message starts with `disconnected:` if the socket closes first |
+| `request(key, [value])`        | Function | emits and returns a promise for the client's reply, rejected with an Error whose message starts with `disconnected:` if the socket closes first; without a value the listener gets `null` |
 | `emit(key, [value, callback])` | Function | emits to client; with a callback, returns a promise for its result, rejected with an Error whose message starts with `disconnected:` if the socket closes first                                                                                                                                                                                                              |
 | `disconnect([noReconnect, reason])` | Function | closes the WebSocket, pass `true` to prevent re-connections; `reason` (up to 123 bytes) is sent to the client                                                                                                              |
 
@@ -288,7 +288,7 @@ The client API is similar to regular event handling
 | `disconnect([noReconnect, reason])` | Function | disconnects from the server, pass `true` to prevent re-connections; `reason` (up to 123 bytes) is sent to the server                                  |
 | `on(key, callback, [{ signal }])` | Function | listens for an event, returns an `off` function to stop listening; aborting `signal` does the same                                                   |
 | `emit(key, [value, callback])` | Function | emits data to the server; with a callback, returns a promise for its result, rejected with an Error whose message starts with `reconnecting:` if the connection drops first, or an Error whose message starts with `disconnected:` after `disconnect(true)` |
-| `request(key, [value])`        | Function | emits and returns a promise for the server's reply, rejected like `emit`'s                                                                                 |
+| `request(key, [value])`        | Function | emits and returns a promise for the server's reply, rejected like `emit`'s; without a value the handler gets `null`                                       |
 | `[Symbol.dispose]()`           | Function | `using client = new Client(…)` calls `disconnect(true)` when the scope ends                                                                                |
 
 #### List of Predefined `Client` Events

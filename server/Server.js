@@ -3,7 +3,7 @@ import {
 	frame,
 	inspect,
 	isArray,
-	ListenerTemplate,
+	createFanOut,
 	now,
 	params,
 	stringify,
@@ -124,7 +124,7 @@ function register(registry, name, handler) {
 	} else if (existing.fns) {
 		existing.fns.push(handler)
 	} else {
-		const fanOut = ListenerTemplate()
+		const fanOut = createFanOut()
 		fanOut.fns.push(existing, handler)
 		registry[name] = fanOut
 	}

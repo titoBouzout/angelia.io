@@ -50,11 +50,11 @@ export function params(url = '', exclude) {
 export const inspect = Symbol.for('nodejs.util.inspect.custom')
 
 /**
- * Returns a function that, when called, invokes every fn pushed into its
- * `.fns` array. Fixed arity (every event and hook takes at most three
+ * A function that calls every handler pushed into its `.fns` array, for
+ * an event with more than one handler. Fixed arity (every event and hook takes at most three
  * arguments), so a call allocates no rest array.
  */
-export function ListenerTemplate() {
+export function createFanOut() {
 	const fns = []
 	function Listener(a, b, c) {
 		for (const fn of fns) {

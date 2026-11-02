@@ -4,22 +4,22 @@ import assert from 'node:assert/strict'
 import {
 	empty,
 	isArray,
-	ListenerTemplate,
+	createFanOut,
 	params,
 	parse,
 	stringify,
 } from '../server/utils.js'
 
-describe('utils.ListenerTemplate', () => {
+describe('utils.createFanOut', () => {
 	it('returns a function whose .fns is the registry', () => {
-		const l = ListenerTemplate()
+		const l = createFanOut()
 		assert.equal(typeof l, 'function')
 		assert.ok(Array.isArray(l.fns))
 		assert.equal(l.fns.length, 0)
 	})
 
 	it('invokes every registered fn with the same three args', () => {
-		const l = ListenerTemplate()
+		const l = createFanOut()
 		const calls = []
 		l.fns.push((a, b, c) => calls.push(['a', a, b, c]))
 		l.fns.push((a, b, c) => calls.push(['b', a, b, c]))
@@ -31,7 +31,7 @@ describe('utils.ListenerTemplate', () => {
 	})
 
 	it('does nothing when no fns are registered', () => {
-		const l = ListenerTemplate()
+		const l = createFanOut()
 		assert.doesNotThrow(() => l('anything'))
 	})
 })

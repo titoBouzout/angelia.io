@@ -41,7 +41,7 @@ export class Rooms extends Emitter {
 	 * @param {Socket} socket
 	 * @param {any} [id]
 	 */
-	join(socket, id = undefined) {
+	join(socket, id) {
 		// Don't create a room for a socket `Room.join` would turn away.
 		if (socket.closed) return
 		let room = this.rooms.get(id)
@@ -63,7 +63,7 @@ export class Rooms extends Emitter {
 	 * @param {Socket} socket
 	 * @param {any} [id]
 	 */
-	leave(socket, id = undefined) {
+	leave(socket, id) {
 		const room = this.rooms.get(id)
 		if (room) {
 			room.leave(socket)

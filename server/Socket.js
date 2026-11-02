@@ -104,14 +104,6 @@ export class Socket {
 	 * @template R
 	 * @overload
 	 * @param {K} k
-	 * @param {(reply: EventValue<ClientReplies, K>) => R} callback
-	 * @returns {Promise<R>}
-	 */
-	/**
-	 * @template {EventKey<ClientEvents>} K
-	 * @template R
-	 * @overload
-	 * @param {K} k
 	 * @param {EventValue<ClientEvents, K>} v
 	 * @param {(reply: EventValue<ClientReplies, K>) => R} callback
 	 * @returns {Promise<R>}
@@ -126,11 +118,6 @@ export class Socket {
 		if (cb) {
 			const [id, promise] = this.callback(cb)
 			this.queue([k, v, id])
-			return promise
-		}
-		if (typeof v === 'function') {
-			const [id, promise] = this.callback(v)
-			this.queue([k, 0, id])
 			return promise
 		}
 		this.queue([k, v])

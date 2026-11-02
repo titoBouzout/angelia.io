@@ -276,55 +276,32 @@ export default class Client {
 	 * @template R
 	 * @overload
 	 * @param {K} key
-	 * @param {(reply: EventValue<ServerReplies, K>) => R} callback
-	 * @returns {Promise<R>}
-	 */
-	/**
-	 * @template {EventKey<ServerEvents>} K
-	 * @template R
-	 * @overload
-	 * @param {K} key
 	 * @param {EventValue<ServerEvents, K>} value
 	 * @param {(reply: EventValue<ServerReplies, K>) => R} callback
 	 * @returns {Promise<R>}
 	 */
 	/**
 	 * @param {any} key
-	 * @param {any} [valueOrCallback]
+	 * @param {any} [value]
 	 * @param {Function} [callback]
 	 * @returns {Promise<any> | undefined}
 	 */
-	emit(key, valueOrCallback, callback) {
+	emit(key, value, callback) {
 		if (key === PROTOCOL_KEY) {
 			error(`${EMPTY_KEY}; this message was not sent.`)
 			return
 		}
 		// After `disconnect(true)` nothing will be sent: don't queue it.
 		if (!this.#reconnect) {
-			return callback || isFunction(valueOrCallback)
-				? Promise.reject(new Error(DISCONNECTED))
-				: undefined
+			return callback ? Promise.reject(new Error(DISCONNECTED)) : undefined
 		}
 
-		let message
-		let promise
 		if (callback) {
-			const [i, p] = this.#callback(callback)
-			message = [key, valueOrCallback, i]
-			promise = p
-		} else if (isFunction(valueOrCallback)) {
-			const [i, p] = this.#callback(valueOrCallback)
-			message = [key, 0, i]
-			promise = p
-		} else if (valueOrCallback !== undefined) {
-			message = [key, valueOrCallback]
-		} else {
-			message = [key]
+			const [id, promise] = this.#callback(callback)
+			this.#queue([key, value, id])
+			return promise
 		}
-
-		this.#queue(message)
-
-		return promise
+		this.#queue(value === undefined ? [key] : [key, value])
 	}
 
 	/**

@@ -15,10 +15,10 @@ const ts = t => new Date(t).toLocaleTimeString()
 
 // ---------- chat ----------
 
-/** `client.emit` + reply. */
+/** `client.request` — emit and await the reply. */
 export const sendMessage = async text => {
 	if (!text) return
-	const at = await client.emit('msg', text, t => t)
+	const at = await client.request('msg', text)
 	append('ack', { text: `delivered ${ts(at)}` })
 }
 
@@ -34,10 +34,10 @@ export const whisper = text => {
 
 // ---------- fan-out ----------
 
-/** `client.emit` + reply — measure round-trip from click to reply. */
+/** `client.request` — measure round-trip from click to reply. */
 export const measureRtt = async () => {
 	const sent = Date.now()
-	await client.emit('rtt', null, t => t)
+	await client.request('rtt')
 	setRtt(Date.now() - sent)
 }
 
@@ -46,10 +46,10 @@ export const shout = () => {
 	client.emit('shout', `hello from ${name}`)
 }
 
-/** `client.emit` with a 64KB payload; server replies with byte count. */
+/** `client.request` with a 64KB payload; server replies with byte count. */
 export const sendBig = async () => {
 	const payload = 'X'.repeat(64 * 1024)
-	const len = await client.emit('big', payload, n => n)
+	const len = await client.request('big', payload)
 	append('ack', {
 		text: `server confirmed ${len.toLocaleString()} bytes`,
 	})
@@ -66,17 +66,17 @@ export const askPushMe = () => client.emit('pushme')
  */
 export const switchRoom = async target => {
 	if (!target) return
-	await client.emit('switch', target, r => r)
+	await client.request('switch', target)
 }
 
 // ---------- introspection ----------
 
 /**
- * `client.emit` + reply — server returns a snapshot of its own stats,
+ * `client.request` — server returns a snapshot of its own stats,
  * the requesting socket's stats, and the active room list.
  */
 export const fetchStats = async () => {
-	const data = await client.emit('stats', null, s => s)
+	const data = await client.request('stats')
 	setStats(data)
 }
 

@@ -352,7 +352,7 @@ for (const browserType of [chromium, firefox]) {
 				}
 			})
 
-			it('emit(k, v, fn) resolves with fn(reply); emit(k, fn) sends 0', async () => {
+			it('emit(k, v, fn) resolves with fn(reply)', async () => {
 				const s = await bootServer()
 				s.server.events.shout = (_sock, data, reply) => reply(data.toUpperCase())
 				s.server.events.echo = (_sock, data, reply) => reply(data)
@@ -360,10 +360,11 @@ for (const browserType of [chromium, firefox]) {
 				try {
 					const [length, echoed] = await page.evaluate(async () => [
 						await window.client.emit('shout', 'hello', r => r.length),
-						await window.client.emit('echo', r => r),
+						await window.client.emit('echo', undefined, r => r),
 					])
 					assert.equal(length, 5)
-					assert.equal(echoed, 0)
+					// No value: JSON sends `null` in its place.
+					assert.equal(echoed, null)
 				} finally {
 					await page.close()
 					await s.stop()

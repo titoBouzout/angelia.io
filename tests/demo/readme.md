@@ -16,8 +16,9 @@ one feature so it's easy to see what produces what on the wire.
 
 - `client.emit(k, v)` — send (the **send** button, plus **send 64KB**
   for a large payload)
-- `client.emit(k, v, cb)` — the reply-callback promise. Used for chat
-  ack, RTT measurement, and the big-payload size confirmation.
+- `client.request(k, v)` — emit and await the server's reply. Used for
+  chat ack, RTT measurement, stats, and the big-payload size
+  confirmation.
 
 **Fan-out**
 

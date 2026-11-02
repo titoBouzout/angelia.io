@@ -151,7 +151,6 @@ export class Server extends Emitter {
 		this.path = DEFAULT_PATH
 
 		this.timeout = DEFAULT_TIMEOUT_MS
-		this.timeoutCheck = DEFAULT_TIMEOUT_MS / 2
 
 		this.maxMessageSize = DEFAULT_MAX_MESSAGE_SIZE_MB
 
@@ -293,12 +292,8 @@ export class Server extends Emitter {
 		this.since = this.now
 
 		// `unref` so a stopped server doesn't hold the process alive.
-		// `timeoutCheck` is shortened so a socket seen just after a sweep
-		// still gets pinged before the following sweep times it out.
-		this.timeoutCheck = this.timeout / 2
-		this.pingTimer = setInterval(this.ping, this.timeoutCheck)
+		this.pingTimer = setInterval(this.ping, this.timeout / 2)
 		this.pingTimer.unref()
-		this.timeoutCheck -= 5000
 
 		this.nowTimer = setInterval(this.#updateNow, 500)
 		this.nowTimer.unref()
@@ -552,6 +547,15 @@ export class Server extends Emitter {
 	// ping. Only `ping` is public so tests can drive the heartbeat
 	// sweep manually; the rest is internal.
 
+	/**
+	 * Sockets silent for longer than this get pinged. The sweep runs every
+	 * `timeout / 2`; the margin makes sure a socket seen just after one
+	 * sweep is still pinged before the next one times it out.
+	 */
+	get timeoutCheck() {
+		return this.timeout / 2 - 5000
+	}
+
 	#updateNow = () => {
 		this.now = now()
 	}
@@ -592,12 +596,12 @@ export class Server extends Emitter {
 		this.hooks.ping?.(socket)
 	}
 
-	/** Stop listening. Drops existing connections and frees the port. */
 	/** `await using server = …` stops the server when the scope ends. */
 	[Symbol.asyncDispose]() {
 		return this.stop()
 	}
 
+	/** Stop listening. Drops existing connections and frees the port. */
 	async stop() {
 		const httpServer = this.httpServer
 		const io = this.io

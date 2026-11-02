@@ -23,21 +23,18 @@
  */
 
 /**
- * Data frames cross `postMessage` as bare strings, with no wrapper array
- * to allocate and clone; they always belong to the latest connection,
- * because the Client only opens one after the previous one closed.
- * Control messages are `[type, id, value]`.
+ * The Client only opens a connection after the previous one closed, so
+ * the worker holds at most one socket and no ids are needed. Data frames
+ * cross `postMessage` as bare strings; control messages are small
+ * `[type, value, reason]` arrays.
  *
  * @returns {Transport}
  */
 export function workerTransport() {
 	/** @type {Worker | null} */
 	let worker = null
-	let nextId = 0
-	/** @type {Map<number, SocketHandlers>} */
-	const connections = new Map()
-	/** @type {SocketHandlers | undefined} */
-	let latest
+	/** @type {SocketHandlers | null} The open connection's handlers. */
+	let current = null
 
 	const spawn = () => {
 		// Built from source so the package ships one file and works with
@@ -50,17 +47,17 @@ export function workerTransport() {
 		const spawned = new Worker(url)
 		URL.revokeObjectURL(url)
 		spawned.onmessage = ({ data }) => {
+			const handlers = current
+			if (!handlers) return
 			if (typeof data === 'string') {
-				latest?.onmessage(data)
+				handlers.onmessage(data)
 				return
 			}
-			const [type, id, value] = data
-			const handlers = connections.get(id)
-			if (!handlers) return
+			const [type, value] = data
 			if (type === 'open') handlers.onopen()
 			else if (type === 'error') handlers.onerror(value)
 			else if (type === 'close') {
-				connections.delete(id)
+				current = null
 				handlers.onclose(value)
 			}
 		}
@@ -70,21 +67,17 @@ export function workerTransport() {
 	return {
 		open(url, handlers) {
 			const live = (worker ??= spawn())
-			const id = ++nextId
-			connections.set(id, handlers)
-			latest = handlers
-			live.postMessage(['connect', id, url.toString()])
+			current = handlers
+			live.postMessage(['connect', url.toString()])
 			return {
 				send: text => live.postMessage(text),
-				close: (code, reason) =>
-					live.postMessage(['close', id, code, reason]),
+				close: (code, reason) => live.postMessage(['close', code, reason]),
 			}
 		},
 		terminate() {
 			worker?.terminate()
 			worker = null
-			connections.clear()
-			latest = undefined
+			current = null
 		},
 	}
 }
@@ -99,33 +92,30 @@ export function workerTransport() {
  * }} scope
  */
 function workerMain(scope) {
-	/** @type {Map<number, WebSocket>} */
-	const sockets = new Map()
-	/** @type {WebSocket | undefined} The latest connection; strings go to it. */
-	let latest
+	/** @type {WebSocket | null} */
+	let ws = null
 
 	scope.onmessage = ({ data }) => {
 		if (typeof data === 'string') {
-			if (latest?.readyState === WebSocket.OPEN) latest.send(data)
+			if (ws?.readyState === WebSocket.OPEN) ws.send(data)
 			return
 		}
-		const [type, id, value, reason] = data
+		const [type, value, reason] = data
 		if (type === 'connect') {
-			const ws = new WebSocket(value)
-			sockets.set(id, ws)
-			latest = ws
-			ws.onopen = () => scope.postMessage(['open', id])
-			ws.onclose = e => {
-				sockets.delete(id)
-				scope.postMessage(['close', id, e.code])
+			const socket = new WebSocket(value)
+			ws = socket
+			socket.onopen = () => scope.postMessage(['open'])
+			socket.onclose = e => {
+				if (ws === socket) ws = null
+				scope.postMessage(['close', e.code])
 			}
-			ws.onmessage = e =>
-				e.data === '' ? ws.send('') : scope.postMessage(e.data)
+			socket.onmessage = e =>
+				e.data === '' ? socket.send('') : scope.postMessage(e.data)
 		} else if (type === 'close') {
 			try {
-				sockets.get(id)?.close(value, reason)
+				ws?.close(value, reason)
 			} catch (err) {
-				scope.postMessage(['error', id, String(err)])
+				scope.postMessage(['error', String(err)])
 			}
 		}
 	}

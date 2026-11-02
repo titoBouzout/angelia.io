@@ -54,11 +54,10 @@ const socket = new Client({ url: 'ws://localhost:3001' })
 
 socket.emit('typing', true)
 
-setTimeout(() => {
+setTimeout(async () => {
 	socket.emit('typing', false)
-	socket.emit('theMessage', 'hi there!', data => {
-		console.log('yep', data)
-	})
+	const answer = await socket.request('theMessage', 'hi there!')
+	console.log('yep', answer)
 }, 5000)
 
 socket.on('gotIt', message => {
@@ -111,15 +110,16 @@ them with the exported class: `import { Server } from
 
 | signature                             | kind     | description                                                                            |
 | ------------------------------------- | -------- | -------------------------------------------------------------------------------------- |
-| `since`                               | Number   | timestamp of initialization                                                            |
+| `since`                               | Number   | timestamp of when the server started listening                                         |
 | `now`                                 | Number   | timestamp that updates every half a second                                             |
 | `port`                                | Number   | port used by this server                                                               |
-| `hostname`                            | String   | the hostname if any                                                                    |
+| `hostname`                            | String   | the interface the server listens on                                                    |
+| `path`                                | String   | the WebSocket path clients connect to                                                  |
 | `timeout`                             | Number   | after how long the socket is considered gone, in ms                                    |
 | `served`                              | Number   | count of sockets ever connected                                                        |
 | `bytesReceived`                       | Number   | sum of bytes the server has ever received                                              |
 | `bytesSent`                           | Number   | sum of bytes sent by the server                                                        |
-| `messagesGarbage`                     | Number   | count of messages without a listener                                                   |
+| `messagesGarbage`                     | Number   | count of messages without a listener, or malformed                                     |
 | `messagesReceived`                    | Number   | count of messages ever received                                                        |
 | `messagesSent`                        | Number   | count of messages ever sent                                                            |
 | `messagesSentCacheHit`                | Number   | count of messages ever sent that were cached                                           |
@@ -127,6 +127,7 @@ them with the exported class: `import { Server } from
 | `socketErrors`                        | Number   | count of socket errors                                                                 |
 | `events`                              | Object   | handlers for client messages, ex: server.events.typing() to dispatch typing to anyone listening to it |
 | `hooks`                               | Object   | handlers for the predefined server events below (`connect`, `disconnect`, …)            |
+| `listen([options])`                   | Function | starts listening (see the options above); returns a promise                           |
 | `on(Class)`                           | Function | attaches all methods of a `Class` as listeners                                         |
 | `emit(key, [value])`                  | Function | emits to all connected sockets                                                         |
 | `broadcast(sender, key, [value])`     | Function | emits to all connected sockets except sender                                           |
@@ -149,6 +150,7 @@ The `socket` object is given to you by a listener
 | `since`                        | Number   | timestamp of first seen                                                                                                                                                                                                           |
 | `seen`                         | Number   | timestamp of last received message                                                                                                                                                                                                |
 | `ping`                         | Number   | delay with the socket in milliseconds (full round trip)                                                                                                                                                                           |
+| `closed`                       | Boolean  | whether the socket has disconnected                                                                                                                                                                                               |
 | `timedout`                     | Boolean  | whether we lost connection with this socket                                                                                                                                                                                       |
 | `bytesSent`                    | Number   | sum of bytes sent to this socket                                                                                                                                                                                                  |
 | `bytesReceived`                | Number   | sum of bytes received from this socket                                                                                                                                                                                            |
@@ -231,12 +233,12 @@ the right one by name.
 
 | signature                    | description                                                                                                                                       |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `listen()`                   | when the server is about to listen                                                                                                                |
+| `listen()`                   | when the server has started listening                                                                                                             |
 | `connect(socket, request)`   | when a socket connects; `request` is `{ headers, url }` from the upgrade — read cookies / auth / custom headers here, it's not kept on the socket |
 | `disconnect(socket, code, reason)` | when a socket gets disconnected, with the WebSocket close code and reason (1006 and `''` when the connection just dropped)                                                                                                                |
 | `ping(socket)`               | when we got an update of the ping for a socket                                                                                                    |
 | `timeout(socket, delay)`     | when we are about to disconnect a timedout socket, gives the delay in milliseconds                                                                |
-| `garbage(socket, data)`      | if the client sends a message that the server has no listener this will be dispatched                                                             |
+| `garbage(socket, data)`      | when the client sends a message with no listener, a malformed one, or one named after a predefined event                                         |
 | `incoming(socket, messages)` | for debugging: ref to array of incoming messages received before dispatching to listeners                                                         |
 | `outgoing(socket, messages)` | for debugging: ref to array of outgoing messages before sending to socket                                                                         |
 
@@ -284,8 +286,8 @@ The client API is similar to regular event handling
 | `connect()`                    | Function | connects to the server, it auto-connects on disconnection                                                                                                  |
 | `disconnect([noReconnect, reason])` | Function | disconnects from the server, pass `true` to prevent re-connections; `reason` (up to 123 bytes) is sent to the server                                  |
 | `on(key, callback, [{ signal }])` | Function | listens for an event, returns an `off` function to stop listening; aborting `signal` does the same                                                   |
-| `emit(key, [value, callback])` | Function | emits data to the server; with a callback, returns a promise for its result                                                                                |
-| `request(key, [value])`        | Function | emits and returns a promise for the server's reply                                                                                                         |
+| `emit(key, [value, callback])` | Function | emits data to the server; with a callback, returns a promise for its result, rejected with `Error('reconnecting')` if the connection is replaced first   |
+| `request(key, [value])`        | Function | emits and returns a promise for the server's reply, rejected like `emit`'s                                                                                 |
 | `[Symbol.dispose]()`           | Function | `using client = new Client(…)` calls `disconnect(true)` when the scope ends                                                                                |
 
 #### List of Predefined `Client` Events
@@ -316,7 +318,8 @@ opened, are retried after a random 2–4s delay so clients don't all
 come back at once.
 
 On reconnect, any messages still queued for send are dropped, and
-pending `emit` reply promises reject with `Error('reconnecting')`.
+pending reply promises (from `request`, or `emit` with a callback)
+reject with `Error('reconnecting')`.
 The library can't tell which queued messages are safe to replay (a
 typing indicator: yes; a "transfer $100": maybe not), so recovery is
 the application's responsibility — listen for the `reconnect` event
@@ -333,7 +336,7 @@ and re-send whatever your protocol needs.
    when there are no sockets in the room and the room doesn't have the
    flag `persistent`
 4. A socket will leave automatically all rooms on disconnection
-5. `socket.rooms` is an array with all the rooms the socket joined
+5. `socket.rooms` is a Set with all the rooms the socket joined
 6. `id` is assigned to the room on creation
 
 ```js
@@ -378,7 +381,7 @@ class Connection {
 }
 
 Server.on(Connection)
-Server.listen()
+await Server.listen()
 ```
 
 #### `Rooms` Class
@@ -398,11 +401,10 @@ Server.listen()
 1. Create a room instance that extends `Room`
 2. Join a socket in a room, a socket may join multiple rooms.
 3. A socket will leave automatically all rooms on disconnection
-4. `socket.rooms` is an array with all the rooms the socket joined
+4. `socket.rooms` is a Set with all the rooms the socket joined
 5. Keep in mind that `onCreate` and `onDelete` are not dispatched when
-   the room is manged by yourself. The construtor could be used for
-   simulating `onCreate` and `onDelete` only you will know when to
-   dispose such a variable.
+   you manage the room yourself. The constructor can stand in for
+   `onCreate`; only you know when the room is done with.
 
 ```js
 import { Room } from 'angelia.io/server'
@@ -427,7 +429,7 @@ class Connection {
 }
 
 Server.on(Connection)
-Server.listen()
+await Server.listen()
 ```
 
 #### `Room` Class
@@ -444,7 +446,7 @@ Server.listen()
 | `broadcast(socket, key, [value])`     | method  | emits to other sockets in the room               |
 | `id`                                  | any     | the room id                                      |
 | `join(socket)`                        | method  | adds a socket to the room                        |
-| `leave(socket)`                       | method  | remves a socket from the room                    |
+| `leave(socket)`                       | method  | removes a socket from the room                   |
 
 ### `sockets` in `Server`, `Room` and `Rooms`
 
@@ -456,7 +458,7 @@ methods.
 ## Typed events
 
 Declare your events in one `declare module` block and every `emit`,
-`on`, `reply`, and `Server.on(Class)` on both sides becomes
+`request`, `on`, `reply`, and `Server.on(Class)` on both sides becomes
 type-checked. Without a declaration everything stays loose (`any`), so
 this is opt-in — but the DX win is big.
 
@@ -511,8 +513,9 @@ socket.emit('unknown', 'x') // ✗ type error
 
 // client
 client.emit('typing', true) // ✓
-const answer = await client.emit('theMessage', 'hi', r => r.length)
-// answer: number (promise resolves with cb's return value)
+const reply = await client.request('theMessage', 'hi') // reply: string
+const length = await client.emit('theMessage', 'hi', r => r.length)
+// length: number (promise resolves with cb's return value)
 
 client.on('gotIt', msg => msg.toUpperCase()) // msg: string
 ```

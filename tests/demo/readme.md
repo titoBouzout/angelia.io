@@ -43,7 +43,7 @@ one feature so it's easy to see what produces what on the wire.
 
 **Rooms**
 
-- `Rooms` + `Room` from `server/rooms.js` — created on first join,
+- `Rooms` + `Room` from `angelia.io/server` — created on first join,
   deleted on last leave (non-persistent default). Switch live via the
   input at the top, or paste a `#room` URL hash.
 

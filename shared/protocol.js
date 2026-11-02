@@ -18,6 +18,8 @@ export const NO_RECONNECT = 'disconnect'
 /** WebSocket close frames carry at most this many bytes of reason. */
 const MAX_CLOSE_REASON_BYTES = 123
 
+const encoder = new TextEncoder()
+
 /**
  * Throw before closing with a reason the WebSocket would reject, so a
  * bad reason fails with nothing half done.
@@ -25,7 +27,7 @@ const MAX_CLOSE_REASON_BYTES = 123
  * @param {string} reason
  */
 export function assertCloseReason(reason) {
-	const bytes = new TextEncoder().encode(reason).length
+	const bytes = encoder.encode(reason).length
 	if (bytes > MAX_CLOSE_REASON_BYTES) {
 		throw new RangeError(
 			`close reason is ${bytes} bytes; the limit is ${MAX_CLOSE_REASON_BYTES}`,

@@ -158,6 +158,13 @@ export class Server extends Emitter {
 	 * @type {Socket[]}
 	 */
 	drained = []
+	/**
+	 * Class of the sockets it creates; set it before `listen` to have each
+	 * connection be a subclass of `Socket`.
+	 *
+	 * @type {typeof Socket}
+	 */
+	SocketClass = Socket
 	/** @internal */
 	cacheSymbol = Symbol('cache')
 	/** @internal */
@@ -481,7 +488,7 @@ export class Server extends Emitter {
 	#onconnection = (io, request) => {
 		// URL-packed messages come off the params before `connect` sees them.
 		const [query, m] = params(request.url, PACKED_PARAM)
-		const socket = new Socket(io, request, this, query)
+		const socket = new this.SocketClass(io, request, this, query)
 
 		socket.listen()
 

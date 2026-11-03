@@ -3,7 +3,7 @@ export { Emitter } from './Emitter.js'
 export { Message } from './Message.js'
 export { Room } from './Room.js'
 export { Rooms } from './Rooms.js'
-export type { Socket } from './Socket.js'
+export { Socket } from './Socket.js'
 
 declare module './Room.js' {
 	interface Room {

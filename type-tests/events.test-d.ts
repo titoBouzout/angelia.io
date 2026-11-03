@@ -6,8 +6,7 @@
  * Run: `npx tsc -p type-tests/`
  */
 
-import Server, { Emitter, Message, Room, Rooms, Server as ServerClass } from '../types/server/index.js'
-import type { Socket } from '../types/server/index.js'
+import Server, { Emitter, Message, Room, Rooms, Server as ServerClass, Socket } from '../types/server/index.js'
 import Client from '../types/client/index.js'
 
 declare module '../types/server/index.js' {
@@ -232,3 +231,13 @@ class KeptRoom extends Room {
 }
 const isKept: boolean = new KeptRoom().persistent || new Room().persistent
 void isKept
+
+// ---------------- Server.SocketClass ----------------
+
+class OwnSocket extends Socket {
+	username = ''
+	toJSON(): any {
+		return { username: this.username }
+	}
+}
+Server.SocketClass = OwnSocket

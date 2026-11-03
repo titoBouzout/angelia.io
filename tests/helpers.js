@@ -32,9 +32,11 @@ export async function freePort() {
  * Listen a fresh Server on an OS-assigned port.
  *
  * @param {import('../server/Server.js').ServerListenOptions} [options]
+ * @param {(server: Server) => void} [configure] What to set before it listens
  */
-export async function bootServer(options = {}) {
+export async function bootServer(options = {}, configure = _server => {}) {
 	const server = new Server()
+	configure(server)
 	await server.listen({ port: 0, ...options })
 	const baseUrl = `ws://127.0.0.1:${server.port}`
 	return {

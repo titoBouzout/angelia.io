@@ -20,6 +20,7 @@ import { WebSocket } from 'ws'
 
 import { Server, bootServer, freePort, waitFor } from './helpers.js'
 import { Message } from '../server/Message.js'
+import { Socket } from '../server/index.js'
 import { Room } from '../server/Room.js'
 import { Rooms } from '../server/Rooms.js'
 import { TIMEOUT_MS } from '../shared/protocol.js'
@@ -1762,5 +1763,72 @@ describe('integration: Message', () => {
 		socket.send(new Message('late', 1))
 		await new Promise(r => setImmediate(r))
 		assert.equal(s.server.messagesSent, sent)
+	})
+})
+
+describe('integration: Server.SocketClass', () => {
+	class User extends Socket {
+		username = 'guest'
+		#secret = 'kept'
+		get secret() {
+			return this.#secret
+		}
+		toJSON() {
+			return { username: this.username }
+		}
+	}
+	let s, client
+
+	before(async () => {
+		s = await bootServer({}, server => (server.SocketClass = User))
+		client = await bootClient(s.url)
+		await waitFor(() => s.server.sockets.size === 1)
+	})
+	after(async () => {
+		client.close()
+		await s.stop()
+	})
+
+	it('makes each connection one, still a Socket', () => {
+		const [socket] = s.server.sockets
+		assert.ok(socket instanceof User)
+		assert.ok(socket instanceof Socket)
+		assert.equal(socket.secret, 'kept')
+		assert.equal(typeof socket.ip, 'string')
+	})
+
+	it('gives listeners and hooks the same object', async () => {
+		const [socket] = s.server.sockets
+		const got = []
+		s.server.events.who = sock => got.push(sock)
+		client.send([['who', 1]])
+		await waitFor(() => got.length === 1)
+		assert.equal(got[0], socket)
+	})
+
+	it('sends what its toJSON says', async () => {
+		const [socket] = s.server.sockets
+		socket.username = 'tito'
+		s.server.emit('users', [socket])
+		assert.deepEqual(JSON.parse(await client.nextFrame()), [['users', [{ username: 'tito' }]]])
+	})
+
+	it('emits, joins rooms and leaves them as any socket', async () => {
+		const [socket] = s.server.sockets
+		const room = new Room()
+		room.join(socket)
+		room.emit('hi', 1)
+		assert.deepEqual(JSON.parse(await client.nextFrame()), [['hi', 1]])
+		socket.emit('hello', 2)
+		assert.deepEqual(JSON.parse(await client.nextFrame()), [['hello', 2]])
+		room.leave(socket)
+		assert.equal(room.sockets.size, 0)
+	})
+})
+
+describe('Socket default', () => {
+	it('is what a server makes unless told otherwise, and sends nothing of itself', () => {
+		assert.equal(new Server().SocketClass, Socket)
+		assert.equal(Socket.prototype.toJSON.call({}), '[content of socket object omitted for toJSON]')
 	})
 })

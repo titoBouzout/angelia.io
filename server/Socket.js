@@ -383,6 +383,7 @@ export class Socket {
 		this.io._sender.sendFrame(chunks)
 	}
 
+	/** @returns {any} What sending a socket sends; a subclass says what. */
 	toJSON() {
 		return '[content of socket object omitted for toJSON]'
 	}

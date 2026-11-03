@@ -132,6 +132,7 @@ them with the exported class: `import { Server } from
 | `send(message)`                       | Function | sends a `Message` to all connected sockets                                             |
 | `sendExcept(sender, message)`         | Function | sends a `Message` to all connected sockets except sender                               |
 | `sockets`                             | Set      | every currently connected socket                                                       |
+| `SocketClass`                         | Class    | class of the sockets it creates, `Socket` unless set before `listen`                   |
 | `reloadCerts()`                       | Function | re-read `cert`/`privKey` from disk and swap them in. Open connections are untouched. Safe to call manually (e.g. on `SIGHUP`); the watcher uses it internally |
 | `stop()`                              | Function | stops listening and drops every connection; `await using server = new Server()` calls it when the scope ends |
 
@@ -184,6 +185,26 @@ if (rooms.json !== last.json) Server.send(rooms)
 Later changes to the value never reach the wire, and `toJSON` runs as it
 is made rather than as it sends. A message carries no reply callback, as
 one belongs to a single socket: use `socket.emit` or `socket.request`.
+
+### Your own `Socket`
+
+Set `Server.SocketClass` before `listen` and each connection is your subclass, so what belongs to a user lives on the socket itself. `toJSON` says what sending a socket sends; by default it sends nothing of it.
+
+```js
+import Server, { Socket } from 'angelia.io/server'
+
+class User extends Socket {
+	username = ''
+	toJSON() {
+		return { username: this.username }
+	}
+}
+
+Server.SocketClass = User
+await Server.listen()
+```
+
+Listeners, hooks and every `sockets` then give you `User`s. Its constructor gets what `Socket`'s does, so pass them on with `super(...args)` if it has one.
 
 ### Server Listeners
 

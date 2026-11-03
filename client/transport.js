@@ -104,12 +104,8 @@ function workerMain(scope) {
 	let received = 0
 	let sent = 0
 
-	/**
-	 * @param {WebSocket} socket
-	 * @param {number} code
-	 */
-	const closed = (socket, code) => {
-		if (ws !== socket) return
+	/** @param {number} code */
+	const closed = code => {
 		ws = null
 		clearInterval(heartbeat)
 		scope.postMessage(['close', code])
@@ -122,8 +118,8 @@ function workerMain(scope) {
 			const now = Date.now()
 			if (now - received > timeout) {
 				// A dead connection never finishes the closing handshake: don't wait for it.
-				socket.onmessage = null
-				closed(socket, 1006)
+				socket.onmessage = socket.onclose = null
+				closed(1006)
 				socket.close()
 			} else if (now - Math.min(received, sent) > timeout / 2 - 5000) {
 				// Either way: the server times out a client that only listens.
@@ -151,7 +147,7 @@ function workerMain(scope) {
 				watch(timeout)
 				scope.postMessage(['open'])
 			}
-			socket.onclose = e => closed(socket, e.code)
+			socket.onclose = e => closed(e.code)
 			socket.onmessage = e => {
 				received = Date.now()
 				if (e.data !== '') scope.postMessage(e.data)

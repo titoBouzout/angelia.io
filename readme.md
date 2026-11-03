@@ -497,6 +497,26 @@ await Server.listen()
 | `join(socket)`                        | method  | adds a socket to the room                        |
 | `leave(socket)`                       | method  | removes a socket from the room; in a `Rooms` list, an emptied room is deleted unless `persistent` |
 
+### Your own `Emitter`
+
+`Server`, `Room` and `Rooms` send through `Emitter`, which only reads a
+`sockets` field. Extend it for something that sends to sockets it doesn't
+own, as what a room is doing right now:
+
+```js
+import { Emitter } from 'angelia.io/server'
+
+class Match extends Emitter {
+	constructor(room) {
+		super()
+		this.room = room
+	}
+	get sockets() {
+		return this.room.sockets
+	}
+}
+```
+
 ### `sockets` in `Server`, `Room` and `Rooms`
 
 A `Set` of sockets, so joins, leaves and disconnects stay O(1) at any

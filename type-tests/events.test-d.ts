@@ -6,7 +6,7 @@
  * Run: `npx tsc -p type-tests/`
  */
 
-import Server, { Message, Room, Rooms, Server as ServerClass } from '../types/server/index.js'
+import Server, { Emitter, Message, Room, Rooms, Server as ServerClass } from '../types/server/index.js'
 import type { Socket } from '../types/server/index.js'
 import Client from '../types/client/index.js'
 
@@ -212,3 +212,15 @@ new Room().sendExcept(socket, encodedMessage)
 new ServerClass().sendExcept(undefined, encodedMessage)
 // @ts-expect-error 'gotIt' takes a string
 new Message('gotIt', 1)
+
+// ---------------- Emitter ----------------
+
+class OwnEmitter extends Emitter {
+	get sockets() {
+		return new Room().sockets
+	}
+}
+new OwnEmitter().emit('gotIt', 'ok')
+new OwnEmitter().send(encodedMessage)
+// @ts-expect-error 'gotIt' takes a string
+new OwnEmitter().emit('gotIt', 1)

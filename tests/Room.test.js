@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { Room } from '../server/Room.js'
+import { Emitter, Message, Room } from '../server/index.js'
 
 /** Minimal socket-shaped object — Room only reads `rooms` and identity. */
 const fakeSocket = id => /** @type {any} */ ({ id, rooms: new Set(), messages: [] })
@@ -123,5 +123,25 @@ describe('Room.join on a closed socket', () => {
 		assert.equal(room.sockets.size, 0)
 		assert.deepEqual(closed.rooms, new Set([]))
 		assert.equal(joins, 0)
+	})
+})
+
+describe('Emitter, extended', () => {
+	it('sends to the sockets its subclass names, as they are now', () => {
+		const room = new Room()
+		class Match extends Emitter {
+			get sockets() {
+				return room.sockets
+			}
+		}
+		const match = new Match()
+		const queued = []
+		const socket = /** @type {any} */ ({ queue: tuple => queued.push(tuple) })
+		match.emit('before', 1)
+		room.sockets.add(socket)
+		match.emit('after', 2)
+		match.send(new Message('message', 3))
+		match.broadcast(socket, 'skipped', 4)
+		assert.deepEqual(queued.map(tuple => tuple[0]), ['after', 'message'])
 	})
 })

@@ -13,6 +13,7 @@ interface Window {
 	restored: boolean
 	talking: ReturnType<typeof setInterval>
 	workerPrelude: string
+	unhandled: string[]
 	off: (() => void) | undefined
 	controller: AbortController
 	pending: Promise<string>

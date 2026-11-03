@@ -335,6 +335,8 @@ On reconnect, any messages still queued for send are dropped, and
 pending reply promises (from `request`, or `emit` with a callback)
 reject with an Error whose message starts with `reconnecting:` as soon as the connection drops;
 after `disconnect(true)` they reject with an Error whose message starts with `disconnected:`.
+A caller that ignores the promise hears nothing of a lost reply, while a
+callback that throws still surfaces as an unhandled rejection.
 Messages queued before the first connection opened wait for it.
 The library can't tell which queued messages are safe to replay (a
 typing indicator: yes; a "transfer $100": maybe not), so recovery is

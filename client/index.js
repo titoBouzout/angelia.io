@@ -47,6 +47,18 @@ const settle = reply => reply
 
 const noop = () => {}
 
+/**
+ * A reply that can no longer arrive isn't an error of the app's: only a caller
+ * reading the promise hears of it. A throwing callback still surfaces as unhandled.
+ *
+ * @template T
+ * @param {Promise<T>} promise
+ */
+const handled = promise => {
+	promise.catch(noop)
+	return promise
+}
+
 const newConnid = () =>
 	crypto.getRandomValues(new BigUint64Array(1))[0].toString(36)
 
@@ -297,7 +309,7 @@ export default class Client {
 		}
 		// After `disconnect(true)` nothing will be sent: don't queue it.
 		if (!this.#reconnect) {
-			return callback ? Promise.reject(new Error(DISCONNECTED)) : undefined
+			return callback ? handled(Promise.reject(new Error(DISCONNECTED))) : undefined
 		}
 
 		if (callback) {
@@ -467,7 +479,10 @@ export default class Client {
 					reject(err)
 				}
 			},
-			cancel: reject,
+			cancel: err => {
+				handled(promise)
+				reject(err)
+			},
 		})
 		return [id, promise]
 	}

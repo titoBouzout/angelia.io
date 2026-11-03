@@ -376,14 +376,18 @@ for (const browserType of [chromium, firefox]) {
 			}
 			const heartbeatEvery = (TIMEOUT_MS / 2 / WORKER_SPEED)
 
-			it('heartbeat goes out while the main thread is blocked', async () => {
+			// Firefox routes a worker's WebSocket through the main thread, so a
+			// blocked page holds the heartbeat back there until it's free.
+			const beatsWhileBlocked = name === 'chromium'
+			it(`heartbeat ${beatsWhileBlocked ? 'goes out' : 'is held back'} while the main thread is blocked`, async () => {
 				const s = await bootServer()
 				const page = await openFast(s.baseUrl)
 				try {
 					await waitFor(() => s.server.sockets.size === 1)
 					const times = heartbeats([...s.server.sockets][0])
 					await page.evaluate(ms => window.busy(ms), heartbeatEvery * 2)
-					assert.ok(times.length > 0, 'a heartbeat while blocked')
+					if (beatsWhileBlocked) assert.ok(times.length > 0, 'a heartbeat while blocked')
+					else assert.ok(await waitFor(() => times.length > 0), 'a heartbeat once free')
 				} finally {
 					await page.close()
 					await s.stop()
@@ -434,6 +438,43 @@ for (const browserType of [chromium, firefox]) {
 					sock.write = () => {}
 					await page.waitForFunction(() => window.log.includes('reconnect'), null, { timeout: heartbeatEvery * 5 })
 					assert.deepEqual(await page.evaluate(() => window.log), ['connect', 'disconnect', 'reconnect'])
+				} finally {
+					await page.close()
+					await s.stop()
+				}
+			})
+
+			it('a reply lost to a drop is no unhandled rejection, a throwing callback is', async () => {
+				const s = await bootServer()
+				s.server.events.silent = () => {}
+				s.server.events.answer = (_sock, _data, reply) => reply(1)
+				const page = await open(s.baseUrl)
+				try {
+					await waitFor(() => s.server.sockets.size === 1)
+					await page.evaluate(() => {
+						window.unhandled = []
+						addEventListener('unhandledrejection', e => {
+							e.preventDefault()
+							window.unhandled.push(e.reason.message)
+						})
+						window.client.emit('silent', 1, () => {})
+					})
+					await waitFor(() => [...s.server.sockets][0].messagesReceived === 1)
+					;[...s.server.sockets][0].disconnect()
+					await page.waitForFunction(() => window.log.includes('reconnect'))
+					await page.evaluate(() => {
+						window.client.emit('answer', 1, () => {
+							throw new Error('from the callback')
+						})
+					})
+					await page.waitForFunction(() => window.unhandled.length > 0)
+					await page.evaluate(() => {
+						window.client.emit('silent', 1, () => {})
+						window.client.disconnect(true)
+						window.client.emit('silent', 1, () => {})
+					})
+					await sleep(200)
+					assert.deepEqual(await page.evaluate(() => window.unhandled), ['from the callback'])
 				} finally {
 					await page.close()
 					await s.stop()

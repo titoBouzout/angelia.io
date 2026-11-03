@@ -6,7 +6,7 @@
  * Run: `npx tsc -p type-tests/`
  */
 
-import Server, { Room, Rooms, Server as ServerClass } from '../types/server/index.js'
+import Server, { Message, Room, Rooms, Server as ServerClass } from '../types/server/index.js'
 import type { Socket } from '../types/server/index.js'
 import Client from '../types/client/index.js'
 
@@ -200,3 +200,15 @@ async function scoped() {
 }
 void second
 void scoped
+
+// ---------------- Message ----------------
+
+const encodedMessage = new Message('gotIt', 'ok')
+const encodedText: string = encodedMessage.json
+void encodedText
+socket.send(encodedMessage)
+new Room().send(encodedMessage)
+new Room().sendExcept(socket, encodedMessage)
+new ServerClass().sendExcept(undefined, encodedMessage)
+// @ts-expect-error 'gotIt' takes a string
+new Message('gotIt', 1)

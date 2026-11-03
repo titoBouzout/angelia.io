@@ -196,3 +196,122 @@ describe('Rooms deleting a room', () => {
 		assert.deepEqual(list.sockets, new Set())
 	})
 })
+
+describe('Room.leave in a Rooms list', () => {
+	it('deletes the room its last socket leaves, firing onDelete with that socket', () => {
+		const deleted = []
+		class R extends Room {
+			onDelete(socket) {
+				deleted.push(socket.id)
+			}
+		}
+		const list = new Rooms(R)
+		const a = fakeSocket('a')
+		list.join(a, 'r')
+		list.get('r')?.leave(a)
+		assert.equal(list.get('r'), undefined)
+		assert.equal(list.sockets.has(a), false)
+		assert.deepEqual(deleted, ['a'])
+	})
+
+	it('keeps a persistent room', () => {
+		class R extends Room {
+			persistent = true
+		}
+		const list = new Rooms(R)
+		const a = fakeSocket('a')
+		list.join(a, 'r')
+		list.get('r')?.leave(a)
+		assert.ok(list.get('r'))
+	})
+
+	it('keeps a room that onLeave joined someone to', () => {
+		const b = fakeSocket('b')
+		class R extends Room {
+			onLeave() {
+				this.join(b)
+			}
+		}
+		const list = new Rooms(R)
+		const a = fakeSocket('a')
+		list.join(a, 'r')
+		list.get('r')?.leave(a)
+		assert.ok(list.get('r')?.sockets.has(b))
+	})
+
+	it('a socket not in the room changes nothing', () => {
+		let deletes = 0
+		class R extends Room {
+			persistent = false
+			onDelete() {
+				deletes++
+			}
+		}
+		const list = new Rooms(R)
+		const a = fakeSocket('a')
+		list.join(a, 'r')
+		list.leave(fakeSocket('other'), 'r')
+		assert.ok(list.get('r')?.sockets.has(a))
+		assert.equal(deletes, 0)
+	})
+
+	it('deletes once when the socket leaves through the list', () => {
+		let deletes = 0
+		class R extends Room {
+			onDelete() {
+				deletes++
+			}
+		}
+		const list = new Rooms(R)
+		const a = fakeSocket('a')
+		list.join(a, 'r')
+		list.leave(a, 'r')
+		list.leave(a, 'r')
+		assert.equal(deletes, 1)
+	})
+})
+
+describe('Rooms.join with a failing onCreate', () => {
+	class R extends Room {
+		onCreate(socket) {
+			if (socket.id == 'bad') throw new Error('no')
+			this.ready = true
+		}
+	}
+
+	it('rethrows, lists no room and joins no one', () => {
+		const list = new Rooms(R)
+		const bad = fakeSocket('bad')
+		assert.throws(() => list.join(bad, 'r'), /no/)
+		assert.equal(list.get('r'), undefined)
+		assert.equal(list.sockets.has(bad), false)
+		assert.equal(bad.rooms.size, 0)
+	})
+
+	it('finds itself on the list as it runs', () => {
+		let found
+		const list = new Rooms(
+			class extends Room {
+				onCreate() {
+					found = list.get('r') === this
+				}
+			},
+		)
+		list.join(fakeSocket('a'), 'r')
+		assert.equal(found, true)
+	})
+
+	it('runs no onDelete, and the next to join creates it anew', () => {
+		let deletes = 0
+		class Counted extends R {
+			onDelete() {
+				deletes++
+			}
+		}
+		const list = new Rooms(Counted)
+		assert.throws(() => list.join(fakeSocket('bad'), 'r'))
+		assert.equal(deletes, 0)
+		list.join(fakeSocket('good'), 'r')
+		assert.equal(list.get('r')?.ready, true)
+	})
+})

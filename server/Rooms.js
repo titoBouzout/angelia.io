@@ -51,7 +51,14 @@ export class Rooms extends Emitter {
 			room.id = id
 			this.rooms.set(id, room)
 
-			room.onCreate(socket)
+			// In the list while it runs, for it to find itself; a failed one is no room.
+			try {
+				room.onCreate(socket)
+			} catch (error) {
+				this.rooms.delete(id)
+				room[parent] = undefined
+				throw error
+			}
 		}
 		room.join(socket)
 	}
@@ -64,16 +71,7 @@ export class Rooms extends Emitter {
 	 * @param {any} [id]
 	 */
 	leave(socket, id) {
-		const room = this.rooms.get(id)
-		if (room) {
-			room.leave(socket)
-			if (!room.persistent && room.sockets.size === 0) {
-				this.rooms.delete(id)
-				room.onDelete(socket)
-				// Joins through a kept reference no longer reach this list.
-				room[parent] = undefined
-			}
-		}
+		this.rooms.get(id)?.leave(socket)
 	}
 
 	/** @returns {R[]} */

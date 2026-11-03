@@ -14,6 +14,8 @@ import {
 	DEFAULT_PORT,
 	LIFECYCLE_EVENTS,
 	MAX_PORT,
+	encoded,
+	framed,
 } from './constants.js'
 import {
 	DEFAULT_PATH,
@@ -539,33 +541,40 @@ export class Server extends Emitter {
 	}
 
 	/**
-	 * Cache the framed form of `messages` keyed by message identity, so a
-	 * fan-out stringifies and frames once per tick. Byte counters are
-	 * bumped in `Socket.write`.
+	 * The frame of `messages`. Each message stringifies once however many
+	 * batches it lands in, and a batch frames once per tick. Byte counters
+	 * are bumped in `Socket.write`.
 	 *
 	 * @internal Called from Socket.processQueue.
 	 * @param {any[]} messages
 	 * @returns {Buffer[]}
 	 */
 	cacheMessages(messages) {
-		// A fan-out is usually one message: key on it and skip the string.
-		let key = messages.length === 1 ? messages[0] : ''
-		if (key === '') {
-			for (const m of messages) {
-				if (!m[this.cacheSymbol]) {
-					m[this.cacheSymbol] = this.cached++
-				}
-				key += m[this.cacheSymbol] + ','
+		// A fan-out is usually one message: its frame lives on it, for as long as it does.
+		if (messages.length === 1) {
+			const m = messages[0]
+			if (m[framed]) {
+				this.messagesSentCacheHit++
+			} else {
+				m[framed] = frame(`[${m[encoded] ??= stringify(m)}]`)
 			}
+			return m[framed]
 		}
-		let framed = this.cache.get(key)
-		if (framed) {
+		let key = ''
+		for (const m of messages) {
+			if (!m[this.cacheSymbol]) {
+				m[this.cacheSymbol] = this.cached++
+			}
+			key += m[this.cacheSymbol] + ','
+		}
+		let batch = this.cache.get(key)
+		if (batch) {
 			this.messagesSentCacheHit++
 		} else {
-			framed = frame(stringify(messages))
-			this.cache.set(key, framed)
+			batch = frame(`[${messages.map(m => (m[encoded] ??= stringify(m))).join()}]`)
+			this.cache.set(key, batch)
 		}
-		return framed
+		return batch
 	}
 
 	#updateNow = () => {

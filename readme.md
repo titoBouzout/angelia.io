@@ -129,6 +129,8 @@ them with the exported class: `import { Server } from
 | `on(Class)`                           | Function | attaches all methods of a `Class` as listeners                                         |
 | `emit(key, [value])`                  | Function | emits to all connected sockets                                                         |
 | `broadcast(sender, key, [value])`     | Function | emits to all connected sockets except sender                                           |
+| `send(message)`                       | Function | sends a `Message` to all connected sockets                                             |
+| `sendExcept(sender, message)`         | Function | sends a `Message` to all connected sockets except sender                               |
 | `sockets`                             | Set      | every currently connected socket                                                       |
 | `reloadCerts()`                       | Function | re-read `cert`/`privKey` from disk and swap them in. Open connections are untouched. Safe to call manually (e.g. on `SIGHUP`); the watcher uses it internally |
 | `stop()`                              | Function | stops listening and drops every connection; `await using server = new Server()` calls it when the scope ends |
@@ -156,7 +158,32 @@ The `socket` object is given to you by a listener
 | `rooms`                        | Set      | the rooms this socket is in                                                                                                                                                                                                       |
 | `request(key, [value])`        | Function | emits and returns a promise for the client's reply, rejected with an Error whose message starts with `disconnected:` if the socket closes first; without a value the listener gets `null` |
 | `emit(key, [value, callback])` | Function | emits to client; with a callback, returns a promise for its result, rejected with an Error whose message starts with `disconnected:` if the socket closes first                                                                                                                                                                                                              |
+| `send(message)` | Function | sends a `Message` to the client |
 | `disconnect([noReconnect, reason])` | Function | closes the WebSocket, pass `true` to prevent re-connections; `reason` (up to 123 bytes) is sent to the client                                                                                                              |
+
+### `Message`
+
+`emit` encodes once per fan-out, in the tick it sends. A `Message` is
+encoded once as it is made, and keeps its encoding for as long as you keep
+it, for a payload sent to sockets one at a time or again later, as a list
+sent to whoever arrives.
+
+```js
+import { Message } from 'angelia.io/server'
+
+const rooms = new Message('rooms', list)
+
+socket.send(rooms)
+room.send(rooms)
+room.sendExcept(socket, rooms)
+
+// equal text means an equal message
+if (rooms.json !== last.json) Server.send(rooms)
+```
+
+Later changes to the value never reach the wire, and `toJSON` runs as it
+is made rather than as it sends. A message carries no reply callback, as
+one belongs to a single socket: use `socket.emit` or `socket.request`.
 
 ### Server Listeners
 
@@ -236,7 +263,7 @@ the right one by name.
 | `timeout(socket, delay)`     | when we are about to disconnect a timedout socket, gives the delay in milliseconds                                                                |
 | `garbage(socket, data)`      | when the client sends a message with no listener, a malformed one, or one named after a predefined event                                         |
 | `incoming(socket, messages)` | for debugging: ref to array of incoming messages received before dispatching to listeners                                                         |
-| `outgoing(socket, messages)` | for debugging: ref to array of outgoing messages before sending to socket                                                                         |
+| `outgoing(socket, messages)` | for debugging: ref to array of outgoing messages before sending to socket; changing a `Message`'s tuple here never changes what is sent           |
 
 ## Client API (Browser)
 
@@ -413,6 +440,8 @@ await Server.listen()
 | `rooms`                               | Map    | every room in this list, by id                 |
 | `emit(key, [value])`                  | method | emits to all sockets in this room list         |
 | `broadcast(socket, key, [value])`     | method | emits to other sockets in this room list       |
+| `send(message)`                       | method | sends a `Message` to all sockets in this room list |
+| `sendExcept(socket, message)`         | method | sends a `Message` to other sockets in this room list |
 
 ### Via a `Room`
 
@@ -462,9 +491,11 @@ await Server.listen()
 | `sockets`                             | Set     | sockets in the room                              |
 | `emit(key, [value])`                  | method  | emits to all sockets in the room                 |
 | `broadcast(socket, key, [value])`     | method  | emits to other sockets in the room               |
+| `send(message)`                       | method  | sends a `Message` to all sockets in the room     |
+| `sendExcept(socket, message)`         | method  | sends a `Message` to other sockets in the room   |
 | `id`                                  | any     | the room id                                      |
 | `join(socket)`                        | method  | adds a socket to the room                        |
-| `leave(socket)`                       | method  | removes a socket from the room                   |
+| `leave(socket)`                       | method  | removes a socket from the room; in a `Rooms` list, an emptied room is deleted unless `persistent` |
 
 ### `sockets` in `Server`, `Room` and `Rooms`
 

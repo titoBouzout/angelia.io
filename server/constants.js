@@ -1,4 +1,7 @@
 export const parent = Symbol('parent')
+// A wire tuple's JSON, and its frame as a batch of one.
+export const encoded = Symbol('encoded')
+export const framed = Symbol('framed')
 
 // Server events fired by the library itself; clients can't trigger them.
 export const LIFECYCLE_EVENTS = new Set([

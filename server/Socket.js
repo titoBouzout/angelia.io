@@ -1,4 +1,3 @@
-import { parent } from './constants.js'
 import {
 	NO_RECONNECT,
 	PROTOCOL_KEY,
@@ -16,6 +15,7 @@ import {
 import { WebSocket } from 'ws'
 
 /** @import { ClientEvents, ClientReplies, EventKey, EventValue } from './index.js' */
+/** @import { Message } from './Message.js' */
 /** @import { Room } from './Room.js' */
 /** @import { Server } from './Server.js' */
 
@@ -118,6 +118,15 @@ export class Socket {
 			return promise
 		}
 		this.queue([k, v])
+	}
+
+	/**
+	 * Queue an encoded message for the next batch.
+	 *
+	 * @param {Message<any>} message
+	 */
+	send(message) {
+		this.queue(message.tuple)
 	}
 
 	/**
@@ -224,9 +233,7 @@ export class Socket {
 
 		// Leaving deletes the room from this.rooms; Set iteration allows that.
 		for (const room of this.rooms) {
-			room[parent]
-				? room[parent].leave(this, room.id)
-				: room.leave(this)
+			room.leave(this)
 		}
 
 		this.server.hooks.disconnect?.(this, code, reason.toString())

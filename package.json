@@ -43,7 +43,8 @@
 		"demo": "node tests/demo/server.js",
 		"bench:worker": "node bench/browser/run.js",
 		"bench:server": "node bench/node-receive.js",
-		"bench:fanout": "node bench/fanout.js"
+		"bench:fanout": "node bench/fanout.js",
+		"bench:message": "node bench/message.js"
 	},
 	"homepage": "https://github.com/titoBouzout/angelia.io",
 	"repository": {

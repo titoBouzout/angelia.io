@@ -41,13 +41,24 @@ export class Room extends Emitter {
 		this[parent]?.sockets.add(socket)
 		this.onJoin(socket)
 	}
-	/** @param {Socket} socket */
+	/**
+	 * Leave the room; a room in a `Rooms` list that this empties is deleted
+	 * unless it's `persistent`.
+	 *
+	 * @param {Socket} socket
+	 */
 	leave(socket) {
 		if (!this.sockets.delete(socket)) return
 		socket.rooms.delete(this)
 		const list = this[parent]
 		if (list && !inList(socket, list)) list.sockets.delete(socket)
 		this.onLeave(socket)
+		if (list && !this.persistent && this.sockets.size === 0) {
+			list.rooms.delete(this.id)
+			this.onDelete(socket)
+			// Joins through a kept reference no longer reach this list.
+			this[parent] = undefined
+		}
 	}
 }
 

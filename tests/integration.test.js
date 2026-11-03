@@ -19,6 +19,7 @@ import { join } from 'node:path'
 import { WebSocket } from 'ws'
 
 import { Server, bootServer, freePort, waitFor } from './helpers.js'
+import { Message } from '../server/Message.js'
 import { Room } from '../server/Room.js'
 import { Rooms } from '../server/Rooms.js'
 import { TIMEOUT_MS } from '../shared/protocol.js'
@@ -1684,5 +1685,82 @@ describe('integration: console.log of Server and Socket', () => {
 			client.close()
 			await s.stop()
 		}
+	})
+})
+
+describe('integration: Message', () => {
+	let s, a, b
+
+	before(async () => {
+		s = await bootServer()
+		a = await bootClient(s.url)
+		b = await bootClient(s.url)
+		await waitFor(() => s.server.sockets.size === 2)
+	})
+
+	after(async () => {
+		a.close()
+		b.close()
+		await s.stop()
+	})
+
+	it('reaches sockets in different ticks through one frame', async () => {
+		const message = new Message('m', { list: [1, 2] })
+		const [first, second] = s.server.sockets
+		first.send(message)
+		assert.deepEqual(JSON.parse(await a.nextFrame()), [['m', { list: [1, 2] }]])
+		const hits = s.server.messagesSentCacheHit
+		second.send(message)
+		assert.deepEqual(JSON.parse(await b.nextFrame()), [['m', { list: [1, 2] }]])
+		assert.equal(s.server.messagesSentCacheHit, hits + 1)
+	})
+
+	it('joins a batch with what else the socket gets that tick, in order', async () => {
+		const [first] = s.server.sockets
+		first.emit('before', 1)
+		first.send(new Message('m', 2))
+		first.emit('after', 3)
+		assert.deepEqual(JSON.parse(await a.nextFrame()), [
+			['before', 1],
+			['m', 2],
+			['after', 3],
+		])
+	})
+
+	it('server.send reaches everyone, sendExcept skips the socket', async () => {
+		const [first] = s.server.sockets
+		s.server.send(new Message('all', 1))
+		assert.deepEqual(JSON.parse(await a.nextFrame()), [['all', 1]])
+		assert.deepEqual(JSON.parse(await b.nextFrame()), [['all', 1]])
+		s.server.sendExcept(first, new Message('rest', 2))
+		assert.deepEqual(JSON.parse(await b.nextFrame()), [['rest', 2]])
+		const got = await Promise.race([
+			a.nextFrame(),
+			new Promise(r => setTimeout(() => r(null), 100)),
+		])
+		assert.equal(got, null)
+	})
+
+	it('shows the outgoing hook plain tuples', async () => {
+		const seen = []
+		s.server.hooks.outgoing = (_socket, messages) => seen.push(messages[0])
+		const [first] = s.server.sockets
+		first.send(new Message('hooked', 1))
+		await a.nextFrame()
+		s.server.hooks.outgoing = undefined
+		assert.equal(seen[0][0], 'hooked')
+		assert.equal(seen[0][1], 1)
+	})
+
+	it('is dropped for a socket that closed', async () => {
+		const client = await bootClient(s.url)
+		await waitFor(() => s.server.sockets.size === 3)
+		const socket = [...s.server.sockets].at(-1)
+		client.close()
+		await waitFor(() => socket.closed)
+		const sent = s.server.messagesSent
+		socket.send(new Message('late', 1))
+		await new Promise(r => setImmediate(r))
+		assert.equal(s.server.messagesSent, sent)
 	})
 })

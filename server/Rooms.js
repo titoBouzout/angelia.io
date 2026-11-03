@@ -74,6 +74,19 @@ export class Rooms extends Emitter {
 		this.rooms.get(id)?.leave(socket)
 	}
 
+	/**
+	 * The rooms of this list `socket` is in. Walks the socket's own rooms,
+	 * which stay few, not the list's. Leaving one while iterating is fine.
+	 *
+	 * @param {Socket} socket
+	 * @returns {Generator<R>}
+	 */
+	*of(socket) {
+		for (const room of socket.rooms) {
+			if (room[parent] === this) yield /** @type {R} */ (room)
+		}
+	}
+
 	/** @returns {R[]} */
 	toJSON() {
 		return [...this.rooms.values()]

@@ -315,3 +315,30 @@ describe('Rooms.join with a failing onCreate', () => {
 		assert.equal(list.get('r')?.ready, true)
 	})
 })
+
+describe('Rooms.of', () => {
+	it('yields only the rooms of this list the socket is in', () => {
+		const chats = new Rooms(Room)
+		const games = new Rooms(Room)
+		const a = fakeSocket('a')
+		chats.join(a, 'one')
+		chats.join(a, 'two')
+		chats.join(fakeSocket('b'), 'three')
+		// the same id in another list, and a lone room, aren't this list's
+		games.join(a, 'one')
+		new Room().join(a)
+		assert.deepEqual([...chats.of(a)].map(room => room.id), ['one', 'two'])
+		assert.deepEqual([...games.of(a)].map(room => room.id), ['one'])
+		assert.deepEqual([...new Rooms(Room).of(a)], [])
+	})
+
+	it('allows leaving as it iterates', () => {
+		const chats = new Rooms(Room)
+		const a = fakeSocket('a')
+		chats.join(a, 'one')
+		chats.join(a, 'two')
+		for (const room of chats.of(a)) room.leave(a)
+		assert.equal(a.rooms.size, 0)
+		assert.equal(chats.rooms.size, 0)
+	})
+})

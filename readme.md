@@ -436,6 +436,7 @@ await Server.listen()
 | `get(id)`                             | method | gets room with such an `id`                    |
 | `join(socket, [id])`                  | method | adds socket to room `id`                       |
 | `leave(socket, [id])`                 | method | removes socket from room `id`                  |
+| `of(socket)`                          | method | iterates the rooms of this list `socket` is in, walking the socket's rooms, not the list's |
 | `sockets`                             | Set    | sockets across every room in this list, each once |
 | `rooms`                               | Map    | every room in this list, by id                 |
 | `emit(key, [value])`                  | method | emits to all sockets in this room list         |

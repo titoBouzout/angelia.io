@@ -1034,7 +1034,7 @@ describe('integration: heartbeat', () => {
 			const client = await bootClient(s.url)
 			await waitFor(() => s.server.sockets.size === 1)
 			const [sock] = s.server.sockets
-			sock.seen = 0
+			sock.heardAt(0)
 			client.ping()
 			await waitFor(() => client.counters.pongs === 1)
 			assert.ok(sock.seen > 0)
@@ -1098,7 +1098,7 @@ describe('integration: hooks.timeout', () => {
 
 		// Simulate a stale client: backdate `seen` past the timeout
 		// window, then trigger the sweep synchronously.
-		sock.seen = s.server.now - (TIMEOUT_MS + 1)
+		sock.heardAt(s.server.now - (TIMEOUT_MS + 1))
 		s.server.sweep()
 
 		assert.equal(fired.length, 1)
@@ -1549,7 +1549,7 @@ describe('integration: server emit with a callback', () => {
 
 		const doubled = await sock.emit('double', 21, r => r + 1)
 		assert.equal(doubled, 43)
-		assert.equal(sock.callbacks.size, 0)
+		assert.equal(sock.pendingReplies, 0)
 	})
 
 	it('rejects at once when the socket is already closed', async () => {
@@ -1559,7 +1559,7 @@ describe('integration: server emit with a callback', () => {
 		c.close()
 		await waitFor(() => sock.closed)
 		await assert.rejects(sock.request('late', 1), /disconnected/)
-		assert.equal(sock.callbacks.size, 0)
+		assert.equal(sock.pendingReplies, 0)
 	})
 
 	it('rejects pending replies when the socket closes, without crashing callback-only callers', async () => {
@@ -1572,7 +1572,7 @@ describe('integration: server emit with a callback', () => {
 		sock.emit('never', 2, () => {})
 		sock.disconnect()
 		await assert.rejects(awaited, /disconnected/)
-		assert.equal(sock.callbacks.size, 0)
+		assert.equal(sock.pendingReplies, 0)
 		c.close()
 	})
 })
@@ -1606,7 +1606,7 @@ describe('integration: disconnect code and reason', () => {
 		const c = await bootClient(s.url)
 		await waitFor(() => s.server.sockets.size === 1)
 		const [stale] = s.server.sockets
-		stale.seen = s.server.now - (TIMEOUT_MS + 1)
+		stale.heardAt(s.server.now - (TIMEOUT_MS + 1))
 		s.server.sweep()
 		await waitFor(() => closes.length === 3)
 

@@ -11,20 +11,32 @@ import { Emitter } from './Emitter.js'
  * @template {Room} [R=Room]
  */
 export class Rooms extends Emitter {
+	/** @type {new () => R} */
+	#RoomClass
+	/** @type {Map<any, R>} */
+	#rooms = new Map()
+	/** @type {Set<Socket>} */
+	#sockets = new Set()
+
 	/** @param {new () => R} RoomClass Class of the rooms it creates */
 	constructor(RoomClass) {
 		super()
+		this.#RoomClass = RoomClass
+	}
 
-		this.RoomClass = RoomClass
-		/** @type {Map<any, R>} Every room in this list, by id. */
-		this.rooms = new Map()
-		/**
-		 * Every socket across every room, each once. Kept up to date by
-		 * `Room.join` / `Room.leave`, so reading it costs nothing.
-		 *
-		 * @type {Set<Socket>}
-		 */
-		this.sockets = new Set()
+	get RoomClass() {
+		return this.#RoomClass
+	}
+	/** Every room in this list, by id. */
+	get rooms() {
+		return this.#rooms
+	}
+	/**
+	 * Every socket across every room, each once. Kept up to date by
+	 * `Room.join` / `Room.leave`, so reading it costs nothing.
+	 */
+	get sockets() {
+		return this.#sockets
 	}
 
 	/**
@@ -32,7 +44,7 @@ export class Rooms extends Emitter {
 	 * @returns {R | undefined}
 	 */
 	get(id) {
-		return this.rooms.get(id)
+		return this.#rooms.get(id)
 	}
 
 	/**
@@ -44,18 +56,18 @@ export class Rooms extends Emitter {
 	join(socket, id) {
 		// Don't create a room for a socket `Room.join` would turn away.
 		if (socket.closed) return
-		let room = this.rooms.get(id)
+		let room = this.#rooms.get(id)
 		if (!room) {
 			room = new this.RoomClass()
 			room[parent] = this
 			room.id = id
-			this.rooms.set(id, room)
+			this.#rooms.set(id, room)
 
 			// In the list while it runs, for it to find itself; a failed one is no room.
 			try {
 				room.onCreate(socket)
 			} catch (error) {
-				this.rooms.delete(id)
+				this.#rooms.delete(id)
 				room[parent] = undefined
 				throw error
 			}
@@ -71,7 +83,7 @@ export class Rooms extends Emitter {
 	 * @param {any} [id]
 	 */
 	leave(socket, id) {
-		this.rooms.get(id)?.leave(socket)
+		this.#rooms.get(id)?.leave(socket)
 	}
 
 	/**
@@ -89,6 +101,6 @@ export class Rooms extends Emitter {
 
 	/** @returns {R[]} */
 	toJSON() {
-		return [...this.rooms.values()]
+		return [...this.#rooms.values()]
 	}
 }

@@ -12,5 +12,5 @@ npm run test:types
 
 version=$(node -p "require('./package.json').version")
 npm publish
-git tag "v$version"
+git tag -m "$version" "v$version"
 git push --follow-tags

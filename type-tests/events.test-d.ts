@@ -224,3 +224,11 @@ new OwnEmitter().emit('gotIt', 'ok')
 new OwnEmitter().send(encodedMessage)
 // @ts-expect-error 'gotIt' takes a string
 new OwnEmitter().emit('gotIt', 1)
+
+// ---------------- Room.persistent ----------------
+
+class KeptRoom extends Room {
+	persistent = true
+}
+const isKept: boolean = new KeptRoom().persistent || new Room().persistent
+void isKept

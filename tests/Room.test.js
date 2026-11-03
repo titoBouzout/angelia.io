@@ -145,3 +145,18 @@ describe('Emitter, extended', () => {
 		assert.deepEqual(queued.map(tuple => tuple[0]), ['after', 'message'])
 	})
 })
+
+describe('Room own fields', () => {
+	it('leaves angelia\'s out of a spread, and a subclass sets persistent', () => {
+		class Kept extends Room {
+			persistent = true
+			name = 'a name'
+		}
+		const room = new Kept()
+		room.id = 'r'
+		assert.deepEqual(JSON.parse(JSON.stringify({ ...room })), { id: 'r', persistent: true, name: 'a name' })
+		assert.deepEqual(Object.keys(new Room()), ['id'])
+		assert.equal(new Room().persistent, false)
+		assert.ok(new Room().sockets instanceof Set)
+	})
+})

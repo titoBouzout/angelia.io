@@ -5,6 +5,13 @@ export { Room } from './Room.js'
 export { Rooms } from './Rooms.js'
 export type { Socket } from './Socket.js'
 
+declare module './Room.js' {
+	interface Room {
+		/** Keep the room in its `Rooms` list when its last socket leaves. */
+		persistent: boolean
+	}
+}
+
 /**
  * Event-map interfaces. Augment these from your app to get end-to-end
  * typing of `emit`, `on`, replies, and `Server.on(Class)` listeners.

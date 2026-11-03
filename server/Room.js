@@ -7,13 +7,19 @@ import { parent } from './constants.js'
 /** A group of sockets to emit to; subclass it to hook its lifecycle. */
 export class Room extends Emitter {
 	/** @type {Set<Socket>} */
-	sockets = new Set()
+	#sockets = new Set()
 	/** @type {any} Set by `Rooms` for its rooms; yours to set otherwise. */
 	id
-	/** Keep the room in its `Rooms` list when its last socket leaves. */
-	persistent = false
 	/** @type {Rooms<any> | undefined} The list the room belongs to, if any. */
 	;[parent]
+
+	/**
+	 * Off the room's own fields, as a subclass may spread its fields into
+	 * what it sends.
+	 */
+	get sockets() {
+		return this.#sockets
+	}
 
 	/**
 	 * Called when a `Rooms` list creates the room for `socket`.
@@ -61,6 +67,9 @@ export class Room extends Emitter {
 		}
 	}
 }
+
+/** Keep the room in its `Rooms` list when its last socket leaves. */
+Room.prototype.persistent = false
 
 /**
  * Whether `socket` is still in another room of `list`. Walks the

@@ -204,7 +204,7 @@ describe('client in a page kept in the back/forward cache', { skip: !existsSync(
 		const s = await bootServer()
 		const page = await leave(s.baseUrl)
 		try {
-			for (const socket of s.server.sockets) socket.heardAt(s.server.now - (TIMEOUT_MS + 1))
+			for (const socket of s.server.sockets) socket.seen = s.server.now - (TIMEOUT_MS + 1)
 			s.server.sweep()
 			assert.equal(s.server.sockets.size, 0, 'timed out')
 			await restored(page, s)

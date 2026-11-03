@@ -48,18 +48,6 @@ export class Room extends Emitter {
 		this.onJoin(socket)
 	}
 	/**
-	 * Put these sockets last, in this order, for what reads the room's
-	 * order. No one joins or leaves, so no hook runs.
-	 *
-	 * @param {Iterable<Socket>} sockets Sockets of this room
-	 */
-	reorder(sockets) {
-		for (const socket of sockets) {
-			if (this.#sockets.delete(socket)) this.#sockets.add(socket)
-		}
-	}
-
-	/**
 	 * Leave the room; a room in a `Rooms` list that this empties is deleted
 	 * unless it's `persistent`.
 	 *

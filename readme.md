@@ -135,10 +135,6 @@ them with the exported class: `import { Server } from
 | `reloadCerts()`                       | Function | re-read `cert`/`privKey` from disk and swap them in. Open connections are untouched. Safe to call manually (e.g. on `SIGHUP`); the watcher uses it internally |
 | `stop()`                              | Function | stops listening and drops every connection; `await using server = new Server()` calls it when the scope ends |
 
-### What is read-only
-
-What `Server`, `Socket`, `Room` and `Rooms` hold for themselves is read through getters, so writing it throws a `TypeError`. Your own fields on a socket or room stay yours, as `socket.game = room`. A room's `id` and `persistent` are also yours to set.
-
 ### `Socket` Object
 
 The `socket` object is given to you by a listener
@@ -500,7 +496,6 @@ await Server.listen()
 | `sendExcept(socket, message)`         | method  | sends a `Message` to other sockets in the room   |
 | `id`                                  | any     | the room id                                      |
 | `join(socket)`                        | method  | adds a socket to the room                        |
-| `reorder(sockets)`                    | method  | puts these sockets last, in this order, running no hook |
 | `leave(socket)`                       | method  | removes a socket from the room; in a `Rooms` list, an emptied room is deleted unless `persistent` |
 
 ### Your own `Emitter`

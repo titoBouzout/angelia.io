@@ -148,135 +148,76 @@ export class Server extends Emitter {
 	/** @type {NodeJS.Timeout | undefined} */
 	#nowTimer
 
-	/** @type {Socket[]} Sockets with messages to send. */
-	#queue = []
-	/** @type {Socket[]} `#queue`'s other buffer. */
-	#drained = []
-	#cacheSymbol = Symbol('cache')
-	#cached = 1
-	/** @type {Map<unknown, Buffer[]>} This tick's frames, see `cacheMessages`. */
-	#cache = new Map()
-	/** @type {Set<Socket>} */
-	#sockets = new Set()
-	#hostname = '127.0.0.1'
-	#port = DEFAULT_PORT
-	#path = DEFAULT_PATH
-	#maxMessageSize = DEFAULT_MAX_MESSAGE_SIZE_MB
-	#trustProxy = false
-	#since = 0
-	#now = 0
-	#served = 0
-	#bytesReceived = 0
-	#bytesSent = 0
-	#messagesGarbage = 0
-	#messagesReceived = 0
-	#messagesSent = 0
-	#messagesSentCacheHit = 0
-	#serverErrors = 0
-	#socketErrors = 0
-	/** @type {Record<string, any>} */
-	#events = empty()
-	/** @type {PredefinedServerHandlers} */
-	#hooks = empty()
-	/** @type {WebSocketServer | null} */
-	#io = null
-	/** @type {import('node:http').Server | null} */
-	#httpServer = null
-
-	/** Every connected socket. */
-	get sockets() {
-		return this.#sockets
-	}
-	get hostname() {
-		return this.#hostname
-	}
-	get port() {
-		return this.#port
-	}
-	get path() {
-		return this.#path
-	}
-	get maxMessageSize() {
-		return this.#maxMessageSize
-	}
-	/** Whether the client IP is read from `x-forwarded-for`, only for a trusted proxy in front. */
-	get trustProxy() {
-		return this.#trustProxy
-	}
-	get since() {
-		return this.#since
-	}
-	get now() {
-		return this.#now
-	}
-	get served() {
-		return this.#served
-	}
-	get bytesReceived() {
-		return this.#bytesReceived
-	}
-	get bytesSent() {
-		return this.#bytesSent
-	}
-	get messagesGarbage() {
-		return this.#messagesGarbage
-	}
-	get messagesReceived() {
-		return this.#messagesReceived
-	}
-	get messagesSent() {
-		return this.#messagesSent
-	}
-	get messagesSentCacheHit() {
-		return this.#messagesSentCacheHit
-	}
-	get serverErrors() {
-		return this.#serverErrors
-	}
-	get socketErrors() {
-		return this.#socketErrors
-	}
 	/**
-	 * Handlers for messages clients send, by event name. Call one to
-	 * dispatch it yourself: `Server.events.typing(socket, true)`.
+	 * @internal Sockets with messages to send.
+	 * @type {Socket[]}
 	 */
-	get events() {
-		return this.#events
-	}
-	/** Handlers for the events the server fires itself (`connect`, …). */
-	get hooks() {
-		return this.#hooks
-	}
-	get io() {
-		return this.#io
-	}
-	get httpServer() {
-		return this.#httpServer
-	}
+	queue = []
+	/**
+	 * @internal `queue`'s other buffer.
+	 * @type {Socket[]}
+	 */
+	drained = []
+	/** @internal */
+	cacheSymbol = Symbol('cache')
+	/** @internal */
+	cached = 1
+	/**
+	 * @internal This tick's frames, see `cacheMessages`.
+	 * @type {Map<unknown, Buffer[]>}
+	 */
+	cache = new Map()
 
-	/** @internal Each socket's share of the totals. */
-	countReceived(bytes) {
-		this.#bytesReceived += bytes
-	}
-	/** @internal */
-	countSent(bytes) {
-		this.#bytesSent += bytes
-	}
-	/** @internal */
-	countMessagesReceived(count) {
-		this.#messagesReceived += count
-	}
-	/** @internal */
-	countMessagesSent(count) {
-		this.#messagesSent += count
-	}
-	/** @internal */
-	countGarbage() {
-		this.#messagesGarbage++
-	}
-	/** @internal */
-	countSocketError() {
-		this.#socketErrors++
+	constructor() {
+		super()
+
+		/** @type {Set<Socket>} Every connected socket. */
+		this.sockets = new Set()
+
+		this.hostname = '127.0.0.1'
+		this.port = DEFAULT_PORT
+		this.path = DEFAULT_PATH
+
+
+		this.maxMessageSize = DEFAULT_MAX_MESSAGE_SIZE_MB
+
+		/**
+		 * When true, read `x-forwarded-for` from the upgrade headers for
+		 * the client IP. Only enable when a trusted proxy is in front.
+		 */
+		this.trustProxy = false
+
+		this.since = 0
+		this.now = 0
+
+		this.served = 0
+		this.bytesReceived = 0
+		this.bytesSent = 0
+		this.messagesGarbage = 0
+		this.messagesReceived = 0
+		this.messagesSent = 0
+		this.messagesSentCacheHit = 0
+		this.serverErrors = 0
+		this.socketErrors = 0
+
+		/**
+		 * Handlers for messages clients send, by event name. Call one to
+		 * dispatch it yourself: `Server.events.typing(socket, true)`.
+		 *
+		 * @type {Record<string, any>}
+		 */
+		this.events = empty()
+		/**
+		 * Handlers for the events the server fires itself (`connect`, …).
+		 *
+		 * @type {PredefinedServerHandlers}
+		 */
+		this.hooks = empty()
+
+		/** @type {WebSocketServer | null} */
+		this.io = null
+		/** @type {import('node:http').Server | null} */
+		this.httpServer = null
 	}
 
 	/**
@@ -287,7 +228,7 @@ export class Server extends Emitter {
 	 */
 	async listen(options = {}) {
 		// Double-listen would leak the old server and intervals.
-		if (this.#io) {
+		if (this.io) {
 			throw new Error(
 				'Server.listen() already called: this server is already listening. Call stop() first, or create another Server for a second port.',
 			)
@@ -309,22 +250,22 @@ export class Server extends Emitter {
 					})
 				: null
 
-		this.#hostname = options.hostname || this.#hostname
+		this.hostname = options.hostname || this.hostname
 
 		// 0 lets the OS pick; the bound port is read back below.
-		const port = +(options.port ?? this.#port)
-		this.#port =
+		const port = +(options.port ?? this.port)
+		this.port =
 			Number.isInteger(port) && port >= 0 && port <= MAX_PORT
 				? port
-				: this.#port
+				: this.port
 
-		this.#path = options.path || this.#path
+		this.path = options.path || this.path
 
 		const maxMessageSize = +(options.maxMessageSize ?? 0)
-		this.#maxMessageSize =
+		this.maxMessageSize =
 			maxMessageSize > 0 ? maxMessageSize : DEFAULT_MAX_MESSAGE_SIZE_MB
 
-		this.#trustProxy = !!options.trustProxy
+		this.trustProxy = !!options.trustProxy
 
 		// No plain-HTTP endpoints: everything but the upgrade is a 404.
 		/** @type {import('node:http').RequestListener} */
@@ -337,10 +278,10 @@ export class Server extends Emitter {
 
 		const io = new WebSocketServer({
 			server: httpServer,
-			path: this.#path,
+			path: this.path,
 			perMessageDeflate: false,
 			clientTracking: false,
-			maxPayload: this.#maxMessageSize * 1024 * 1024,
+			maxPayload: this.maxMessageSize * 1024 * 1024,
 			// Invalid UTF-8 only decodes to U+FFFD, and browsers never send
 			// it, so validating every frame is wasted work by default.
 			skipUTF8Validation: options.skipUTF8Validation ?? true,
@@ -352,7 +293,7 @@ export class Server extends Emitter {
 			await new Promise((resolve, reject) => {
 				httpServer.once('error', reject)
 				// A deeper accept queue than Node's default absorbs reconnect storms.
-				const listening = { port: this.#port, host: this.#hostname, backlog: 1024 }
+				const listening = { port: this.port, host: this.hostname, backlog: 1024 }
 				httpServer.listen(listening, () => {
 					httpServer.off('error', reject)
 					resolve(undefined)
@@ -365,14 +306,14 @@ export class Server extends Emitter {
 		httpServer.on('error', this.#onerror)
 
 		const address = httpServer.address()
-		if (address && typeof address === 'object') this.#port = address.port
+		if (address && typeof address === 'object') this.port = address.port
 
-		this.#io = io
-		this.#httpServer = httpServer
+		this.io = io
+		this.httpServer = httpServer
 		this.#listenOptions = options
 
-		this.#now = now()
-		this.#since = this.#now
+		this.now = now()
+		this.since = this.now
 
 		// `unref` so a stopped server doesn't hold the process alive.
 		this.#pingTimer = setInterval(this.sweep, TIMEOUT_MS / 2)
@@ -382,7 +323,7 @@ export class Server extends Emitter {
 		this.#nowTimer.unref()
 
 		console.log(
-			`[angelia.io] server listening on ${pems ? 'wss' : 'ws'}://${this.#hostname}:${this.#port}`,
+			`[angelia.io] server listening on ${pems ? 'wss' : 'ws'}://${this.hostname}:${this.port}`,
 		)
 
 		if (pems && options.watch) {
@@ -393,7 +334,7 @@ export class Server extends Emitter {
 			)
 		}
 
-		this.#hooks.listen?.()
+		this.hooks.listen?.()
 	}
 
 	/**
@@ -404,7 +345,7 @@ export class Server extends Emitter {
 	 */
 	async reloadCerts() {
 		const options = this.#listenOptions
-		const httpServer = this.#httpServer
+		const httpServer = this.httpServer
 		if (!options?.cert || !options.privKey || !httpServer) return
 
 		let pems
@@ -520,8 +461,8 @@ export class Server extends Emitter {
 					const method = instance[m].bind(instance)
 					// Lifecycle names live apart, out of reach of client messages.
 					const registry = LIFECYCLE_EVENTS.has(m)
-						? this.#hooks
-						: this.#events
+						? this.hooks
+						: this.events
 
 					register(registry, m, method)
 				}
@@ -544,11 +485,11 @@ export class Server extends Emitter {
 
 		socket.listen()
 
-		this.#served++
+		this.served++
 
-		this.#sockets.add(socket)
+		this.sockets.add(socket)
 
-		this.#hooks.connect?.(socket, {
+		this.hooks.connect?.(socket, {
 			headers: request.headers,
 			url: request.url || '',
 		})
@@ -556,8 +497,8 @@ export class Server extends Emitter {
 		// A `connect` listener may have already disconnected the socket.
 		if (m !== null && !socket.closed) {
 			const bytes = Buffer.byteLength(m)
-			this.#bytesReceived += bytes
-			socket.countReceived(bytes)
+			this.bytesReceived += bytes
+			socket.bytesReceived += bytes
 			const packed = socket.parse(m)
 			if (isArray(packed)) socket.dispatch(packed)
 			else socket.garbage(m)
@@ -566,7 +507,7 @@ export class Server extends Emitter {
 	}
 
 	#onerror = err => {
-		this.#serverErrors++
+		this.serverErrors++
 		console.error(
 			'[angelia.io] server error, counted in serverErrors. The server keeps running.',
 			err,
@@ -580,23 +521,23 @@ export class Server extends Emitter {
 	 * @param {Socket} socket
 	 */
 	nextQueue(socket) {
-		if (!this.#queue.length) {
+		if (!this.queue.length) {
 			nextTick(this.#processQueue)
 		}
-		this.#queue.push(socket)
+		this.queue.push(socket)
 	}
 
 	#processQueue = () => {
 		// Swap buffers instead of allocating: sockets emitting mid-drain
 		// queue into the other one.
-		const queue = this.#queue
-		this.#queue = this.#drained
+		const queue = this.queue
+		this.queue = this.drained
 		for (const socket of queue) {
 			socket.processQueue()
 		}
 		queue.length = 0
-		this.#drained = queue
-		this.#cache.clear()
+		this.drained = queue
+		this.cache.clear()
 	}
 
 	/**
@@ -613,7 +554,7 @@ export class Server extends Emitter {
 		if (messages.length === 1) {
 			const m = messages[0]
 			if (m[framed]) {
-				this.#messagesSentCacheHit++
+				this.messagesSentCacheHit++
 			} else {
 				m[framed] = frame(`[${m[encoded] ??= stringify(m)}]`)
 			}
@@ -621,34 +562,34 @@ export class Server extends Emitter {
 		}
 		let key = ''
 		for (const m of messages) {
-			if (!m[this.#cacheSymbol]) {
-				m[this.#cacheSymbol] = this.#cached++
+			if (!m[this.cacheSymbol]) {
+				m[this.cacheSymbol] = this.cached++
 			}
-			key += m[this.#cacheSymbol] + ','
+			key += m[this.cacheSymbol] + ','
 		}
-		let batch = this.#cache.get(key)
+		let batch = this.cache.get(key)
 		if (batch) {
-			this.#messagesSentCacheHit++
+			this.messagesSentCacheHit++
 		} else {
 			batch = frame(`[${messages.map(m => (m[encoded] ??= stringify(m))).join()}]`)
-			this.#cache.set(key, batch)
+			this.cache.set(key, batch)
 		}
 		return batch
 	}
 
 	#updateNow = () => {
-		this.#now = now()
+		this.now = now()
 	}
 
 	/** @internal Drops sockets gone silent; public so tests can run it. */
 	sweep = () => {
 		this.#updateNow()
-		for (const socket of this.#sockets) {
-			const delay = this.#now - socket.seen
+		for (const socket of this.sockets) {
+			const delay = this.now - socket.seen
 
 			if (delay > TIMEOUT_MS) {
-				socket.timedOut()
-				this.#hooks.timeout?.(socket, delay)
+				socket.timedout = true
+				this.hooks.timeout?.(socket, delay)
 				socket.io.terminate()
 				// Clean up now, as `disconnect()` does, not on the close event.
 				socket.onclose(ABNORMAL_CLOSURE, '')
@@ -663,19 +604,19 @@ export class Server extends Emitter {
 
 	/** Stop listening. Drops existing connections and frees the port. */
 	async stop() {
-		const httpServer = this.#httpServer
-		const io = this.#io
+		const httpServer = this.httpServer
+		const io = this.io
 
 		this.#stopCertWatcher()
 		clearInterval(this.#pingTimer)
 		clearInterval(this.#nowTimer)
-		this.#io = null
-		this.#httpServer = null
+		this.io = null
+		this.httpServer = null
 		this.#listenOptions = null
 
 		if (!httpServer || !io) return
 
-		for (const socket of this.#sockets) {
+		for (const socket of this.sockets) {
 			socket.io.terminate()
 			socket.onclose(ABNORMAL_CLOSURE, '')
 		}
@@ -686,7 +627,7 @@ export class Server extends Emitter {
 		})
 
 		console.log(
-			`[angelia.io] server stopped (was on port ${this.#port})`,
+			`[angelia.io] server stopped (was on port ${this.port})`,
 		)
 	}
 
@@ -704,21 +645,21 @@ export class Server extends Emitter {
 	[inspect](_depth, options, inspectValue) {
 		const scheme = this.#listenOptions?.cert ? 'wss' : 'ws'
 		const summary = {
-			listening: this.#io !== null,
-			url: `${scheme}://${this.#hostname}:${this.#port}${this.#path}`,
-			sockets: this.#sockets.size,
-			served: this.#served,
-			since: this.#since,
-			bytesSent: this.#bytesSent,
-			bytesReceived: this.#bytesReceived,
-			messagesSent: this.#messagesSent,
-			messagesReceived: this.#messagesReceived,
-			messagesSentCacheHit: this.#messagesSentCacheHit,
-			messagesGarbage: this.#messagesGarbage,
-			serverErrors: this.#serverErrors,
-			socketErrors: this.#socketErrors,
-			events: Object.keys(this.#events),
-			hooks: Object.keys(this.#hooks),
+			listening: this.io !== null,
+			url: `${scheme}://${this.hostname}:${this.port}${this.path}`,
+			sockets: this.sockets.size,
+			served: this.served,
+			since: this.since,
+			bytesSent: this.bytesSent,
+			bytesReceived: this.bytesReceived,
+			messagesSent: this.messagesSent,
+			messagesReceived: this.messagesReceived,
+			messagesSentCacheHit: this.messagesSentCacheHit,
+			messagesGarbage: this.messagesGarbage,
+			serverErrors: this.serverErrors,
+			socketErrors: this.socketErrors,
+			events: Object.keys(this.events),
+			hooks: Object.keys(this.hooks),
 		}
 		return `Server ${inspectValue(summary, options)}`
 	}

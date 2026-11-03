@@ -27,6 +27,11 @@ describe('Server defaults', () => {
 		assert.equal(Object.getPrototypeOf(s.events), null)
 	})
 
+	it('queue starts empty', () => {
+		const s = new Server()
+		assert.deepEqual(s.queue, [])
+	})
+
 	it('default port is 3001', () => {
 		const s = new Server()
 		assert.equal(s.port, 3001)
@@ -143,8 +148,9 @@ describe('Server.nextQueue / processQueue', () => {
 			},
 		})
 		s.nextQueue(fakeSock)
-		assert.equal(drained.length, 0)
+		assert.equal(s.queue.length, 1)
 		await new Promise(r => setImmediate(r))
+		assert.equal(s.queue.length, 0)
 		assert.equal(drained.length, 1)
 	})
 
@@ -161,13 +167,12 @@ describe('Server.nextQueue / processQueue', () => {
 				calls.push('b')
 			},
 		})
-		const batch = [['k', 'v'], ['k2', 'v2']]
-		const before = s.cacheMessages(batch)
+		s.cacheMessages([['k', 'v']])
 		s.nextQueue(a)
 		s.nextQueue(b)
 		await new Promise(r => setImmediate(r))
 		assert.deepEqual(calls, ['a', 'b'])
-		assert.notEqual(s.cacheMessages(batch), before, 'a batch frames anew the next tick')
+		assert.equal(s.cache.size, 0)
 	})
 })
 

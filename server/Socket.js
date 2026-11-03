@@ -37,39 +37,19 @@ export class Socket {
 	/** Last callback id handed out; ids start at 1, as 0 means "none". */
 	#lastCallbackId = 0
 
-	/** @type {any[]} Messages waiting for the next batch. */
-	#messages = []
 	/**
-	 * Replies this socket's client still owes, by callback id.
-	 *
+	 * @internal Messages waiting for the next batch.
+	 * @type {any[]}
+	 */
+	messages = []
+	/**
+	 * @internal Replies this socket's client still owes, by callback id.
 	 * @type {Map<
 	 * 	number,
 	 * 	{ fire: (args: any[]) => void; cancel: (err: Error) => void }
 	 * >}
 	 */
-	#callbacks = new Map()
-	/** @type {Server} */
-	#server
-	/** @type {WebSocket} */
-	#io
-	/** @type {string} */
-	#ip
-	/** @type {string} */
-	#userAgent
-	/** @type {Record<string, string>} */
-	#params
-	#bytesSent = 0
-	#bytesReceived = 0
-	#messagesSent = 0
-	#messagesReceived = 0
-	/** @type {number} */
-	#since
-	/** @type {number} */
-	#seen
-	#timedout = false
-	#closed = false
-	/** @type {Set<Room>} */
-	#rooms = new Set()
+	callbacks = new Map()
 
 	/**
 	 * @internal Created by the server for each connection.
@@ -79,83 +59,30 @@ export class Socket {
 	 * @param {Record<string, string>} params The connect URL's query params
 	 */
 	constructor(io, request, server, params) {
-		this.#server = server
-		this.#io = io
+		this.server = server
+		/** The underlying `ws` WebSocket. */
+		this.io = io
 
 		const headers = request.headers
-		this.#ip = clientIp(request, server.trustProxy)
-		this.#userAgent = headers['user-agent'] || ''
-		this.#params = params
+		/** Client IP; from `X-Forwarded-For` when `trustProxy` is on. */
+		this.ip = clientIp(request, server.trustProxy)
+		this.userAgent = headers['user-agent'] || ''
+		/** The connect URL's query params, including `connid`. */
+		this.params = params
 
-		this.#since = server.now
-		this.#seen = server.now
+		this.bytesSent = 0
+		this.bytesReceived = 0
+		this.messagesSent = 0
+		this.messagesReceived = 0
 
-	}
+		this.since = server.now
+		this.seen = server.now
 
-	/** The server it connected to. */
-	get server() {
-		return this.#server
-	}
-	/** The underlying `ws` WebSocket. */
-	get io() {
-		return this.#io
-	}
-	/** Client IP; from `X-Forwarded-For` when `trustProxy` is on. */
-	get ip() {
-		return this.#ip
-	}
-	get userAgent() {
-		return this.#userAgent
-	}
-	/** The connect URL's query params, including `connid`. */
-	get params() {
-		return this.#params
-	}
-	get bytesSent() {
-		return this.#bytesSent
-	}
-	get bytesReceived() {
-		return this.#bytesReceived
-	}
-	get messagesSent() {
-		return this.#messagesSent
-	}
-	get messagesReceived() {
-		return this.#messagesReceived
-	}
-	get since() {
-		return this.#since
-	}
-	/** When the client last sent anything. */
-	get seen() {
-		return this.#seen
-	}
-	get timedout() {
-		return this.#timedout
-	}
-	get closed() {
-		return this.#closed
-	}
-	/** The rooms this socket is in. */
-	get rooms() {
-		return this.#rooms
-	}
-	/** How many replies the client still owes. */
-	get pendingReplies() {
-		return this.#callbacks.size
-	}
+		this.timedout = false
+		this.closed = false
 
-	/** @internal What arrived outside a frame's own count, as URL-packed messages. */
-	countReceived(bytes) {
-		this.#bytesReceived += bytes
-	}
-	/** @internal The time it was last heard from. */
-	heardAt(time) {
-		this.#seen = time
-	}
-	/** @internal It went silent for too long. */
-	timedOut() {
-		this.#timedout = true
+		/** @type {Set<Room>} The rooms this socket is in. */
+		this.rooms = new Set()
 	}
 
 	/**
@@ -208,10 +135,10 @@ export class Socket {
 	 * @param {any[]} message
 	 */
 	queue(message) {
-		if (!this.#messages.length) {
-			this.#server.nextQueue(this)
+		if (!this.messages.length) {
+			this.server.nextQueue(this)
 		}
-		this.#messages.push(message)
+		this.messages.push(message)
 	}
 
 	/**
@@ -252,7 +179,7 @@ export class Socket {
 		if (noReconnect) {
 			this.write(DISCONNECT)
 		}
-		this.#io.close(1000, reason)
+		this.io.close(1000, reason)
 		// The closing handshake completes later; we already know the
 		// socket is gone, so clean up now. `onclose` is idempotent.
 		this.onclose(1000, reason)
@@ -262,21 +189,21 @@ export class Socket {
 
 	/** @internal */
 	listen() {
-		this.#io.on('message', this.onmessage)
-		this.#io.on('close', this.onclose)
-		this.#io.on('error', this.onerror)
+		this.io.on('message', this.onmessage)
+		this.io.on('close', this.onclose)
+		this.io.on('error', this.onerror)
 	}
 
 	/** @internal @param {Buffer} raw */
 	onmessage = raw => {
-		this.#seen = this.#server.now
+		this.seen = this.server.now
 		if (raw.length === 0) {
 			this.write(PONG)
 			return
 		}
 
-		this.#server.countReceived(raw.length)
-		this.#bytesReceived += raw.length
+		this.server.bytesReceived += raw.length
+		this.bytesReceived += raw.length
 
 		const message = raw.toString()
 		const messages = this.parse(message)
@@ -293,28 +220,28 @@ export class Socket {
 	 * @param {Buffer | string} reason Close reason
 	 */
 	onclose = (code, reason) => {
-		if (this.#closed) return
-		this.#closed = true
-		this.#server.sockets.delete(this)
+		if (this.closed) return
+		this.closed = true
+		this.server.sockets.delete(this)
 
 		// An Error captures a stack trace: only build one when it's needed.
-		if (this.#callbacks.size) {
+		if (this.callbacks.size) {
 			const error = new Error(DISCONNECTED)
-			for (const pending of this.#callbacks.values()) pending.cancel(error)
-			this.#callbacks.clear()
+			for (const pending of this.callbacks.values()) pending.cancel(error)
+			this.callbacks.clear()
 		}
 
-		// Leaving deletes the room from this.#rooms; Set iteration allows that.
-		for (const room of this.#rooms) {
+		// Leaving deletes the room from this.rooms; Set iteration allows that.
+		for (const room of this.rooms) {
 			room.leave(this)
 		}
 
-		this.#server.hooks.disconnect?.(this, code, reason.toString())
+		this.server.hooks.disconnect?.(this, code, reason.toString())
 	}
 
 	/** @internal @param {Error} err */
 	onerror = err => {
-		this.#server.countSocketError()
+		this.server.socketErrors++
 		console.error(
 			'[angelia.io] socket error, counted in socketErrors. ws closes that connection.',
 			err,
@@ -336,11 +263,11 @@ export class Socket {
 		promise.catch(ignore)
 		const id = ++this.#lastCallbackId
 		// Already closed: `onclose` won't run again to settle it.
-		if (this.#closed) {
+		if (this.closed) {
 			reject(new Error(DISCONNECTED))
 			return [id, promise]
 		}
-		this.#callbacks.set(id, {
+		this.callbacks.set(id, {
 			fire: args => resolve(c(...args)),
 			cancel: reject,
 		})
@@ -355,9 +282,9 @@ export class Socket {
 	 */
 	oncallback(d) {
 		const pending =
-			isArray(d) && isArray(d[1]) && this.#callbacks.get(d[0])
+			isArray(d) && isArray(d[1]) && this.callbacks.get(d[0])
 		if (!pending) return false
-		this.#callbacks.delete(d[0])
+		this.callbacks.delete(d[0])
 		pending.fire(d[1])
 		return true
 	}
@@ -385,17 +312,17 @@ export class Socket {
 	 * @param {unknown[]} messages
 	 */
 	dispatch(messages) {
-		this.#server.countMessagesReceived(messages.length)
-		this.#messagesReceived += messages.length
+		this.server.messagesReceived += messages.length
+		this.messagesReceived += messages.length
 
-		this.#server.hooks.incoming?.(this, messages)
+		this.server.hooks.incoming?.(this, messages)
 		let handler
 		for (const m of messages) {
 			if (!isArray(m)) {
 				this.garbage(m)
 			} else if (m[0] === PROTOCOL_KEY) {
 				if (!this.oncallback(m[1])) this.garbage(m)
-			} else if ((handler = this.#server.events[m[0]])) {
+			} else if ((handler = this.server.events[m[0]])) {
 				let replied = false
 				handler(
 					this,
@@ -421,22 +348,22 @@ export class Socket {
 
 	/** @internal @param {unknown} m */
 	garbage(m) {
-		this.#server.countGarbage()
-		this.#server.hooks.garbage?.(this, m)
+		this.server.messagesGarbage++
+		this.server.hooks.garbage?.(this, m)
 	}
 
 	/** @internal */
 	processQueue() {
 		// Reset before running any user hook: `outgoing` may emit mid-drain,
 		// and `emit` only re-schedules on an empty queue.
-		const messages = this.#messages
-		this.#messages = []
-		if (this.#io.readyState !== WebSocket.OPEN) return
+		const messages = this.messages
+		this.messages = []
+		if (this.io.readyState !== WebSocket.OPEN) return
 
-		this.#server.hooks.outgoing?.(this, messages)
-		this.#server.countMessagesSent(messages.length)
-		this.#messagesSent += messages.length
-		this.write(this.#server.cacheMessages(messages))
+		this.server.hooks.outgoing?.(this, messages)
+		this.server.messagesSent += messages.length
+		this.messagesSent += messages.length
+		this.write(this.server.cacheMessages(messages))
 	}
 
 	/**
@@ -448,12 +375,12 @@ export class Socket {
 	 * @param {Buffer[]} chunks
 	 */
 	write(chunks) {
-		if (this.#io.readyState !== WebSocket.OPEN) return
+		if (this.io.readyState !== WebSocket.OPEN) return
 		let bytes = 0
 		for (const chunk of chunks) bytes += chunk.length
-		this.#server.countSent(bytes)
-		this.#bytesSent += bytes
-		this.#io._sender.sendFrame(chunks)
+		this.server.bytesSent += bytes
+		this.bytesSent += bytes
+		this.io._sender.sendFrame(chunks)
 	}
 
 	toJSON() {
@@ -469,20 +396,20 @@ export class Socket {
 	 */
 	[inspect](_depth, options, inspectValue) {
 		const summary = {
-			ip: this.#ip,
-			userAgent: this.#userAgent,
-			params: this.#params,
-			closed: this.#closed,
-			timedout: this.#timedout,
-			since: this.#since,
-			seen: this.#seen,
-			rooms: [...this.#rooms].map(room => room.id),
-			queued: this.#messages.length,
-			pendingReplies: this.#callbacks.size,
-			bytesSent: this.#bytesSent,
-			bytesReceived: this.#bytesReceived,
-			messagesSent: this.#messagesSent,
-			messagesReceived: this.#messagesReceived,
+			ip: this.ip,
+			userAgent: this.userAgent,
+			params: this.params,
+			closed: this.closed,
+			timedout: this.timedout,
+			since: this.since,
+			seen: this.seen,
+			rooms: [...this.rooms].map(room => room.id),
+			queued: this.messages.length,
+			pendingReplies: this.callbacks.size,
+			bytesSent: this.bytesSent,
+			bytesReceived: this.bytesReceived,
+			messagesSent: this.messagesSent,
+			messagesReceived: this.messagesReceived,
 		}
 		return `Socket ${inspectValue(summary, options)}`
 	}

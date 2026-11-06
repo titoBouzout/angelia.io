@@ -1,6 +1,6 @@
 {
 	"name": "angelia.io",
-	"version": "5.0.1",
+	"version": "5.0.2",
 	"description": "WebSockets Server and Client API for node.js and the browser, with rooms support.",
 	"author": "@titoBouzout @boredofnames",
 	"license": "GPL",

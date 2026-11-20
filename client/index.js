@@ -167,6 +167,8 @@ export default class Client {
 		let packed = []
 		if (this.#isReconnect) {
 			this.#messages = []
+			// the dropped requests' replies can't come; those sent before were rejected as their connection closed
+			this.#cancelPending(RECONNECTING)
 		} else {
 			packed = this.#pack(url)
 		}

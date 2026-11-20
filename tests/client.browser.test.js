@@ -1117,6 +1117,29 @@ for (const browserType of [chromium, firefox]) {
 				}
 			})
 
+			it('replies to requests queued between connections reject with Error("reconnecting")', async () => {
+				const s = await bootServer()
+				s.server.events.never = () => {}
+				const page = await open(s.baseUrl)
+				try {
+					await waitFor(() => connected(page))
+					await page.evaluate(() => window.client.disconnect())
+					await waitFor(async () => !(await connected(page)))
+					const message = await page.evaluate(() => {
+						const pending = window.client
+							.request('never', 1)
+							.catch(err => err.message)
+						window.client.connect()
+						const late = new Promise(resolve => setTimeout(() => resolve('still pending'), 1000))
+						return Promise.race([pending, late])
+					})
+					assert.match(message, /^reconnecting:/)
+				} finally {
+					await page.close()
+					await s.stop()
+				}
+			})
+
 			it('pending replies reject with Error("disconnected") on disconnect(true)', async () => {
 				const s = await bootServer()
 				s.server.events.never = () => {}

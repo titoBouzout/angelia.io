@@ -381,7 +381,8 @@ restored; either way the client reconnects as it is restored.
 
 On reconnect, any messages still queued for send are dropped, and
 pending reply promises (from `request`, or `emit` with a callback)
-reject with an Error whose message starts with `reconnecting:` as soon as the connection drops;
+reject with an Error whose message starts with `reconnecting:` as soon as the connection drops,
+and those of requests made while disconnected as the next attempt starts;
 after `disconnect(true)` they reject with an Error whose message starts with `disconnected:`.
 A caller that ignores the promise hears nothing of a lost reply, while a
 callback that throws still surfaces as an unhandled rejection.
